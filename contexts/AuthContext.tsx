@@ -22,126 +22,187 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [supabaseUser, setSupabaseUser] = useState<SupabaseUser | null>(null)
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  const [initialized, setInitialized] = useState(false)
   const router = useRouter()
   const supabase = createClient()
 
-  const fetchUserData = async (userId: string) => {
-    console.log('Fetching user data for ID:', userId)
-    const { data, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', userId)
-      .single()
+  const fetchUserData = async (userId: string): Promise<User | null> => {
+    try {
+      console.log('Fetching user data for ID:', userId)
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single()
 
-    console.log('User data fetch result:', { data: !!data, error: !!error })
+      console.log('Database response:', { data: !!data, error: error?.message, errorCode: error?.code })
 
-    if (error) {
-      console.error('Error fetching user data:', error)
-      throw error
+      if (error) {
+        console.error('Error fetching user data:', error)
+        if (error.code === 'PGRST116') {
+          console.log('User profile not found in database')
+        }
+        return null
+      }
+
+      if (data) {
+        console.log('User data fetched successfully:', data.email)
+        console.log('Setting user in context...')
+        console.log('User object details:', { 
+          id: data.id, 
+          email: data.email, 
+          name: data.name, 
+          role: data.role, 
+          tenant_id: data.tenant_id 
+        })
+        const userData = data as User
+        setUser(userData)
+        console.log('User set in context:', userData.email)
+        return userData
+      }
+      
+      return null
+    } catch (error) {
+      console.error('fetchUserData error:', error)
+      return null
     }
-
-    if (data) {
-      console.log('Setting user data:', data)
-      setUser(data as User)
-    }
-    return data
   }
 
   useEffect(() => {
-    const checkSession = async () => {
+    let mounted = true
+
+    const initializeAuth = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession()
-        setSupabaseUser(session?.user ?? null)
+        console.log('Initializing auth...')
         
-        if (session?.user) {
-          await fetchUserData(session.user.id)
+        // Set a timeout to ensure loading doesn't get stuck
+        const timeoutId = setTimeout(() => {
+          if (mounted) {
+            console.log('Auth initialization timeout - setting loading to false')
+            setLoading(false)
+            setInitialized(true)
+          }
+        }, 5000) // 5 second timeout
+
+        // Get initial session
+        const { data: { session }, error } = await supabase.auth.getSession()
+        
+        // Clear the timeout since we got a response
+        clearTimeout(timeoutId)
+        
+        if (!mounted) return
+
+        if (error) {
+          console.error('Error getting session:', error)
+          setLoading(false)
+          setInitialized(true)
+          return
         }
-      } catch (error) {
-        console.error('Error checking session:', error)
-      } finally {
+
+        if (session?.user) {
+          console.log('Found existing session for:', session.user.email)
+          setSupabaseUser(session.user)
+          await fetchUserData(session.user.id)
+        } else {
+          console.log('No existing session found')
+          setSupabaseUser(null)
+          setUser(null)
+        }
+
         setLoading(false)
+        setInitialized(true)
+
+      } catch (error) {
+        console.error('Error initializing auth:', error)
+        if (mounted) {
+          setLoading(false)
+          setInitialized(true)
+        }
       }
     }
 
-    checkSession()
+    // Only initialize once
+    if (!initialized) {
+      initializeAuth()
+    }
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state changed:', event, session?.user?.id)
-      setSupabaseUser(session?.user ?? null)
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state changed:', event)
       
-      if (session?.user) {
-        try {
+      if (!mounted) return
+
+      try {
+        if (session?.user) {
+          console.log('User signed in:', session.user.email)
+          setSupabaseUser(session.user)
           await fetchUserData(session.user.id)
-        } catch (error) {
-          console.error('Failed to fetch user data after auth state change:', error)
+        } else {
+          console.log('User signed out')
+          setSupabaseUser(null)
           setUser(null)
         }
-      } else {
-        setUser(null)
+      } catch (error) {
+        console.error('Error handling auth state change:', error)
       }
-      
-      setLoading(false)
+
+      // Always ensure loading is false after auth state change
+      if (initialized) {
+        setLoading(false)
+      }
     })
 
-    return () => subscription.unsubscribe()
-  }, [supabase, router])
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
+  }, [initialized]) // Only depend on initialized
 
   const signIn = async (email: string, password: string) => {
     try {
-      console.log('Starting sign in process...')
-      const { data, error } = await supabase.auth.signInWithPassword({
+      console.log('Starting sign in for:', email)
+      setLoading(true)
+      
+      const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
 
-      console.log('Auth response:', { data: !!data, error: !!error })
-
-      if (error) throw error
-
-      if (data.user) {
-        console.log('User authenticated, fetching profile...')
-        try {
-          await fetchUserData(data.user.id)
-          console.log('User profile loaded successfully')
-        } catch (fetchError) {
-          console.error('Failed to fetch user profile:', fetchError)
-          // Sign out the user since we can't load their profile
-          await supabase.auth.signOut()
-          throw new Error('Failed to load user profile. Please contact support.')
-        }
+      if (error) {
+        console.error('Sign in error:', error)
+        setLoading(false)
+        return { error }
       }
 
-      console.log('Sign in completed successfully')
+      console.log('Sign in successful')
+      // Don't set loading to false here - let the auth state change handle it
       return { error: null }
     } catch (error) {
-      console.error('Sign in error:', error)
+      console.error('Sign in failed:', error)
+      setLoading(false)
       return { error: error as Error }
     }
   }
 
   const signUp = async (email: string, password: string, userData: { name: string }) => {
     try {
-      console.log('Starting signup process with:', { email, name: userData.name })
+      console.log('Starting signup for:', email)
+      setLoading(true)
       
-      // First create the auth user
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
       })
   
       if (error) {
-        console.error('Supabase auth signup error:', error)
-        throw error
+        console.error('Signup error:', error)
+        setLoading(false)
+        return { error }
       }
   
-      console.log('Auth user created:', data.user?.id)
-  
       if (data.user) {
-        console.log('Creating user profile in database...')
+        console.log('Creating user profile...')
         
-        // Create user profile in the database
         const { error: profileError } = await supabase
           .from('users')
           .insert({
@@ -165,36 +226,52 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           })
   
         if (profileError) {
-          console.error('User profile creation error:', profileError)
-          // If profile creation fails, delete the auth user to maintain consistency
+          console.error('Profile creation error:', profileError)
           await supabase.auth.signOut()
-          throw new Error(`Failed to create user profile: ${profileError.message}`)
+          setLoading(false)
+          return { error: new Error(`Failed to create profile: ${profileError.message}`) }
         }
   
-        console.log('User profile created successfully')
-        
-        // Fetch the created user data to set in state
-        try {
-          await fetchUserData(data.user.id)
-          console.log('User data fetched and set in context')
-        } catch (fetchError) {
-          console.error('Error fetching user data after creation:', fetchError)
-          // Don't throw here since the user was created successfully
-          // The middleware will still redirect properly
-        }
+        console.log('User profile created')
       }
   
-      console.log('Signup process completed successfully')
+      setLoading(false)
       return { error: null }
     } catch (error) {
-      console.error('Signup process failed:', error)
+      console.error('Signup failed:', error)
+      setLoading(false)
       return { error: error as Error }
     }
   }
 
   const signOut = async () => {
-    await supabase.auth.signOut()
-    router.push('/login')
+    try {
+      console.log('Starting sign out...')
+      setLoading(true)
+      
+      // Sign out from Supabase
+      const { error } = await supabase.auth.signOut()
+      
+      if (error) {
+        console.error('Sign out error:', error)
+      } else {
+        console.log('Sign out successful')
+      }
+      
+      // Clear local state immediately
+      setUser(null)
+      setSupabaseUser(null)
+      
+      // Navigate to login page
+      console.log('Redirecting to login page...')
+      router.push('/login')
+      
+    } catch (error) {
+      console.error('Sign out failed:', error)
+    } finally {
+      // Always set loading to false
+      setLoading(false)
+    }
   }
 
   const refreshUser = async () => {
