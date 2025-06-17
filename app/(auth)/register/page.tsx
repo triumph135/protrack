@@ -54,26 +54,26 @@ export default function RegisterPage() {
   
     setLoading(true)
     try {
-      console.log('Attempting signup with:', { email, name }) // Add this
+      console.log('Attempting signup with:', { email, name })
       const { error } = await signUp(email, password, { name })
       
       if (error) {
-        console.error('Signup error:', error) // Add this
+        console.error('Signup error:', error)
         if (error.message.includes('already registered')) {
           setError('An account with this email already exists. Please log in.')
         } else {
           setError(error.message)
         }
+        setLoading(false)
       } else {
-        console.log('Signup successful') // Add this
-        setError('')
-        router.push('/login?registered=true')
+        console.log('Signup successful, redirecting to tenant setup...')
+        // Redirect to tenant setup immediately after successful signup
+        router.push('/tenant-setup')
       }
       
     } catch (err) {
-      console.error('Unexpected error:', err) // Add this
+      console.error('Unexpected error:', err)
       setError('An unexpected error occurred')
-    } finally {
       setLoading(false)
     }
   }

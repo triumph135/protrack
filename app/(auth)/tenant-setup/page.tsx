@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Building, Mail, Phone, CreditCard, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
@@ -18,8 +18,51 @@ export default function TenantSetupPage() {
   })
   
   const router = useRouter()
-  const { user, refreshUser } = useAuth()
+  const { user, supabaseUser, refreshUser } = useAuth()
   const supabase = createClient()
+
+  // Check if user exists in database, create if necessary
+  useEffect(() => {
+    const ensureUserExists = async () => {
+      if (supabaseUser && !user) {
+        console.log('User exists in auth but not in database, attempting to create profile...')
+        try {
+          const { error: insertError } = await supabase
+            .from('users')
+            .insert({
+              id: supabaseUser.id,
+              email: supabaseUser.email || '',
+              name: supabaseUser.user_metadata?.name || supabaseUser.email?.split('@')[0] || 'User',
+              role: 'entry',
+              tenant_id: null,
+              permissions: {
+                material: 'read',
+                labor: 'read',
+                equipment: 'read',
+                subcontractor: 'read',
+                others: 'read',
+                capLeases: 'read',
+                consumable: 'read',
+                invoices: 'read',
+                projects: 'read',
+                users: 'none'
+              }
+            })
+
+          if (insertError) {
+            console.error('Error creating user profile in tenant setup:', insertError)
+          } else {
+            console.log('User profile created successfully in tenant setup')
+            await refreshUser()
+          }
+        } catch (error) {
+          console.error('Failed to create user profile:', error)
+        }
+      }
+    }
+
+    ensureUserExists()
+  }, [supabaseUser, user, supabase, refreshUser])
 
   const validateSubdomain = (subdomain: string) => {
     const regex = /^[a-zA-Z0-9][a-zA-Z0-9-]{1,48}[a-zA-Z0-9]$/
@@ -78,7 +121,8 @@ export default function TenantSetupPage() {
       if (tenantError) throw tenantError
 
       // Update user with tenant_id and set as master
-      if (user) {
+      const userId = user?.id || supabaseUser?.id
+      if (userId) {
         const { error: updateError } = await supabase
           .from('users')
           .update({
@@ -97,9 +141,11 @@ export default function TenantSetupPage() {
               users: 'write'
             }
           })
-          .eq('id', user.id)
+          .eq('id', userId)
 
         if (updateError) throw updateError
+      } else {
+        throw new Error('Unable to identify user for tenant setup')
       }
 
       // Refresh user data

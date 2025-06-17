@@ -18,7 +18,22 @@ export async function middleware(req: NextRequest) {
 
   // If user is logged in and trying to access auth pages, redirect to tenant-setup
   if (isAuthPath && user) {
-    return NextResponse.redirect(new URL('/tenant-setup', req.url))
+    try {
+      const { data: userData } = await supabase
+        .from('users')
+        .select('tenant_id')
+        .eq('id', user.id)
+        .single()
+
+      if (userData?.tenant_id) {
+        return NextResponse.redirect(new URL('/dashboard', req.url))
+      } else {
+        return NextResponse.redirect(new URL('/tenant-setup', req.url))
+      }
+    } catch (error) {
+      // If user doesn't exist in database yet, redirect to tenant-setup
+      return NextResponse.redirect(new URL('/tenant-setup', req.url))
+    }
   }
 
   // Protected routes (everything except auth and tenant-setup)
@@ -33,26 +48,36 @@ export async function middleware(req: NextRequest) {
 
   // If logged in and has tenant, redirect from tenant-setup to dashboard
   if (user && req.nextUrl.pathname === '/tenant-setup') {
-    const { data: userData } = await supabase
-      .from('users')
-      .select('tenant_id')
-      .eq('id', user.id)
-      .single()
+    try {
+      const { data: userData } = await supabase
+        .from('users')
+        .select('tenant_id')
+        .eq('id', user.id)
+        .single()
 
-    if (userData?.tenant_id) {
-      return NextResponse.redirect(new URL('/dashboard', req.url))
+      if (userData?.tenant_id) {
+        return NextResponse.redirect(new URL('/dashboard', req.url))
+      }
+    } catch (error) {
+      // If user doesn't exist in database, stay on tenant-setup
+      console.log('User not found in database, staying on tenant-setup')
     }
   }
 
   // If logged in but no tenant and trying to access protected routes, redirect to tenant-setup
   if (user && isProtectedPath) {
-    const { data: userData } = await supabase
-      .from('users')
-      .select('tenant_id')
-      .eq('id', user.id)
-      .single()
+    try {
+      const { data: userData } = await supabase
+        .from('users')
+        .select('tenant_id')
+        .eq('id', user.id)
+        .single()
 
-    if (!userData?.tenant_id) {
+      if (!userData?.tenant_id) {
+        return NextResponse.redirect(new URL('/tenant-setup', req.url))
+      }
+    } catch (error) {
+      // If user doesn't exist in database, redirect to tenant-setup
       return NextResponse.redirect(new URL('/tenant-setup', req.url))
     }
   }

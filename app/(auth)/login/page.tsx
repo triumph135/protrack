@@ -52,8 +52,8 @@ export default function LoginPage() {
         setError(error.message)
         setLoading(false)
       } else {
-        // Just let the middleware handle the redirect
-        router.refresh()
+        // Let the middleware handle the redirect based on user's tenant status
+        // No need to manually redirect here
       }
     } catch (err) {
       setError('An unexpected error occurred')

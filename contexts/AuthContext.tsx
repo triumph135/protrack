@@ -67,11 +67,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state changed:', event, session?.user?.id)
       setSupabaseUser(session?.user ?? null)
       
       if (session?.user) {
-        await fetchUserData(session.user.id)
+        try {
+          await fetchUserData(session.user.id)
+        } catch (error) {
+          console.error('Failed to fetch user data after auth state change:', error)
+          setUser(null)
+        }
       } else {
         setUser(null)
       }
@@ -117,15 +123,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signUp = async (email: string, password: string, userData: { name: string }) => {
     try {
+      console.log('Starting signup process with:', { email, name: userData.name })
+      
+      // First create the auth user
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
       })
-
-      if (error) throw error
-
+  
+      if (error) {
+        console.error('Supabase auth signup error:', error)
+        throw error
+      }
+  
+      console.log('Auth user created:', data.user?.id)
+  
       if (data.user) {
-        // Create user profile
+        console.log('Creating user profile in database...')
+        
+        // Create user profile in the database
         const { error: profileError } = await supabase
           .from('users')
           .insert({
@@ -147,12 +163,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               users: 'none'
             }
           })
-
-        if (profileError) throw profileError
+  
+        if (profileError) {
+          console.error('User profile creation error:', profileError)
+          // If profile creation fails, delete the auth user to maintain consistency
+          await supabase.auth.signOut()
+          throw new Error(`Failed to create user profile: ${profileError.message}`)
+        }
+  
+        console.log('User profile created successfully')
+        
+        // Fetch the created user data to set in state
+        try {
+          await fetchUserData(data.user.id)
+          console.log('User data fetched and set in context')
+        } catch (fetchError) {
+          console.error('Error fetching user data after creation:', fetchError)
+          // Don't throw here since the user was created successfully
+          // The middleware will still redirect properly
+        }
       }
-
+  
+      console.log('Signup process completed successfully')
       return { error: null }
     } catch (error) {
+      console.error('Signup process failed:', error)
       return { error: error as Error }
     }
   }
