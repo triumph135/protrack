@@ -6,11 +6,17 @@ import { Plus, BarChart3, Building, DollarSign, FileText, Users } from 'lucide-r
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
 import { useProjects } from '@/hooks/useProjects'
+import { useCosts } from '@/hooks/useCosts'
 
 export default function DashboardPage() {
   const { user } = useAuth()
   const { } = useTenant()
   const { projects, activeProject, setActiveProject, loading } = useProjects()
+  const { costs, getTotals } = useCosts(activeProject?.id)
+  
+  // Calculate cost totals
+  const costTotals = getTotals()
+  const totalCostEntries = Object.values(costs).flat().length
 
   const hasPermission = (area: string, level: 'read' | 'write' = 'read') => {
     if (!user) return false
@@ -111,7 +117,7 @@ export default function DashboardPage() {
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Contract Value</p>
               <p className="text-2xl font-semibold text-gray-900">
-                ${activeProject.totalContractValue.toLocaleString()}
+                ${activeProject.totalContractValue?.toLocaleString() || '0'}
               </p>
             </div>
           </div>
@@ -135,9 +141,14 @@ export default function DashboardPage() {
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Total Costs</p>
               <p className="text-2xl font-semibold text-gray-900">
-                $0
+                ${costTotals.total.toLocaleString()}
               </p>
-              <p className="text-xs text-gray-500">Cost tracking coming next</p>
+              <p className="text-xs text-gray-500">
+                {totalCostEntries > 0 ? 
+                  `${totalCostEntries} cost entries` : 
+                  'No costs recorded yet'
+                }
+              </p>
             </div>
           </div>
         </div>
@@ -150,7 +161,7 @@ export default function DashboardPage() {
               <p className="text-2xl font-semibold text-gray-900">
                 100%
               </p>
-              <p className="text-xs text-gray-500">No costs recorded yet</p>
+                              <p className="text-xs text-gray-500">Based on actual project data</p>
             </div>
           </div>
         </div>
