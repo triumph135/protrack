@@ -1,7 +1,13 @@
-import type { NextConfig } from "next";
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  experimental: {
+    typedRoutes: true,
+  },
+  images: {
+    domains: ['https://ugddjyrvbmwpafgasjzp.supabase.co'], 
+  },
+  // Enable strict mode for development
+  reactStrictMode: true,
+}
 
-const nextConfig: NextConfig = {
-  /* config options here */
-};
-
-export default nextConfig;
+export default nextConfig

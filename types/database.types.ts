@@ -9,124 +9,336 @@ export type Json =
 export interface Database {
   public: {
     Tables: {
-      tenants: {
+      attachments: {
         Row: {
           id: string
-          created_at: string
-          subdomain: string
-          name: string
-          email: string
-          phone: string | null
-          plan: string
-          status: string
+          tenant_id: string
+          entity_type: string
+          entity_id: string
+          file_name: string
+          file_size: number
+          file_type: string
+          storage_path: string
+          uploaded_by: string | null
+          description: string | null
+          created_at: string | null
+          updated_at: string | null
         }
         Insert: {
           id?: string
-          created_at?: string
-          subdomain: string
-          name: string
-          email: string
-          phone?: string | null
-          plan?: string
-          status?: string
+          tenant_id: string
+          entity_type: string
+          entity_id: string
+          file_name: string
+          file_size: number
+          file_type: string
+          storage_path: string
+          uploaded_by?: string | null
+          description?: string | null
+          created_at?: string | null
+          updated_at?: string | null
         }
         Update: {
           id?: string
-          created_at?: string
-          subdomain?: string
-          name?: string
-          email?: string
-          phone?: string | null
-          plan?: string
-          status?: string
+          tenant_id?: string
+          entity_type?: string
+          entity_id?: string
+          file_name?: string
+          file_size?: number
+          file_type?: string
+          storage_path?: string
+          uploaded_by?: string | null
+          description?: string | null
+          created_at?: string | null
+          updated_at?: string | null
         }
       }
-      users: {
+      audit_logs: {
         Row: {
           id: string
-          created_at: string
-          updated_at: string
           tenant_id: string | null
-          name: string
-          email: string
-          role: 'master' | 'manager' | 'entry'
-          permissions: Json
+          user_id: string | null
+          action: string
+          resource: string | null
+          resource_id: string | null
+          ip_address: string | null
+          user_agent: string | null
+          success: boolean | null
+          error_message: string | null
+          metadata: Json | null
+          created_at: string | null
         }
         Insert: {
-          id: string
-          created_at?: string
-          updated_at?: string
+          id?: string
           tenant_id?: string | null
-          name: string
-          email: string
-          role?: 'master' | 'manager' | 'entry'
-          permissions?: Json
+          user_id?: string | null
+          action: string
+          resource?: string | null
+          resource_id?: string | null
+          ip_address?: string | null
+          user_agent?: string | null
+          success?: boolean | null
+          error_message?: string | null
+          metadata?: Json | null
+          created_at?: string | null
         }
         Update: {
           id?: string
-          created_at?: string
-          updated_at?: string
           tenant_id?: string | null
+          user_id?: string | null
+          action?: string
+          resource?: string | null
+          resource_id?: string | null
+          ip_address?: string | null
+          user_agent?: string | null
+          success?: boolean | null
+          error_message?: string | null
+          metadata?: Json | null
+          created_at?: string | null
+        }
+      }
+      cap_lease_costs: {
+        Row: {
+          id: string
+          project_id: string
+          date: string
+          vendor: string
+          invoice_number: string
+          cost: number
+          in_system: boolean | null
+          created_by: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          project_id: string
+          date: string
+          vendor: string
+          invoice_number: string
+          cost: number
+          in_system?: boolean | null
+          created_by?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          project_id?: string
+          date?: string
+          vendor?: string
+          invoice_number?: string
+          cost?: number
+          in_system?: boolean | null
+          created_by?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
+      change_orders: {
+        Row: {
+          id: string
+          project_id: string
+          tenant_id: string
+          name: string
+          description: string | null
+          additional_contract_value: number | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          project_id: string
+          tenant_id: string
+          name: string
+          description?: string | null
+          additional_contract_value?: number | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          project_id?: string
+          tenant_id?: string
           name?: string
-          email?: string
-          role?: 'master' | 'manager' | 'entry'
-          permissions?: Json
+          description?: string | null
+          additional_contract_value?: number | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
+      customer_invoices: {
+        Row: {
+          id: string
+          tenant_id: string
+          project_id: string
+          invoice_number: string
+          amount: number
+          date_billed: string
+          created_at: string | null
+          updated_at: string | null
+          change_order_id: string | null
+        }
+        Insert: {
+          id?: string
+          tenant_id: string
+          project_id: string
+          invoice_number: string
+          amount: number
+          date_billed: string
+          created_at?: string | null
+          updated_at?: string | null
+          change_order_id?: string | null
+        }
+        Update: {
+          id?: string
+          tenant_id?: string
+          project_id?: string
+          invoice_number?: string
+          amount?: number
+          date_billed?: string
+          created_at?: string | null
+          updated_at?: string | null
+          change_order_id?: string | null
+        }
+      }
+      employees: {
+        Row: {
+          id: string
+          tenant_id: string
+          name: string
+          standard_rate: number
+          ot_rate: number
+          dt_rate: number
+          created_at: string | null
+          updated_at: string | null
+          project_id: string | null
+          mob: number | null
+          mob_rate: number | null
+        }
+        Insert: {
+          id?: string
+          tenant_id: string
+          name: string
+          standard_rate: number
+          ot_rate: number
+          dt_rate: number
+          created_at?: string | null
+          updated_at?: string | null
+          project_id?: string | null
+          mob?: number | null
+          mob_rate?: number | null
+        }
+        Update: {
+          id?: string
+          tenant_id?: string
+          name?: string
+          standard_rate?: number
+          ot_rate?: number
+          dt_rate?: number
+          created_at?: string | null
+          updated_at?: string | null
+          project_id?: string | null
+          mob?: number | null
+          mob_rate?: number | null
         }
       }
       projects: {
         Row: {
           id: string
-          created_at: string
-          updated_at: string
           tenant_id: string
           jobNumber: string
           jobName: string
           customer: string
-          fieldShopBoth: string
-          totalContractValue: number
-          status: string
+          fieldShopBoth: string | null
+          totalContractValue: number | null
+          status: string | null
+          created_at: string | null
+          updated_at: string | null
         }
         Insert: {
           id?: string
-          created_at?: string
-          updated_at?: string
           tenant_id: string
           jobNumber: string
           jobName: string
           customer: string
-          fieldShopBoth?: string
-          totalContractValue?: number
-          status?: string
+          fieldShopBoth?: string | null
+          totalContractValue?: number | null
+          status?: string | null
+          created_at?: string | null
+          updated_at?: string | null
         }
         Update: {
           id?: string
-          created_at?: string
-          updated_at?: string
           tenant_id?: string
           jobNumber?: string
           jobName?: string
           customer?: string
-          fieldShopBoth?: string
-          totalContractValue?: number
-          status?: string
+          fieldShopBoth?: string | null
+          totalContractValue?: number | null
+          status?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
+      project_budgets: {
+        Row: {
+          id: string
+          tenant_id: string
+          project_id: string
+          material_budget: number | null
+          labor_budget: number | null
+          equipment_budget: number | null
+          subcontractor_budget: number | null
+          others_budget: number | null
+          cap_leases_budget: number | null
+          consumable_budget: number | null
+          created_at: string | null
+          updated_at: string | null
+          updated_by: string | null
+        }
+        Insert: {
+          id?: string
+          tenant_id: string
+          project_id: string
+          material_budget?: number | null
+          labor_budget?: number | null
+          equipment_budget?: number | null
+          subcontractor_budget?: number | null
+          others_budget?: number | null
+          cap_leases_budget?: number | null
+          consumable_budget?: number | null
+          created_at?: string | null
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Update: {
+          id?: string
+          tenant_id?: string
+          project_id?: string
+          material_budget?: number | null
+          labor_budget?: number | null
+          equipment_budget?: number | null
+          subcontractor_budget?: number | null
+          others_budget?: number | null
+          cap_leases_budget?: number | null
+          consumable_budget?: number | null
+          created_at?: string | null
+          updated_at?: string | null
+          updated_by?: string | null
         }
       }
       project_costs: {
         Row: {
           id: string
-          created_at: string
-          updated_at: string
           tenant_id: string
           project_id: string
           category: string
           date: string
+          cost: number | null
           vendor: string | null
           invoice_number: string | null
-          cost: number | null
-          in_system: boolean
-          description: string | null
-          subcontractor_name: string | null
-          employee_id: string | null
+          in_system: boolean | null
           employee_name: string | null
           st_hours: number | null
           st_rate: number | null
@@ -135,82 +347,170 @@ export interface Database {
           dt_hours: number | null
           dt_rate: number | null
           per_diem: number | null
+          subcontractor_name: string | null
+          created_at: string | null
+          updated_at: string | null
+          description: string | null
+          change_order_id: string | null
+          employee_id: string | null
+          mob: number | null
           mob_qty: number | null
           mob_rate: number | null
-          change_order_id: string | null
         }
-      }
-      project_budgets: {
-        Row: {
-          id: string
-          created_at: string
-          updated_at: string
+        Insert: {
+          id?: string
           tenant_id: string
           project_id: string
-          material_budget: number
-          labor_budget: number
-          equipment_budget: number
-          subcontractor_budget: number
-          others_budget: number
-          cap_leases_budget: number
-          consumable_budget: number
+          category: string
+          date: string
+          cost?: number | null
+          vendor?: string | null
+          invoice_number?: string | null
+          in_system?: boolean | null
+          employee_name?: string | null
+          st_hours?: number | null
+          st_rate?: number | null
+          ot_hours?: number | null
+          ot_rate?: number | null
+          dt_hours?: number | null
+          dt_rate?: number | null
+          per_diem?: number | null
+          subcontractor_name?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+          description?: string | null
+          change_order_id?: string | null
+          employee_id?: string | null
+          mob?: number | null
+          mob_qty?: number | null
+          mob_rate?: number | null
+        }
+        Update: {
+          id?: string
+          tenant_id?: string
+          project_id?: string
+          category?: string
+          date?: string
+          cost?: number | null
+          vendor?: string | null
+          invoice_number?: string | null
+          in_system?: boolean | null
+          employee_name?: string | null
+          st_hours?: number | null
+          st_rate?: number | null
+          ot_hours?: number | null
+          ot_rate?: number | null
+          dt_hours?: number | null
+          dt_rate?: number | null
+          per_diem?: number | null
+          subcontractor_name?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+          description?: string | null
+          change_order_id?: string | null
+          employee_id?: string | null
+          mob?: number | null
+          mob_qty?: number | null
+          mob_rate?: number | null
         }
       }
-      customer_invoices: {
+      tenants: {
         Row: {
           id: string
-          created_at: string
-          updated_at: string
-          tenant_id: string
-          project_id: string
-          invoice_number: string
-          amount: number
-          date_billed: string
-          change_order_id: string | null
-        }
-      }
-      change_orders: {
-        Row: {
-          id: string
-          created_at: string
-          updated_at: string
-          tenant_id: string
-          project_id: string
+          subdomain: string
           name: string
-          additional_contract_value: number
-          description: string | null
+          email: string
+          phone: string | null
+          status: string | null
+          plan: string | null
+          settings: Json | null
+          created_at: string | null
+          updated_at: string | null
+          subscription_ends_at: string | null
+          billing_info: Json | null
         }
-      }
-      employees: {
-        Row: {
-          id: string
-          created_at: string
-          updated_at: string
-          tenant_id: string
-          project_id: string | null
+        Insert: {
+          id?: string
+          subdomain: string
           name: string
-          standard_rate: number
-          ot_rate: number
-          dt_rate: number
-          mob_rate: number
+          email: string
+          phone?: string | null
+          status?: string | null
+          plan?: string | null
+          settings?: Json | null
+          created_at?: string | null
+          updated_at?: string | null
+          subscription_ends_at?: string | null
+          billing_info?: Json | null
+        }
+        Update: {
+          id?: string
+          subdomain?: string
+          name?: string
+          email?: string
+          phone?: string | null
+          status?: string | null
+          plan?: string | null
+          settings?: Json | null
+          created_at?: string | null
+          updated_at?: string | null
+          subscription_ends_at?: string | null
+          billing_info?: Json | null
         }
       }
-      attachments: {
+      users: {
         Row: {
           id: string
-          created_at: string
-          updated_at: string
-          tenant_id: string
-          entity_type: string
-          entity_id: string
-          file_name: string
-          file_size: number
-          file_type: string
-          storage_path: string
-          uploaded_by: string
-          description: string | null
+          tenant_id: string | null
+          name: string
+          email: string
+          role: string
+          permissions: Json | null
+          password_hash: string | null
+          is_active: boolean | null
+          last_login: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          tenant_id?: string | null
+          name: string
+          email: string
+          role: string
+          permissions?: Json | null
+          password_hash?: string | null
+          is_active?: boolean | null
+          last_login?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          tenant_id?: string | null
+          name?: string
+          email?: string
+          role?: string
+          permissions?: Json | null
+          password_hash?: string | null
+          is_active?: boolean | null
+          last_login?: string | null
+          created_at?: string | null
+          updated_at?: string | null
         }
       }
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      [_ in never]: never
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
     }
   }
 }

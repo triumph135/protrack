@@ -1,45 +1,20 @@
 'use client'
 
 import { useState } from 'react'
-import { Building, Plus, Edit, Trash2, Play, Pause, Check } from 'lucide-react'
+import { Plus, Edit, Trash2, Building, Users, DollarSign, Calendar, Search } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useProjects } from '@/hooks/useProjects'
-
-interface ProjectFormData {
-  jobNumber: string
-  jobName: string
-  customer: string
-  fieldShopBoth: string
-  totalContractValue: string
-  status: string
-}
+import ProjectModal from '@/components/ProjectModal'
+import type { Project } from '@/types/app.types'
 
 export default function ProjectsPage() {
   const { user } = useAuth()
-  const { 
-    allProjects, 
-    activeProject, 
-    setActiveProject, 
-    loading, 
-    createProject, 
-    updateProject, 
-    updateProjectStatus, 
-    deleteProject 
-  } = useProjects()
-
-  const [statusFilter, setStatusFilter] = useState<'all' | 'Active' | 'Inactive'>('all')
+  const { projects, loading, createProject, updateProject, deleteProject, setActiveProject, activeProject } = useProjects()
   const [showModal, setShowModal] = useState(false)
-  const [editingProject, setEditingProject] = useState<any>(null)
-  const [formData, setFormData] = useState<ProjectFormData>({
-    jobNumber: '',
-    jobName: '',
-    customer: '',
-    fieldShopBoth: 'Both',
-    totalContractValue: '',
-    status: 'Active'
-  })
+  const [editingProject, setEditingProject] = useState<Project | null>(null)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
 
-  // Permission checking
   const hasPermission = (area: string, level: 'read' | 'write' = 'read') => {
     if (!user) return false
     if (user.role === 'master') return true
@@ -53,105 +28,59 @@ export default function ProjectsPage() {
     return false
   }
 
-  const canRead = hasPermission('projects', 'read')
-  const canWrite = hasPermission('projects', 'write')
-
-  // Filter projects based on status filter
-  const filteredProjects = allProjects.filter(project => {
-    if (statusFilter === 'all') return true
-    return project.status === statusFilter
+  const filteredProjects = projects.filter(project => {
+    const matchesSearch = 
+      project.jobNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      project.jobName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      project.customer.toLowerCase().includes(searchTerm.toLowerCase())
+    
+    const matchesStatus = statusFilter === 'all' || project.status === statusFilter
+    
+    return matchesSearch && matchesStatus
   })
 
-  const handleOpenModal = (project?: any) => {
-    if (project) {
-      setEditingProject(project)
-      setFormData({
-        jobNumber: project.jobNumber,
-        jobName: project.jobName,
-        customer: project.customer,
-        fieldShopBoth: project.fieldShopBoth,
-        totalContractValue: project.totalContractValue.toString(),
-        status: project.status
-      })
-    } else {
-      setEditingProject(null)
-      setFormData({
-        jobNumber: '',
-        jobName: '',
-        customer: '',
-        fieldShopBoth: 'Both',
-        totalContractValue: '',
-        status: 'Active'
-      })
-    }
+  const handleCreateProject = () => {
+    setEditingProject(null)
     setShowModal(true)
   }
 
-  const handleCloseModal = () => {
-    setShowModal(false)
-    setEditingProject(null)
-    setFormData({
-      jobNumber: '',
-      jobName: '',
-      customer: '',
-      fieldShopBoth: 'Both',
-      totalContractValue: '',
-      status: 'Active'
-    })
+  const handleEditProject = (project: Project) => {
+    setEditingProject(project)
+    setShowModal(true)
   }
 
-  const handleSave = async () => {
+  const handleDeleteProject = async (project: Project) => {
+    if (!window.confirm(`Are you sure you want to delete "${project.jobName}"? This will also delete all associated data.`)) {
+      return
+    }
+
     try {
-      const projectData = {
-        jobNumber: formData.jobNumber,
-        jobName: formData.jobName,
-        customer: formData.customer,
-        fieldShopBoth: formData.fieldShopBoth,
-        totalContractValue: parseFloat(formData.totalContractValue) || 0,
-        status: formData.status
-      }
-
-      if (editingProject) {
-        await updateProject(editingProject.id, projectData)
-      } else {
-        await createProject(projectData)
-      }
-
-      handleCloseModal()
+      await deleteProject(project.id)
     } catch (error) {
-      console.error('Error saving project:', error)
-      alert('Error saving project: ' + (error as Error).message)
+      console.error('Error deleting project:', error)
+      alert('Error deleting project. Please try again.')
     }
   }
 
-  const handleStatusChange = async (projectId: string, newStatus: string) => {
-    try {
-      await updateProjectStatus(projectId, newStatus)
-    } catch (error) {
-      console.error('Error updating status:', error)
-      alert('Error updating status: ' + (error as Error).message)
+  const handleSubmitProject = async (projectData: Omit<Project, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>) => {
+    if (editingProject) {
+      await updateProject(editingProject.id, projectData)
+    } else {
+      await createProject(projectData)
     }
   }
 
-  const handleDelete = async (projectId: string, projectName: string) => {
-    if (window.confirm(`Are you sure you want to delete "${projectName}"? This will delete all associated data.`)) {
-      try {
-        await deleteProject(projectId)
-      } catch (error) {
-        console.error('Error deleting project:', error)
-        alert('Error deleting project: ' + (error as Error).message)
-      }
-    }
-  }
-
-  const handleSetActive = (project: any) => {
+  const handleSetActiveProject = (project: Project) => {
     setActiveProject(project)
   }
 
-  if (!canRead) {
+  if (loading) {
     return (
-      <div className="bg-white p-6 rounded-lg shadow-md text-center">
-        <p className="text-gray-500">You don't have permission to view projects.</p>
+      <div className="space-y-6">
+        <div className="bg-white p-6 rounded-lg shadow-md text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading projects...</p>
+        </div>
       </div>
     )
   }
@@ -159,289 +88,171 @@ export default function ProjectsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-white overflow-hidden shadow rounded-lg">
-        <div className="p-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <Building className="h-8 w-8 text-gray-400 mr-3" />
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">Projects</h1>
-                <p className="text-gray-600">Manage your construction projects</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-4">
-              {/* Active Project Display */}
-              {activeProject && (
-                <div className="text-sm">
-                  <span className="text-gray-500">Active: </span>
-                  <span className="font-medium text-blue-600">
-                    {activeProject.jobNumber} - {activeProject.jobName}
-                  </span>
-                </div>
-              )}
-              {canWrite && (
-                <button 
-                  onClick={() => handleOpenModal()}
-                  className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 gap-2"
-                >
-                  <Plus className="w-5 h-5" />
-                  New Project
-                </button>
-              )}
-            </div>
-          </div>
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Projects</h1>
+          <p className="text-gray-600">Manage your construction projects</p>
         </div>
-      </div>
-
-      {/* Filters */}
-      <div className="bg-white p-4 rounded-lg shadow-md">
-        <div className="flex items-center gap-4">
-          <label className="text-sm font-medium text-gray-700">Status Filter:</label>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as any)}
-            className="px-3 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+        {hasPermission('projects', 'write') && (
+          <button
+            onClick={handleCreateProject}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center gap-2 transition-colors"
           >
-            <option value="all">All Projects</option>
-            <option value="Active">Active</option>
-            <option value="Inactive">Inactive</option>
-          </select>
-          <span className="text-sm text-gray-500">
-            ({filteredProjects.length} project{filteredProjects.length !== 1 ? 's' : ''})
-          </span>
-        </div>
-      </div>
-
-      {/* Projects Table */}
-      <div className="bg-white shadow rounded-lg overflow-hidden">
-        {loading ? (
-          <div className="p-8 text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="mt-2 text-gray-600">Loading projects...</p>
-          </div>
-        ) : filteredProjects.length === 0 ? (
-          <div className="p-8 text-center">
-            <Building className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No projects found</h3>
-            <p className="text-gray-500 mb-4">
-              {statusFilter === 'all' 
-                ? "You haven't created any projects yet." 
-                : `No ${statusFilter.toLowerCase()} projects found.`}
-            </p>
-            {canWrite && (
-              <button 
-                onClick={() => handleOpenModal()}
-                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 gap-2"
-              >
-                <Plus className="w-5 h-5" />
-                Create Your First Project
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Active
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Job Number
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Project Name
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Customer
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Type
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Contract Value
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredProjects.map((project) => (
-                  <tr key={project.id} className={activeProject?.id === project.id ? 'bg-blue-50' : ''}>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <button
-                        onClick={() => handleSetActive(project)}
-                        className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
-                          activeProject?.id === project.id 
-                            ? 'bg-blue-600 border-blue-600' 
-                            : 'border-gray-300 hover:border-blue-400'
-                        }`}
-                      >
-                        {activeProject?.id === project.id && (
-                          <Check className="w-4 h-4 text-white" />
-                        )}
-                      </button>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {project.jobNumber}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {project.jobName}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {project.customer}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {project.fieldShopBoth}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      ${project.totalContractValue.toLocaleString()}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                        project.status === 'Active' 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-gray-100 text-gray-800'
-                      }`}>
-                        {project.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <div className="flex items-center gap-2">
-                        {canWrite && (
-                          <>
-                            <button
-                              onClick={() => handleOpenModal(project)}
-                              className="text-blue-600 hover:text-blue-900"
-                              title="Edit Project"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleStatusChange(
-                                project.id, 
-                                project.status === 'Active' ? 'Inactive' : 'Active'
-                              )}
-                              className={project.status === 'Active' ? 'text-orange-600 hover:text-orange-900' : 'text-green-600 hover:text-green-900'}
-                              title={project.status === 'Active' ? 'Deactivate' : 'Activate'}
-                            >
-                              {project.status === 'Active' ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                            </button>
-                            <button
-                              onClick={() => handleDelete(project.id, project.jobName)}
-                              className="text-red-600 hover:text-red-900"
-                              title="Delete Project"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+            <Plus className="w-4 h-4" />
+            New Project
+          </button>
         )}
       </div>
 
-      {/* Project Modal */}
-      {showModal && canWrite && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg w-full max-w-md">
-            <h3 className="text-lg font-semibold mb-4">
-              {editingProject ? 'Edit Project' : 'New Project'}
-            </h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Job Number</label>
-                <input
-                  type="text"
-                  value={formData.jobNumber}
-                  onChange={(e) => setFormData({...formData, jobNumber: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., 2024-001"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Project Name</label>
-                <input
-                  type="text"
-                  value={formData.jobName}
-                  onChange={(e) => setFormData({...formData, jobName: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., Office Building Construction"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Customer</label>
-                <input
-                  type="text"
-                  value={formData.customer}
-                  onChange={(e) => setFormData({...formData, customer: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., ABC Corporation"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-                <select
-                  value={formData.fieldShopBoth}
-                  onChange={(e) => setFormData({...formData, fieldShopBoth: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="Field">Field</option>
-                  <option value="Shop">Shop</option>
-                  <option value="Both">Both</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Total Contract Value</label>
-                <input
-                  type="number"
-                  value={formData.totalContractValue}
-                  onChange={(e) => setFormData({...formData, totalContractValue: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="0"
-                  min="0"
-                  step="0.01"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                <select
-                  value={formData.status}
-                  onChange={(e) => setFormData({...formData, status: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="Active">Active</option>
-                  <option value="Inactive">Inactive</option>
-                </select>
-              </div>
-            </div>
-            <div className="flex justify-end gap-3 mt-6">
-              <button
-                onClick={handleCloseModal}
-                className="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={!formData.jobNumber || !formData.jobName || !formData.customer}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {editingProject ? 'Update' : 'Create'} Project
-              </button>
-            </div>
+      {/* Filters */}
+      <div className="bg-white p-6 rounded-lg shadow-md">
+        <div className="flex flex-col sm:flex-row gap-4">
+          {/* Search */}
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search projects..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
           </div>
+
+          {/* Status Filter */}
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="all">All Status</option>
+            <option value="Active">Active</option>
+            <option value="On Hold">On Hold</option>
+            <option value="Completed">Completed</option>
+            <option value="Cancelled">Cancelled</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Projects List */}
+      {filteredProjects.length === 0 ? (
+        <div className="bg-white p-12 rounded-lg shadow-md text-center">
+          <Building className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">
+            {projects.length === 0 ? 'No projects yet' : 'No projects match your filters'}
+          </h3>
+          <p className="text-gray-600 mb-6">
+            {projects.length === 0 
+              ? 'Get started by creating your first project.' 
+              : 'Try adjusting your search or filter criteria.'}
+          </p>
+          {hasPermission('projects', 'write') && projects.length === 0 && (
+            <button
+              onClick={handleCreateProject}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center gap-2 mx-auto transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              Create Your First Project
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {filteredProjects.map((project) => (
+            <div
+              key={project.id}
+              className={`bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow cursor-pointer ${
+                activeProject?.id === project.id ? 'ring-2 ring-blue-500' : ''
+              }`}
+              onClick={() => handleSetActiveProject(project)}
+            >
+              {/* Project Header */}
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                    {project.jobName}
+                  </h3>
+                  <p className="text-sm text-gray-600">#{project.jobNumber}</p>
+                </div>
+                <div className="flex space-x-2">
+                  {hasPermission('projects', 'write') && (
+                    <>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleEditProject(project)
+                        }}
+                        className="text-gray-400 hover:text-blue-600 transition-colors"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleDeleteProject(project)
+                        }}
+                        className="text-gray-400 hover:text-red-600 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Project Details */}
+              <div className="space-y-3">
+                <div className="flex items-center text-sm text-gray-600">
+                  <Users className="w-4 h-4 mr-2" />
+                  {project.customer}
+                </div>
+                
+                {project.totalContractValue && (
+                  <div className="flex items-center text-sm text-gray-600">
+                    <DollarSign className="w-4 h-4 mr-2" />
+                    ${project.totalContractValue.toLocaleString()}
+                  </div>
+                )}
+
+                <div className="flex items-center text-sm text-gray-600">
+                  <Calendar className="w-4 h-4 mr-2" />
+                  Created {new Date(project.created_at || '').toLocaleDateString()}
+                </div>
+              </div>
+
+              {/* Status Badge */}
+              <div className="mt-4 flex justify-between items-center">
+                <span
+                  className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                    project.status === 'Active'
+                      ? 'bg-green-100 text-green-800'
+                      : project.status === 'On Hold'
+                      ? 'bg-yellow-100 text-yellow-800'
+                      : project.status === 'Completed'
+                      ? 'bg-blue-100 text-blue-800'
+                      : 'bg-red-100 text-red-800'
+                  }`}
+                >
+                  {project.status}
+                </span>
+                
+                {activeProject?.id === project.id && (
+                  <span className="text-xs text-blue-600 font-medium">Active Project</span>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       )}
+
+      {/* Project Modal */}
+      <ProjectModal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        onSubmit={handleSubmitProject}
+        project={editingProject}
+        loading={loading}
+      />
     </div>
   )
 }

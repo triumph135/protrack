@@ -9,7 +9,7 @@ import { useProjects } from '@/hooks/useProjects'
 
 export default function DashboardPage() {
   const { user } = useAuth()
-  const { tenant } = useTenant()
+  const { } = useTenant()
   const { projects, activeProject, setActiveProject, loading } = useProjects()
 
   const hasPermission = (area: string, level: 'read' | 'write' = 'read') => {

@@ -1,168 +1,131 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase'
+import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
-import { tenantDbService } from '@/lib/tenantDbService'
-
-interface Project {
-  id: string
-  jobNumber: string
-  jobName: string
-  customer: string
-  fieldShopBoth: string
-  totalContractValue: number
-  status: string
-  tenant_id: string
-  created_at: string
-  updated_at: string
-}
+import type { Project } from '@/types/app.types'
 
 export function useProjects() {
   const [projects, setProjects] = useState<Project[]>([])
-  const [allProjects, setAllProjects] = useState<Project[]>([])
   const [activeProject, setActiveProject] = useState<Project | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  
+  const { user } = useAuth()
   const { tenant } = useTenant()
+  const supabase = createClient()
 
-  // Set tenant context when available
+  // Load projects on component mount
   useEffect(() => {
-    if (tenant?.id) {
-      tenantDbService.setTenant(tenant.id)
+    if (user && tenant) {
       loadProjects()
     }
-  }, [tenant])
+  }, [user, tenant])
+
+  // Load active project from localStorage
+  useEffect(() => {
+    if (projects.length > 0 && !activeProject) {
+      const savedActiveProjectId = localStorage.getItem(`protrack_active_project_${tenant?.id}`)
+      if (savedActiveProjectId) {
+        const savedProject = projects.find(p => p.id === savedActiveProjectId)
+        if (savedProject) {
+          setActiveProject(savedProject)
+        } else {
+          setActiveProject(projects[0])
+        }
+      } else {
+        setActiveProject(projects[0])
+      }
+    }
+  }, [projects, activeProject, tenant])
+
+  // Save active project to localStorage
+  useEffect(() => {
+    if (activeProject && tenant) {
+      localStorage.setItem(`protrack_active_project_${tenant.id}`, activeProject.id)
+    }
+  }, [activeProject, tenant])
 
   const loadProjects = async () => {
     try {
       setLoading(true)
-      
-      // Load active projects
-      const activeProjects = await tenantDbService.projects.getAll(false)
-      setProjects(activeProjects)
-      
-      // Load all projects (including inactive)
-      const allProjectsData = await tenantDbService.projects.getAllWithStatus()
-      setAllProjects(allProjectsData)
-      
-      // Set active project if none selected and projects exist
-      if (!activeProject && activeProjects.length > 0) {
-        setActiveProject(activeProjects[0])
-      }
-    } catch (error) {
-      console.error('Error loading projects:', error)
+      setError(null)
+
+      const { data, error: fetchError } = await supabase
+        .from('projects')
+        .select('*')
+        .eq('tenant_id', tenant?.id)
+        .eq('status', 'Active')
+        .order('created_at', { ascending: false })
+
+      if (fetchError) throw fetchError
+
+      setProjects(data || [])
+    } catch (err: any) {
+      console.error('Error loading projects:', err)
+      setError(err.message)
     } finally {
       setLoading(false)
     }
   }
 
-  const createProject = async (projectData: {
-    jobNumber: string
-    jobName: string
-    customer: string
-    fieldShopBoth: string
-    totalContractValue: number
-    status?: string
-  }) => {
+  const createProject = async (projectData: Omit<Project, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>) => {
     try {
       setLoading(true)
-      const newProject = await tenantDbService.projects.create(projectData)
       
-      // Update project lists
-      setAllProjects(prev => [newProject, ...prev])
-      if (newProject.status === 'Active') {
-        setProjects(prev => [newProject, ...prev])
-        // Set as active project if no active project exists
-        if (!activeProject) {
-          setActiveProject(newProject)
-        }
+      const newProject = {
+        ...projectData,
+        tenant_id: tenant?.id,
+        status: 'Active'
       }
+
+      const { data, error } = await supabase
+        .from('projects')
+        .insert([newProject])
+        .select()
+        .single()
+
+      if (error) throw error
+
+      setProjects(prev => [data, ...prev])
+      setActiveProject(data)
       
-      return newProject
-    } catch (error) {
-      console.error('Error creating project:', error)
-      throw error
+      return data
+    } catch (err: any) {
+      console.error('Error creating project:', err)
+      setError(err.message)
+      throw err
     } finally {
       setLoading(false)
     }
   }
 
-  const updateProject = async (projectId: string, updates: Partial<{
-    jobNumber: string
-    jobName: string
-    customer: string
-    fieldShopBoth: string
-    totalContractValue: number
-    status: string
-  }>) => {
+  const updateProject = async (projectId: string, updates: Partial<Project>) => {
     try {
       setLoading(true)
-      const updatedProject = await tenantDbService.projects.update(projectId, updates)
+
+      const { data, error } = await supabase
+        .from('projects')
+        .update(updates)
+        .eq('id', projectId)
+        .eq('tenant_id', tenant?.id)
+        .select()
+        .single()
+
+      if (error) throw error
+
+      setProjects(prev => prev.map(p => p.id === projectId ? data : p))
       
-      // Update project lists
-      setAllProjects(prev => prev.map(p => p.id === projectId ? updatedProject : p))
-      
-      // Update active projects list based on status
-      if (updatedProject.status === 'Active') {
-        setProjects(prev => {
-          const existing = prev.find(p => p.id === projectId)
-          if (existing) {
-            return prev.map(p => p.id === projectId ? updatedProject : p)
-          } else {
-            return [updatedProject, ...prev]
-          }
-        })
-      } else {
-        setProjects(prev => prev.filter(p => p.id !== projectId))
-        // If the updated project was active, select a new one
-        if (activeProject?.id === projectId) {
-          const remainingActiveProjects = await tenantDbService.projects.getAll(false)
-          setActiveProject(remainingActiveProjects[0] || null)
-        }
-      }
-      
-      // Update active project if it was the one being edited
       if (activeProject?.id === projectId) {
-        setActiveProject(updatedProject)
+        setActiveProject(data)
       }
-      
-      return updatedProject
-    } catch (error) {
-      console.error('Error updating project:', error)
-      throw error
-    } finally {
-      setLoading(false)
-    }
-  }
 
-  const updateProjectStatus = async (projectId: string, status: string) => {
-    try {
-      setLoading(true)
-      const updatedProject = await tenantDbService.projects.updateStatus(projectId, status)
-      
-      // Update project lists
-      setAllProjects(prev => prev.map(p => p.id === projectId ? updatedProject : p))
-      
-      if (status === 'Active') {
-        setProjects(prev => {
-          const existing = prev.find(p => p.id === projectId)
-          if (!existing) {
-            return [updatedProject, ...prev]
-          }
-          return prev.map(p => p.id === projectId ? updatedProject : p)
-        })
-      } else {
-        setProjects(prev => prev.filter(p => p.id !== projectId))
-        // If the deactivated project was active, select a new one
-        if (activeProject?.id === projectId) {
-          const remainingActiveProjects = await tenantDbService.projects.getAll(false)
-          setActiveProject(remainingActiveProjects[0] || null)
-        }
-      }
-      
-      return updatedProject
-    } catch (error) {
-      console.error('Error updating project status:', error)
-      throw error
+      return data
+    } catch (err: any) {
+      console.error('Error updating project:', err)
+      setError(err.message)
+      throw err
     } finally {
       setLoading(false)
     }
@@ -171,35 +134,45 @@ export function useProjects() {
   const deleteProject = async (projectId: string) => {
     try {
       setLoading(true)
-      await tenantDbService.projects.delete(projectId)
-      
-      // Remove from all lists
-      setAllProjects(prev => prev.filter(p => p.id !== projectId))
+
+      const { error } = await supabase
+        .from('projects')
+        .delete()
+        .eq('id', projectId)
+        .eq('tenant_id', tenant?.id)
+
+      if (error) throw error
+
       setProjects(prev => prev.filter(p => p.id !== projectId))
       
-      // If deleted project was active, select a new one
       if (activeProject?.id === projectId) {
-        const remainingActiveProjects = await tenantDbService.projects.getAll(false)
-        setActiveProject(remainingActiveProjects[0] || null)
+        const remainingProjects = projects.filter(p => p.id !== projectId)
+        setActiveProject(remainingProjects[0] || null)
       }
-    } catch (error) {
-      console.error('Error deleting project:', error)
-      throw error
+
+      return true
+    } catch (err: any) {
+      console.error('Error deleting project:', err)
+      setError(err.message)
+      throw err
     } finally {
       setLoading(false)
     }
   }
 
+  const changeActiveProject = (project: Project) => {
+    setActiveProject(project)
+  }
+
   return {
     projects,
-    allProjects,
     activeProject,
-    setActiveProject,
     loading,
+    error,
+    loadProjects,
     createProject,
     updateProject,
-    updateProjectStatus,
     deleteProject,
-    refreshProjects: loadProjects
+    setActiveProject: changeActiveProject
   }
 }

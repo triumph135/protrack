@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Building, Mail, Phone, CreditCard, Loader2 } from 'lucide-react'
+import { Building, Mail, Phone, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import AuthGuard from '@/components/auth/AuthGuard'
