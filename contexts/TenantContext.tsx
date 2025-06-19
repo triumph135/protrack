@@ -25,20 +25,48 @@ const TenantContext = createContext<TenantContextType | undefined>(undefined)
 export function TenantProvider({ children }: { children: ReactNode }) {
   const [tenant, setTenant] = useState<Tenant | null>(null)
   const [loading, setLoading] = useState(true)
-  const { user } = useAuth()
+  const [initialized, setInitialized] = useState(false)
+  const [lastUserId, setLastUserId] = useState<string | null>(null)
+  const { user, loading: authLoading } = useAuth()
   const supabase = createClient()
 
   const refreshTenant = async () => {
     console.log('TenantContext: refreshTenant called', { 
       user: !!user, 
       userEmail: user?.email, 
-      tenantId: user?.tenant_id 
+      tenantId: user?.tenant_id,
+      authLoading,
+      initialized
     })
 
-    if (!user?.tenant_id) {
-      console.log('TenantContext: No tenant_id found, setting tenant to null')
-      setTenant(null)
-      setLoading(false)
+    // If auth is still loading, wait
+    if (authLoading) {
+      console.log('TenantContext: Auth still loading, waiting...')
+      return
+    }
+
+    // If no user, clear tenant and finish loading
+    if (!user) {
+      console.log('TenantContext: No user, clearing tenant')
+      if (tenant !== null) setTenant(null)
+      if (loading) setLoading(false)
+      if (!initialized) setInitialized(true)
+      return
+    }
+
+    // If user has no tenant_id, they have no tenant
+    if (!user.tenant_id) {
+      console.log('TenantContext: User has no tenant_id')
+      if (tenant !== null) setTenant(null)
+      if (loading) setLoading(false)
+      if (!initialized) setInitialized(true)
+      return
+    }
+
+    // If we already have the correct tenant, don't reload
+    if (tenant && tenant.id === user.tenant_id && initialized) {
+      console.log('TenantContext: Tenant already loaded and current, no reload needed')
+      if (loading) setLoading(false)
       return
     }
 
@@ -62,10 +90,11 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       setTenant(data)
     } catch (error) {
       console.error('TenantContext: Error fetching tenant:', error)
-      setTenant(null)
+      if (tenant !== null) setTenant(null)
     } finally {
-      console.log('TenantContext: Setting loading to false')
-      setLoading(false)
+      console.log('TenantContext: Setting loading to false and initialized to true')
+      if (loading) setLoading(false)
+      if (!initialized) setInitialized(true)
     }
   }
 
@@ -73,18 +102,42 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     console.log('TenantContext: useEffect triggered', { 
       user: !!user, 
       userEmail: user?.email,
-      tenantId: user?.tenant_id 
+      tenantId: user?.tenant_id,
+      authLoading,
+      initialized,
+      hasCurrentTenant: !!tenant,
+      lastUserId,
+      currentUserId: user?.id
     })
     
-    // Reset loading state when user changes
-    setLoading(true)
-    refreshTenant()
-  }, [user?.id, user?.tenant_id]) // Depend on both user.id and user.tenant_id specifically
+    // Check if user actually changed (including null -> user, user -> null, user1 -> user2)
+    const userChanged = lastUserId !== (user?.id || null)
+    const needsInitialization = !initialized && !authLoading
+    
+    if (needsInitialization || (userChanged && !authLoading)) {
+      console.log('TenantContext: Refreshing tenant data', { 
+        needsInitialization, 
+        userChanged, 
+        lastUserId, 
+        currentUserId: user?.id 
+      })
+      
+      // Update the tracked user ID
+      setLastUserId(user?.id || null)
+      
+      if (!initialized) setLoading(true)
+      refreshTenant()
+    } else {
+      console.log('TenantContext: No refresh needed')
+    }
+  }, [user?.id, user?.tenant_id, authLoading])
 
   console.log('TenantContext: Rendering with state:', { 
     tenant: !!tenant, 
     tenantName: tenant?.name, 
-    loading 
+    loading,
+    authLoading,
+    initialized
   })
 
   return (

@@ -45,9 +45,14 @@ export default function CostEntryForm({
       setFormData(editItem)
     } else {
       // Set default values
+      const today = new Date()
+      const localDateString = today.getFullYear() + '-' + 
+        String(today.getMonth() + 1).padStart(2, '0') + '-' + 
+        String(today.getDate()).padStart(2, '0')
+      
       const defaultData: Partial<ProjectCost> = {
         project_id: projectId,
-        date: new Date().toISOString().split('T')[0],
+        date: localDateString,
         change_order_id: undefined
       }
 
@@ -97,6 +102,7 @@ export default function CostEntryForm({
           { name: 'date', label: 'Date', type: 'date', required: true },
           { name: 'vendor', label: 'Vendor', type: 'text', required: true },
           { name: 'invoice_number', label: 'Invoice Number', type: 'text', required: true },
+          { name: 'description', label: 'Description', type: 'text' },
           { name: 'cost', label: 'Cost', type: 'number', required: true, step: '0.01', min: '0' },
           { name: 'in_system', label: 'In System', type: 'checkbox' }
         ]
@@ -131,6 +137,7 @@ export default function CostEntryForm({
           { name: 'date', label: 'Date', type: 'date', required: true },
           { name: 'vendor', label: 'Vendor', type: 'text', required: true },
           { name: 'invoice_number', label: 'Invoice Number', type: 'text', required: true },
+          { name: 'description', label: 'Description', type: 'text' },
           { name: 'cost', label: 'Cost', type: 'number', required: true, step: '0.01', min: '0' },
           { name: 'in_system', label: 'In System', type: 'checkbox' }
         ]
@@ -141,6 +148,7 @@ export default function CostEntryForm({
           { name: 'date', label: 'Date', type: 'date', required: true },
           { name: 'vendor', label: 'Vendor', type: 'text', required: true },
           { name: 'invoice_number', label: 'Invoice Number', type: 'text', required: true },
+          { name: 'description', label: 'Description', type: 'text' },
           { name: 'cost', label: 'Cost', type: 'number', required: true, step: '0.01', min: '0' },
           { name: 'in_system', label: 'In System', type: 'checkbox' }
         ]

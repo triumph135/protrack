@@ -23,6 +23,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [initialized, setInitialized] = useState(false)
+  const [isProcessingAuth, setIsProcessingAuth] = useState(false)
+  const [isInitializing, setIsInitializing] = useState(false)
   const router = useRouter()
   const supabase = createClient()
 
@@ -42,6 +44,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (error.code === 'PGRST116') {
           console.log('User profile not found in database')
         }
+        console.log('fetchUserData completed with error')
         return null
       }
 
@@ -58,12 +61,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const userData = data as User
         setUser(userData)
         console.log('User set in context:', userData.email)
+        console.log('fetchUserData completed successfully')
         return userData
       }
       
+      console.log('fetchUserData completed with no data')
       return null
     } catch (error) {
       console.error('fetchUserData error:', error)
+      console.log('fetchUserData completed with exception')
       return null
     }
   }
@@ -72,23 +78,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let mounted = true
 
     const initializeAuth = async () => {
+      // Only initialize once ever
+      if (initialized) {
+        console.log('Auth already initialized, skipping')
+        return
+      }
+
       try {
         console.log('Initializing auth...')
+        setIsInitializing(true)
         
-        // Set a timeout to ensure loading doesn't get stuck
-        const timeoutId = setTimeout(() => {
-          if (mounted) {
-            console.log('Auth initialization timeout - setting loading to false')
-            setLoading(false)
-            setInitialized(true)
-          }
-        }, 5000) // 5 second timeout
-
         // Get initial session
         const { data: { session }, error } = await supabase.auth.getSession()
-        
-        // Clear the timeout since we got a response
-        clearTimeout(timeoutId)
         
         if (!mounted) return
 
@@ -109,46 +110,82 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(null)
         }
 
+        console.log('Auth initialization completed, setting loading to false')
         setLoading(false)
         setInitialized(true)
+        setIsInitializing(false)
 
       } catch (error) {
         console.error('Error initializing auth:', error)
         if (mounted) {
+          console.log('Auth initialization failed, setting loading to false')
           setLoading(false)
           setInitialized(true)
+          setIsInitializing(false)
         }
       }
     }
 
-    // Only initialize once
-    if (!initialized) {
-      initializeAuth()
-    }
+    // Initialize auth
+    initializeAuth()
 
-    // Set up auth state listener
+    // Set up auth state listener - but only for actual sign in/out events
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state changed:', event)
+      console.log('Auth state changed:', event, 'mounted:', mounted, 'initialized:', initialized, 'isProcessingAuth:', isProcessingAuth)
       
       if (!mounted) return
 
-      try {
-        if (session?.user) {
-          console.log('User signed in:', session.user.email)
-          setSupabaseUser(session.user)
-          await fetchUserData(session.user.id)
-        } else {
-          console.log('User signed out')
-          setSupabaseUser(null)
-          setUser(null)
-        }
-      } catch (error) {
-        console.error('Error handling auth state change:', error)
+      // Prevent concurrent auth processing
+      if (isProcessingAuth) {
+        console.log('Auth processing already in progress, skipping event:', event)
+        return
       }
 
-      // Always ensure loading is false after auth state change
-      if (initialized) {
+      // Only handle explicit sign in/out events, not token refreshes or initial sessions during initialization
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+        // Only skip SIGNED_IN events if initializeAuth is currently running
+        if (event === 'SIGNED_IN' && isInitializing) {
+          console.log('Skipping SIGNED_IN event during initializeAuth (to prevent duplicates)')
+          return
+        }
+
+        setIsProcessingAuth(true)
+        try {
+          if (session?.user && event === 'SIGNED_IN') {
+            console.log('User signed in:', session.user.email)
+            setSupabaseUser(session.user)
+            console.log('Starting fetchUserData with timeout protection...')
+            
+            // Add timeout protection to prevent infinite hanging
+            const fetchWithTimeout = Promise.race([
+              fetchUserData(session.user.id),
+              new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('fetchUserData timeout')), 10000)
+              )
+            ])
+            
+            await fetchWithTimeout
+            console.log('fetchUserData completed successfully in auth state change')
+          } else if (event === 'SIGNED_OUT') {
+            console.log('User signed out')
+            setSupabaseUser(null)
+            setUser(null)
+            // Reset initialized state so that next sign in will trigger initializeAuth
+            setInitialized(false)
+            console.log('Reset initialized state for next sign in')
+          }
+        } catch (error) {
+          console.error('Error handling auth state change:', error)
+          // If fetchUserData fails or times out, still set loading to false
+          console.log('Continuing despite fetchUserData error...')
+        } finally {
+          setIsProcessingAuth(false)
+        }
+
+        console.log('Auth state change completed, setting loading to false')
         setLoading(false)
+      } else {
+        console.log('Ignoring auth event:', event, '(not a sign in/out)')
       }
     })
 
@@ -156,7 +193,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       mounted = false
       subscription.unsubscribe()
     }
-  }, [initialized]) // Only depend on initialized
+  }, []) // Empty dependency array - only run once
 
   const signIn = async (email: string, password: string) => {
     try {
