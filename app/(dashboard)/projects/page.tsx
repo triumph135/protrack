@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Plus, Edit, Trash2, Building, Users, DollarSign, Calendar, Search, Eye, FileText, ChevronDown, ChevronRight } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
-import { useProjects } from '@/hooks/useProjects'
+import { useProjects } from '@/contexts/ProjectContext'
 import { useChangeOrders } from '@/hooks/useChangeOrders'
 import ProjectModal from '@/components/ProjectModal'
 import type { Project, ChangeOrder } from '@/types/app.types'

@@ -1,51 +1,82 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import React, { createContext, useContext, useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
 import type { Project } from '@/types/app.types'
 
+interface ProjectContextType {
+  projects: Project[]
+  activeProject: Project | null
+  loading: boolean
+  error: string | null
+  setActiveProject: (project: Project) => void
+  loadProjects: () => Promise<void>
+  createProject: (projectData: Omit<Project, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>) => Promise<Project>
+  updateProject: (projectId: string, updates: Partial<Project>) => Promise<Project>
+  deleteProject: (projectId: string) => Promise<boolean>
+}
+
+const ProjectContext = createContext<ProjectContextType | undefined>(undefined)
+
 export function useProjects() {
+  const context = useContext(ProjectContext)
+  if (context === undefined) {
+    throw new Error('useProjects must be used within a ProjectProvider')
+  }
+  return context
+}
+
+interface ProjectProviderProps {
+  children: React.ReactNode
+}
+
+export function ProjectProvider({ children }: ProjectProviderProps) {
   const [projects, setProjects] = useState<Project[]>([])
-  const [activeProject, setActiveProject] = useState<Project | null>(null)
+  const [activeProject, setActiveProjectState] = useState<Project | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  
+
   const { user } = useAuth()
   const { tenant } = useTenant()
   const supabase = createClient()
 
-  // Load projects on component mount
+  // Load projects when user and tenant are available
   useEffect(() => {
     if (user && tenant) {
       loadProjects()
     }
   }, [user, tenant])
 
-  // Load active project from localStorage
+  // Set active project when projects load
   useEffect(() => {
     if (projects.length > 0 && !activeProject) {
+      // Try to load from localStorage first
       const savedActiveProjectId = localStorage.getItem(`protrack_active_project_${tenant?.id}`)
+      let projectToSet: Project | null = null
+      
       if (savedActiveProjectId) {
-        const savedProject = projects.find(p => p.id === savedActiveProjectId)
-        if (savedProject) {
-          setActiveProject(savedProject)
-        } else {
-          setActiveProject(projects[0])
-        }
-      } else {
-        setActiveProject(projects[0])
+        projectToSet = projects.find(p => p.id === savedActiveProjectId) || null
+      }
+      
+      // Fallback to first project if no saved project found
+      if (!projectToSet) {
+        projectToSet = projects[0]
+      }
+      
+      if (projectToSet) {
+        setActiveProjectState(projectToSet)
       }
     }
-  }, [projects, activeProject, tenant])
+  }, [projects, activeProject, tenant?.id])
 
-  // Save active project to localStorage
+  // Save active project to localStorage when it changes
   useEffect(() => {
-    if (activeProject && tenant) {
+    if (activeProject && tenant?.id) {
       localStorage.setItem(`protrack_active_project_${tenant.id}`, activeProject.id)
     }
-  }, [activeProject, tenant])
+  }, [activeProject, tenant?.id])
 
   const loadProjects = async () => {
     try {
@@ -89,7 +120,7 @@ export function useProjects() {
       if (error) throw error
 
       setProjects(prev => [data, ...prev])
-      setActiveProject(data)
+      setActiveProjectState(data)
       
       return data
     } catch (err: any) {
@@ -118,7 +149,7 @@ export function useProjects() {
       setProjects(prev => prev.map(p => p.id === projectId ? data : p))
       
       if (activeProject?.id === projectId) {
-        setActiveProject(data)
+        setActiveProjectState(data)
       }
 
       return data
@@ -147,7 +178,7 @@ export function useProjects() {
       
       if (activeProject?.id === projectId) {
         const remainingProjects = projects.filter(p => p.id !== projectId)
-        setActiveProject(remainingProjects[0] || null)
+        setActiveProjectState(remainingProjects[0] || null)
       }
 
       return true
@@ -160,19 +191,26 @@ export function useProjects() {
     }
   }
 
-  const changeActiveProject = (project: Project) => {
-    setActiveProject(project)
+  const setActiveProject = (project: Project) => {
+    console.log('ProjectContext: setActiveProject called - changing from:', activeProject?.jobName, 'to:', project.jobName)
+    setActiveProjectState(project)
   }
 
-  return {
+  const value: ProjectContextType = {
     projects,
     activeProject,
     loading,
     error,
+    setActiveProject,
     loadProjects,
     createProject,
     updateProject,
-    deleteProject,
-    setActiveProject: changeActiveProject
+    deleteProject
   }
-}
+
+  return (
+    <ProjectContext.Provider value={value}>
+      {children}
+    </ProjectContext.Provider>
+  )
+} 

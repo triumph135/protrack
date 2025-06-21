@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Plus, Edit, Trash2, DollarSign, Users, Search, Lock, Download, Filter } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
-import { useProjects } from '@/hooks/useProjects'
+import { useProjects } from '@/contexts/ProjectContext'
 import { useCosts, type CostCategory } from '@/hooks/useCosts'
 import { useBudgets } from '@/hooks/useBudgets'
 import { useChangeOrders } from '@/hooks/useChangeOrders'
@@ -46,16 +46,15 @@ function CostsContent() {
     }
   }, [activeProject?.id, tenant?.id])
 
-  // Reload costs when project or change order selection changes
+  // Load costs for the specific category when category changes
   useEffect(() => {
     if (activeProject?.id) {
-      console.log('Reloading costs for project:', activeProject.id, 'change order:', selectedChangeOrderId, 'category:', category)
       loadCostsByCategory(category, {
         projectId: activeProject.id,
         changeOrderId: selectedChangeOrderId
       })
     }
-  }, [activeProject?.id, selectedChangeOrderId, category])
+  }, [category, activeProject?.id, selectedChangeOrderId, loadCostsByCategory])
 
   const loadBudget = async () => {
     if (!tenant?.id || !activeProject?.id) return
@@ -128,7 +127,32 @@ function CostsContent() {
   }
 
   // Filter costs based on search and date filters
+  // Note: The useCosts hook should already filter by project and change order,
+  // but we add an extra safety check here to ensure no cross-project data is shown
   const filteredCosts = costs[category]?.filter(cost => {
+    // CRITICAL: Ensure this cost belongs to the active project
+    if (!activeProject || cost.project_id !== activeProject.id) {
+      console.warn('Cost with wrong project_id found:', cost.project_id, 'expected:', activeProject?.id)
+      return false
+    }
+
+    // CRITICAL: Apply change order filtering
+    if (selectedChangeOrderId !== null) {
+      if (selectedChangeOrderId === 'base') {
+        // Show only base contract costs (no change order)
+        if (cost.change_order_id !== null) {
+          return false
+        }
+      } else {
+        // Show only costs for the selected change order
+        if (cost.change_order_id !== selectedChangeOrderId) {
+          return false
+        }
+      }
+    }
+    // If selectedChangeOrderId is null, show all costs for the project
+
+    // Apply search filtering
     const matchesSearch = !searchTerm || 
       (cost.vendor?.toLowerCase().includes(searchTerm.toLowerCase()) ||
        cost.invoice_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -136,6 +160,7 @@ function CostsContent() {
        cost.subcontractor_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
        cost.description?.toLowerCase().includes(searchTerm.toLowerCase()))
     
+    // Apply date filtering
     const matchesDateStart = !dateFilter.start || cost.date >= dateFilter.start
     const matchesDateEnd = !dateFilter.end || cost.date <= dateFilter.end
     

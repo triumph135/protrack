@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { Plus, BarChart3, Building, DollarSign, FileText, Users, TrendingUp, Calendar, AlertTriangle } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
-import { useProjects } from '@/hooks/useProjects'
+import { useProjects } from '@/contexts/ProjectContext'
 import { useCosts } from '@/hooks/useCosts'
 import { useChangeOrders } from '@/hooks/useChangeOrders'
 import { createClient } from '@/lib/supabase'
@@ -17,7 +17,7 @@ export default function DashboardPage() {
   const { projects, activeProject, setActiveProject, loading } = useProjects()
   
   // Dashboard shows ALL data for the project (no change order filtering)
-  const { costs, getTotals, getCounts } = useCosts(activeProject?.id, null) // null = show all change orders
+  const { costs, getTotals, getCounts, refreshCosts } = useCosts(activeProject?.id, null) // null = show all change orders
   const { changeOrders, getTotalAdditionalValue } = useChangeOrders(activeProject?.id)
   
   // Customer Invoice Data
@@ -31,6 +31,14 @@ export default function DashboardPage() {
       loadCustomerInvoices()
     }
   }, [activeProject?.id, tenant?.id])
+
+  // Refresh costs when project changes to ensure dashboard updates
+  useEffect(() => {
+    if (activeProject?.id) {
+      refreshCosts()
+    }
+  }, [activeProject?.id, refreshCosts])
+
 
   const loadCustomerInvoices = async () => {
     if (!activeProject?.id || !tenant?.id) return
@@ -215,28 +223,37 @@ export default function DashboardPage() {
       </div>
 
       {/* Financial Metrics - Primary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 lg:gap-6">
         {/* Total Contract Value */}
-        <div className="bg-white p-6 rounded-lg shadow-md">
-          <div className="flex items-center">
-            <Building className="h-8 w-8 text-blue-500" />
-            <div className="ml-4">
-              <p className="text-2xl font-semibold text-gray-900">{formatCurrency(metrics.totalContractValue)}</p>
-              <p className="text-gray-600">Total Contract Value</p>
-              <div className="text-xs text-gray-500 mt-1">
-                Base: {formatCurrency(metrics.baseContractValue)} + COs: {formatCurrency(metrics.changeOrderValue)}
+        <div className="bg-white p-4 lg:p-6 rounded-lg shadow-md">
+          <div className="flex items-start space-x-3">
+            <div className="flex-shrink-0">
+              <Building className="h-6 w-6 lg:h-8 lg:w-8 text-blue-500" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-lg lg:text-2xl font-semibold text-gray-900 break-words">
+                {formatCurrency(metrics.totalContractValue)}
+              </p>
+              <p className="text-sm lg:text-base text-gray-600">Total Contract Value</p>
+              <div className="text-xs text-gray-500 mt-1 break-words">
+                Base: {formatCurrency(metrics.baseContractValue)}<br />
+                COs: {formatCurrency(metrics.changeOrderValue)}
               </div>
             </div>
           </div>
         </div>
 
         {/* Total Project Costs */}
-        <div className="bg-white p-6 rounded-lg shadow-md">
-          <div className="flex items-center">
-            <DollarSign className="h-8 w-8 text-red-500" />
-            <div className="ml-4">
-              <p className="text-2xl font-semibold text-gray-900">{formatCurrency(metrics.totalProjectCosts)}</p>
-              <p className="text-gray-600">Total Project Costs</p>
+        <div className="bg-white p-4 lg:p-6 rounded-lg shadow-md">
+          <div className="flex items-start space-x-3">
+            <div className="flex-shrink-0">
+              <DollarSign className="h-6 w-6 lg:h-8 lg:w-8 text-red-500" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-lg lg:text-2xl font-semibold text-gray-900 break-words">
+                {formatCurrency(metrics.totalProjectCosts)}
+              </p>
+              <p className="text-sm lg:text-base text-gray-600">Total Project Costs</p>
               <div className="text-xs text-gray-500 mt-1">
                 {totalCostEntries} cost entries
               </div>
@@ -245,15 +262,17 @@ export default function DashboardPage() {
         </div>
 
         {/* Amount Yet to be Billed */}
-        <div className="bg-white p-6 rounded-lg shadow-md">
-          <div className="flex items-center">
-            <FileText className="h-8 w-8 text-orange-500" />
-            <div className="ml-4">
-              <p className={`text-2xl font-semibold ${getStatusColor(metrics.amountYetToBilled)}`}>
+        <div className="bg-white p-4 lg:p-6 rounded-lg shadow-md">
+          <div className="flex items-start space-x-3">
+            <div className="flex-shrink-0">
+              <FileText className="h-6 w-6 lg:h-8 lg:w-8 text-orange-500" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className={`text-lg lg:text-2xl font-semibold break-words ${getStatusColor(metrics.amountYetToBilled)}`}>
                 {formatCurrency(metrics.amountYetToBilled)}
               </p>
-              <p className="text-gray-600">Amount Yet to Bill</p>
-              <div className="text-xs text-gray-500 mt-1">
+              <p className="text-sm lg:text-base text-gray-600">Amount Yet to Bill</p>
+              <div className="text-xs text-gray-500 mt-1 break-words">
                 Invoiced: {formatCurrency(metrics.totalInvoicedAmount)}
               </div>
             </div>
@@ -261,16 +280,18 @@ export default function DashboardPage() {
         </div>
 
         {/* Gross Profit */}
-        <div className="bg-white p-6 rounded-lg shadow-md">
-          <div className="flex items-center">
-            <div className={`h-8 w-8 ${getStatusColor(metrics.grossProfit)}`}>
-              {getStatusIcon(metrics.grossProfit)}
+        <div className="bg-white p-4 lg:p-6 rounded-lg shadow-md">
+          <div className="flex items-start space-x-3">
+            <div className="flex-shrink-0">
+              <div className={`h-6 w-6 lg:h-8 lg:w-8 ${getStatusColor(metrics.grossProfit)}`}>
+                {getStatusIcon(metrics.grossProfit)}
+              </div>
             </div>
-            <div className="ml-4">
-              <p className={`text-2xl font-semibold ${getStatusColor(metrics.grossProfit)}`}>
+            <div className="min-w-0 flex-1">
+              <p className={`text-lg lg:text-2xl font-semibold break-words ${getStatusColor(metrics.grossProfit)}`}>
                 {formatCurrency(metrics.grossProfit)}
               </p>
-              <p className="text-gray-600">Gross Profit</p>
+              <p className="text-sm lg:text-base text-gray-600">Gross Profit</p>
               <div className={`text-xs mt-1 font-medium ${getStatusColor(metrics.grossProfitPercentage, true)}`}>
                 {formatPercentage(metrics.grossProfitPercentage)} margin
               </div>
@@ -280,49 +301,63 @@ export default function DashboardPage() {
       </div>
 
       {/* Financial Summary */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-6">Financial Summary</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="bg-white rounded-lg shadow-md p-4 lg:p-6">
+        <h2 className="text-lg lg:text-xl font-semibold text-gray-900 mb-4 lg:mb-6">Financial Summary</h2>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Revenue Breakdown */}
           <div>
-            <h3 className="text-lg font-medium text-gray-900 mb-3">Revenue Breakdown</h3>
+            <h3 className="text-base lg:text-lg font-medium text-gray-900 mb-3">Revenue Breakdown</h3>
             <div className="space-y-2">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Base Contract:</span>
-                <span className="font-medium">{formatCurrency(metrics.baseContractValue)}</span>
+              <div className="flex justify-between items-start gap-2">
+                <span className="text-gray-600 text-sm lg:text-base flex-shrink-0">Base Contract:</span>
+                <span className="font-medium text-sm lg:text-base text-right break-words">
+                  {formatCurrency(metrics.baseContractValue)}
+                </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Change Orders ({changeOrders.length}):</span>
-                <span className="font-medium">{formatCurrency(metrics.changeOrderValue)}</span>
+              <div className="flex justify-between items-start gap-2">
+                <span className="text-gray-600 text-sm lg:text-base flex-shrink-0">
+                  Change Orders ({changeOrders.length}):
+                </span>
+                <span className="font-medium text-sm lg:text-base text-right break-words">
+                  {formatCurrency(metrics.changeOrderValue)}
+                </span>
               </div>
-              <div className="flex justify-between border-t pt-2">
-                <span className="font-medium text-gray-900">Total Contract Value:</span>
-                <span className="font-bold text-blue-600">{formatCurrency(metrics.totalContractValue)}</span>
+              <div className="flex justify-between items-start gap-2 border-t pt-2">
+                <span className="font-medium text-gray-900 text-sm lg:text-base flex-shrink-0">
+                  Total Contract Value:
+                </span>
+                <span className="font-bold text-blue-600 text-sm lg:text-base text-right break-words">
+                  {formatCurrency(metrics.totalContractValue)}
+                </span>
               </div>
             </div>
           </div>
 
           {/* Profitability Analysis */}
           <div>
-            <h3 className="text-lg font-medium text-gray-900 mb-3">Profitability Analysis</h3>
+            <h3 className="text-base lg:text-lg font-medium text-gray-900 mb-3">Profitability Analysis</h3>
             <div className="space-y-2">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Total Revenue:</span>
-                <span className="font-medium">{formatCurrency(metrics.totalContractValue)}</span>
+              <div className="flex justify-between items-start gap-2">
+                <span className="text-gray-600 text-sm lg:text-base flex-shrink-0">Total Revenue:</span>
+                <span className="font-medium text-sm lg:text-base text-right break-words">
+                  {formatCurrency(metrics.totalContractValue)}
+                </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Total Costs:</span>
-                <span className="font-medium">{formatCurrency(metrics.totalProjectCosts)}</span>
+              <div className="flex justify-between items-start gap-2">
+                <span className="text-gray-600 text-sm lg:text-base flex-shrink-0">Total Costs:</span>
+                <span className="font-medium text-sm lg:text-base text-right break-words">
+                  {formatCurrency(metrics.totalProjectCosts)}
+                </span>
               </div>
-              <div className="flex justify-between border-t pt-2">
-                <span className="font-medium text-gray-900">Gross Profit:</span>
-                <span className={`font-bold ${getStatusColor(metrics.grossProfit)}`}>
+              <div className="flex justify-between items-start gap-2 border-t pt-2">
+                <span className="font-medium text-gray-900 text-sm lg:text-base flex-shrink-0">Gross Profit:</span>
+                <span className={`font-bold text-sm lg:text-base text-right break-words ${getStatusColor(metrics.grossProfit)}`}>
                   {formatCurrency(metrics.grossProfit)}
                 </span>
               </div>
-              <div className="flex justify-between">
-                <span className="font-medium text-gray-900">Gross Margin:</span>
-                <span className={`font-bold ${getStatusColor(metrics.grossProfitPercentage, true)}`}>
+              <div className="flex justify-between items-start gap-2">
+                <span className="font-medium text-gray-900 text-sm lg:text-base flex-shrink-0">Gross Margin:</span>
+                <span className={`font-bold text-sm lg:text-base text-right ${getStatusColor(metrics.grossProfitPercentage, true)}`}>
                   {formatPercentage(metrics.grossProfitPercentage)}
                 </span>
               </div>
@@ -348,9 +383,9 @@ export default function DashboardPage() {
       </div>
 
       {/* Cost Breakdown by Category */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-6">Cost Breakdown by Category</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="bg-white rounded-lg shadow-md p-4 lg:p-6">
+        <h2 className="text-lg lg:text-xl font-semibold text-gray-900 mb-4 lg:mb-6">Cost Breakdown by Category</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 lg:gap-4">
           {Object.entries(costTotals).map(([category, total]) => {
             const count = costCounts[category as keyof typeof costCounts]
             const categoryNames = {
@@ -374,15 +409,19 @@ export default function DashboardPage() {
               <Link
                 key={category}
                 href={`/costs?category=${categorySlug}`}
-                className="bg-gray-50 p-4 rounded-lg hover:bg-gray-100 transition-colors"
+                className="bg-gray-50 p-3 lg:p-4 rounded-lg hover:bg-gray-100 transition-colors"
               >
-                <div className="flex justify-between items-center">
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">{categoryName}</p>
-                    <p className="text-lg font-semibold text-gray-900">{formatCurrency(total)}</p>
+                <div className="flex justify-between items-start gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs lg:text-sm font-medium text-gray-600 truncate">{categoryName}</p>
+                    <p className="text-sm lg:text-lg font-semibold text-gray-900 break-words">
+                      {formatCurrency(total)}
+                    </p>
                     <p className="text-xs text-gray-500">{count} entries • {percentage.toFixed(1)}%</p>
                   </div>
-                  <DollarSign className="h-5 w-5 text-gray-400" />
+                  <div className="flex-shrink-0">
+                    <DollarSign className="h-4 w-4 lg:h-5 lg:w-5 text-gray-400" />
+                  </div>
                 </div>
               </Link>
             )
@@ -391,18 +430,20 @@ export default function DashboardPage() {
       </div>
 
       {/* Quick Actions */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-6">Quick Actions</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="bg-white rounded-lg shadow-md p-4 lg:p-6">
+        <h2 className="text-lg lg:text-xl font-semibold text-gray-900 mb-4 lg:mb-6">Quick Actions</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 lg:gap-4">
           {hasPermission('material', 'write') && (
             <Link
               href="/costs?category=material"
-              className="flex items-center p-4 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+              className="flex items-center p-3 lg:p-4 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
             >
-              <DollarSign className="h-8 w-8 text-blue-500 mr-3" />
-              <div>
-                <p className="font-medium text-gray-900">Add Material Cost</p>
-                <p className="text-sm text-gray-600">Track material expenses</p>
+              <div className="flex-shrink-0">
+                <DollarSign className="h-6 w-6 lg:h-8 lg:w-8 text-blue-500" />
+              </div>
+              <div className="ml-3 min-w-0 flex-1">
+                <p className="text-sm lg:text-base font-medium text-gray-900 truncate">Add Material Cost</p>
+                <p className="text-xs lg:text-sm text-gray-600">Track material expenses</p>
               </div>
             </Link>
           )}
@@ -410,12 +451,14 @@ export default function DashboardPage() {
           {hasPermission('labor', 'write') && (
             <Link
               href="/costs?category=labor"
-              className="flex items-center p-4 bg-green-50 rounded-lg hover:bg-green-100 transition-colors"
+              className="flex items-center p-3 lg:p-4 bg-green-50 rounded-lg hover:bg-green-100 transition-colors"
             >
-              <Users className="h-8 w-8 text-green-500 mr-3" />
-              <div>
-                <p className="font-medium text-gray-900">Add Labor Cost</p>
-                <p className="text-sm text-gray-600">Log employee hours</p>
+              <div className="flex-shrink-0">
+                <Users className="h-6 w-6 lg:h-8 lg:w-8 text-green-500" />
+              </div>
+              <div className="ml-3 min-w-0 flex-1">
+                <p className="text-sm lg:text-base font-medium text-gray-900 truncate">Add Labor Cost</p>
+                <p className="text-xs lg:text-sm text-gray-600">Log employee hours</p>
               </div>
             </Link>
           )}
@@ -423,12 +466,14 @@ export default function DashboardPage() {
           {hasPermission('projects', 'write') && (
             <Link
               href="/projects"
-              className="flex items-center p-4 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors"
+              className="flex items-center p-3 lg:p-4 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors"
             >
-              <FileText className="h-8 w-8 text-purple-500 mr-3" />
-              <div>
-                <p className="font-medium text-gray-900">Manage Change Orders</p>
-                <p className="text-sm text-gray-600">Add or edit change orders</p>
+              <div className="flex-shrink-0">
+                <FileText className="h-6 w-6 lg:h-8 lg:w-8 text-purple-500" />
+              </div>
+              <div className="ml-3 min-w-0 flex-1">
+                <p className="text-sm lg:text-base font-medium text-gray-900 truncate">Manage Change Orders</p>
+                <p className="text-xs lg:text-sm text-gray-600">Add or edit change orders</p>
               </div>
             </Link>
           )}
@@ -436,12 +481,14 @@ export default function DashboardPage() {
           {hasPermission('invoices', 'write') && (
             <Link
               href="/invoices"
-              className="flex items-center p-4 bg-orange-50 rounded-lg hover:bg-orange-100 transition-colors"
+              className="flex items-center p-3 lg:p-4 bg-orange-50 rounded-lg hover:bg-orange-100 transition-colors"
             >
-              <FileText className="h-8 w-8 text-orange-500 mr-3" />
-              <div>
-                <p className="font-medium text-gray-900">Customer Invoices</p>
-                <p className="text-sm text-gray-600">Manage billing</p>
+              <div className="flex-shrink-0">
+                <FileText className="h-6 w-6 lg:h-8 lg:w-8 text-orange-500" />
+              </div>
+              <div className="ml-3 min-w-0 flex-1">
+                <p className="text-sm lg:text-base font-medium text-gray-900 truncate">Customer Invoices</p>
+                <p className="text-xs lg:text-sm text-gray-600">Manage billing</p>
               </div>
             </Link>
           )}
@@ -449,12 +496,14 @@ export default function DashboardPage() {
           {hasPermission('projects', 'read') && (
             <Link
               href="/projects"
-              className="flex items-center p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+              className="flex items-center p-3 lg:p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
             >
-              <Building className="h-8 w-8 text-gray-500 mr-3" />
-              <div>
-                <p className="font-medium text-gray-900">View All Projects</p>
-                <p className="text-sm text-gray-600">Manage projects</p>
+              <div className="flex-shrink-0">
+                <Building className="h-6 w-6 lg:h-8 lg:w-8 text-gray-500" />
+              </div>
+              <div className="ml-3 min-w-0 flex-1">
+                <p className="text-sm lg:text-base font-medium text-gray-900 truncate">View All Projects</p>
+                <p className="text-xs lg:text-sm text-gray-600">Manage projects</p>
               </div>
             </Link>
           )}
@@ -462,12 +511,14 @@ export default function DashboardPage() {
           {hasPermission('users', 'read') && (
             <Link
               href="/users"
-              className="flex items-center p-4 bg-yellow-50 rounded-lg hover:bg-yellow-100 transition-colors"
+              className="flex items-center p-3 lg:p-4 bg-yellow-50 rounded-lg hover:bg-yellow-100 transition-colors"
             >
-              <Users className="h-8 w-8 text-yellow-500 mr-3" />
-              <div>
-                <p className="font-medium text-gray-900">User Management</p>
-                <p className="text-sm text-gray-600">Manage team access</p>
+              <div className="flex-shrink-0">
+                <Users className="h-6 w-6 lg:h-8 lg:w-8 text-yellow-500" />
+              </div>
+              <div className="ml-3 min-w-0 flex-1">
+                <p className="text-sm lg:text-base font-medium text-gray-900 truncate">User Management</p>
+                <p className="text-xs lg:text-sm text-gray-600">Manage team access</p>
               </div>
             </Link>
           )}

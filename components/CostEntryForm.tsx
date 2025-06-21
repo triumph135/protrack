@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { Save, X, AlertCircle, Users, DollarSign } from 'lucide-react'
 import { useEmployees } from '@/hooks/useEmployees'
 import { useChangeOrders } from '@/hooks/useChangeOrders'
-import { useProjects } from '@/hooks/useProjects'
+import { useProjects } from '@/contexts/ProjectContext'
 import type { ProjectCost, ChangeOrder } from '@/types/app.types'
 import type { CostCategory } from '@/hooks/useCosts'
 

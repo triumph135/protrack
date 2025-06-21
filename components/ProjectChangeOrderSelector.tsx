@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Building, FileText, ChevronDown } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
-import { useProjects } from '@/hooks/useProjects'
+import { useProjects } from '@/contexts/ProjectContext'
 import { useChangeOrders } from '@/hooks/useChangeOrders'
 
 interface ProjectChangeOrderSelectorProps {

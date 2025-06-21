@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
+import { ProjectProvider } from '@/contexts/ProjectContext'
 import AuthGuard from '@/components/auth/AuthGuard'
 
 interface NavigationItem {
@@ -39,7 +40,9 @@ export default function DashboardLayout({
 }) {
   return (
     <AuthGuard requireAuth={true} requireTenant={true}>
-      <DashboardContent>{children}</DashboardContent>
+      <ProjectProvider>
+        <DashboardContent>{children}</DashboardContent>
+      </ProjectProvider>
     </AuthGuard>
   )
 }

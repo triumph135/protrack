@@ -1,7 +1,7 @@
 'use client'
 
 import { FileText } from 'lucide-react'
-import { useProjects } from '@/hooks/useProjects'
+import { useProjects } from '@/contexts/ProjectContext'
 import { useAuth } from '@/contexts/AuthContext'
 
 export default function InvoicesPage() {

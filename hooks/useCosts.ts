@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
@@ -44,7 +44,7 @@ export function useCosts(projectId?: string, changeOrderId?: string | null) {
   }
 
   // Load costs by category with optional change order filtering
-  const loadCostsByCategory = async (category: CostCategory, filters: CostFilters = {}) => {
+  const loadCostsByCategory = useCallback(async (category: CostCategory, filters: CostFilters = {}) => {
     if (!tenant?.id) return []
 
     try {
@@ -54,12 +54,7 @@ export function useCosts(projectId?: string, changeOrderId?: string | null) {
       const targetProjectId = filters.projectId || projectId
       if (!targetProjectId) return []
 
-      console.log('Loading costs for:', {
-        category,
-        projectId: targetProjectId,
-        changeOrderId: filters.changeOrderId !== undefined ? filters.changeOrderId : changeOrderId,
-        tenant: tenant.id
-      })
+
 
       let query = supabase
         .from('project_costs')
@@ -86,7 +81,7 @@ export function useCosts(projectId?: string, changeOrderId?: string | null) {
 
       if (fetchError) throw fetchError
 
-      console.log(`Loaded ${data?.length || 0} ${category} costs`)
+
 
       // Update the costs state for this category
       setCosts(prev => ({
@@ -102,10 +97,10 @@ export function useCosts(projectId?: string, changeOrderId?: string | null) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [tenant?.id, projectId, changeOrderId, supabase])
 
   // Load all costs for a project with optional change order filtering
-  const loadAllCosts = async (filterProjectId?: string, filterChangeOrderId?: string | null) => {
+  const loadAllCosts = useCallback(async (filterProjectId?: string, filterChangeOrderId?: string | null) => {
     if (!tenant?.id || (!projectId && !filterProjectId)) return
 
     try {
@@ -115,11 +110,7 @@ export function useCosts(projectId?: string, changeOrderId?: string | null) {
       const targetProjectId = filterProjectId || projectId
       const targetChangeOrderId = filterChangeOrderId !== undefined ? filterChangeOrderId : changeOrderId
 
-      console.log('Loading all costs for:', {
-        projectId: targetProjectId,
-        changeOrderId: targetChangeOrderId,
-        tenant: tenant.id
-      })
+
 
       let query = supabase
         .from('project_costs')
@@ -142,7 +133,7 @@ export function useCosts(projectId?: string, changeOrderId?: string | null) {
 
       if (fetchError) throw fetchError
 
-      console.log(`Loaded ${data?.length || 0} total costs`)
+
 
       // Group by category
       const groupedCosts: Record<CostCategory, ProjectCost[]> = {
@@ -169,13 +160,12 @@ export function useCosts(projectId?: string, changeOrderId?: string | null) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [tenant?.id, projectId, changeOrderId, supabase])
 
-  // Load costs when project or change order changes
+  // Load costs when project or change order changes - ONLY load once per change
   useEffect(() => {
     if (projectId && tenant?.id) {
-      console.log('useCosts useEffect triggered:', { projectId, changeOrderId })
-      loadAllCosts()
+      loadAllCosts(projectId, changeOrderId)
     } else {
       // Clear costs if no project
       setCosts({
@@ -188,7 +178,7 @@ export function useCosts(projectId?: string, changeOrderId?: string | null) {
         consumable: []
       })
     }
-  }, [projectId, changeOrderId, tenant?.id])
+  }, [projectId, changeOrderId, tenant?.id, loadAllCosts]) // Include loadAllCosts since it's now useCallback
 
   // Create a new cost entry
   const createCost = async (category: CostCategory, costData: Omit<ProjectCost, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>) => {
@@ -238,7 +228,7 @@ export function useCosts(projectId?: string, changeOrderId?: string | null) {
 
       const updatedData = {
         ...updates,
-        cost: updates.cost || calculateTotalCost(category, updates as ProjectCost)
+        cost: calculateTotalCost(category, updates)
       }
 
       console.log('Updating cost:', costId, updatedData)
@@ -342,12 +332,12 @@ export function useCosts(projectId?: string, changeOrderId?: string | null) {
     return counts
   }
 
-  // Refresh costs (reload current data)
-  const refreshCosts = () => {
-    if (projectId) {
-      loadAllCosts()
+  // Refresh costs (simple reload without causing infinite loops)
+  const refreshCosts = useCallback(() => {
+    if (projectId && tenant?.id) {
+      loadAllCosts(projectId, changeOrderId)
     }
-  }
+  }, [projectId, changeOrderId, tenant?.id, loadAllCosts])
 
   return {
     costs,

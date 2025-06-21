@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Plus, Edit, Trash2, Users, DollarSign, Search, X, User } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
-import { useProjects } from '@/hooks/useProjects'
+import { useProjects } from '@/contexts/ProjectContext'
 import { useEmployees } from '@/hooks/useEmployees'
 import type { Employee } from '@/types/app.types'
 
