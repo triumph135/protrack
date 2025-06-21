@@ -8,7 +8,13 @@ import type { ProjectCost } from '@/types/app.types'
 
 export type CostCategory = 'material' | 'labor' | 'equipment' | 'subcontractor' | 'others' | 'cap_leases' | 'consumable'
 
-export function useCosts(projectId?: string) {
+interface CostFilters {
+  projectId?: string
+  changeOrderId?: string | null // null = all, 'base' = base contract, actual ID = specific change order
+  category?: CostCategory
+}
+
+export function useCosts(projectId?: string, changeOrderId?: string | null) {
   const [costs, setCosts] = useState<Record<CostCategory, ProjectCost[]>>({
     material: [],
     labor: [],
@@ -25,17 +31,37 @@ export function useCosts(projectId?: string) {
   const { tenant } = useTenant()
   const supabase = createClient()
 
-  // Load costs for a specific project and category
-  const loadCosts = async (category: CostCategory, filterProjectId?: string) => {
-    if (!tenant?.id || (!projectId && !filterProjectId)) return
+  // Helper function to calculate total cost for different categories
+  const calculateTotalCost = (category: CostCategory, costData: Partial<ProjectCost>): number => {
+    if (category === 'labor') {
+      const stTotal = (costData.st_hours || 0) * (costData.st_rate || 0)
+      const otTotal = (costData.ot_hours || 0) * (costData.ot_rate || 0)
+      const dtTotal = (costData.dt_hours || 0) * (costData.dt_rate || 0)
+      const mobTotal = (costData.mob_qty || 0) * (costData.mob_rate || 0)
+      return stTotal + otTotal + dtTotal + (costData.per_diem || 0) + mobTotal
+    }
+    return costData.cost || 0
+  }
+
+  // Load costs by category with optional change order filtering
+  const loadCostsByCategory = async (category: CostCategory, filters: CostFilters = {}) => {
+    if (!tenant?.id) return []
 
     try {
       setLoading(true)
       setError(null)
 
-      const targetProjectId = filterProjectId || projectId
+      const targetProjectId = filters.projectId || projectId
+      if (!targetProjectId) return []
 
-      const { data, error: fetchError } = await supabase
+      console.log('Loading costs for:', {
+        category,
+        projectId: targetProjectId,
+        changeOrderId: filters.changeOrderId !== undefined ? filters.changeOrderId : changeOrderId,
+        tenant: tenant.id
+      })
+
+      let query = supabase
         .from('project_costs')
         .select('*')
         .eq('tenant_id', tenant.id)
@@ -43,22 +69,43 @@ export function useCosts(projectId?: string) {
         .eq('category', category)
         .order('date', { ascending: false })
 
+      // Apply change order filtering
+      const targetChangeOrderId = filters.changeOrderId !== undefined ? filters.changeOrderId : changeOrderId
+      if (targetChangeOrderId !== undefined && targetChangeOrderId !== null) {
+        if (targetChangeOrderId === 'base') {
+          // Base contract only (no change order)
+          query = query.is('change_order_id', null)
+        } else {
+          // Specific change order
+          query = query.eq('change_order_id', targetChangeOrderId)
+        }
+      }
+      // If targetChangeOrderId is null, don't add any filter (show all)
+
+      const { data, error: fetchError } = await query
+
       if (fetchError) throw fetchError
 
+      console.log(`Loaded ${data?.length || 0} ${category} costs`)
+
+      // Update the costs state for this category
       setCosts(prev => ({
         ...prev,
         [category]: data || []
       }))
+
+      return data || []
     } catch (err: any) {
       console.error(`Error loading ${category} costs:`, err)
       setError(err.message)
+      return []
     } finally {
       setLoading(false)
     }
   }
 
-  // Load all costs for a project
-  const loadAllCosts = async (filterProjectId?: string) => {
+  // Load all costs for a project with optional change order filtering
+  const loadAllCosts = async (filterProjectId?: string, filterChangeOrderId?: string | null) => {
     if (!tenant?.id || (!projectId && !filterProjectId)) return
 
     try {
@@ -66,15 +113,36 @@ export function useCosts(projectId?: string) {
       setError(null)
 
       const targetProjectId = filterProjectId || projectId
+      const targetChangeOrderId = filterChangeOrderId !== undefined ? filterChangeOrderId : changeOrderId
 
-      const { data, error: fetchError } = await supabase
+      console.log('Loading all costs for:', {
+        projectId: targetProjectId,
+        changeOrderId: targetChangeOrderId,
+        tenant: tenant.id
+      })
+
+      let query = supabase
         .from('project_costs')
         .select('*')
         .eq('tenant_id', tenant.id)
         .eq('project_id', targetProjectId)
         .order('date', { ascending: false })
 
+      // Apply change order filtering
+      if (targetChangeOrderId !== undefined && targetChangeOrderId !== null) {
+        if (targetChangeOrderId === 'base') {
+          query = query.is('change_order_id', null)
+        } else {
+          query = query.eq('change_order_id', targetChangeOrderId)
+        }
+      }
+      // If targetChangeOrderId is null, don't add any filter (show all)
+
+      const { data, error: fetchError } = await query
+
       if (fetchError) throw fetchError
+
+      console.log(`Loaded ${data?.length || 0} total costs`)
 
       // Group by category
       const groupedCosts: Record<CostCategory, ProjectCost[]> = {
@@ -103,6 +171,25 @@ export function useCosts(projectId?: string) {
     }
   }
 
+  // Load costs when project or change order changes
+  useEffect(() => {
+    if (projectId && tenant?.id) {
+      console.log('useCosts useEffect triggered:', { projectId, changeOrderId })
+      loadAllCosts()
+    } else {
+      // Clear costs if no project
+      setCosts({
+        material: [],
+        labor: [],
+        equipment: [],
+        subcontractor: [],
+        others: [],
+        cap_leases: [],
+        consumable: []
+      })
+    }
+  }, [projectId, changeOrderId, tenant?.id])
+
   // Create a new cost entry
   const createCost = async (category: CostCategory, costData: Omit<ProjectCost, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>) => {
     if (!tenant?.id || !user?.id) throw new Error('Missing tenant or user')
@@ -116,6 +203,8 @@ export function useCosts(projectId?: string) {
         category,
         cost: calculateTotalCost(category, costData)
       }
+
+      console.log('Creating cost:', newCost)
 
       const { data, error } = await supabase
         .from('project_costs')
@@ -152,6 +241,8 @@ export function useCosts(projectId?: string) {
         cost: updates.cost || calculateTotalCost(category, updates as ProjectCost)
       }
 
+      console.log('Updating cost:', costId, updatedData)
+
       const { data, error } = await supabase
         .from('project_costs')
         .update(updatedData)
@@ -184,6 +275,8 @@ export function useCosts(projectId?: string) {
     try {
       setLoading(true)
 
+      console.log('Deleting cost:', costId)
+
       const { error } = await supabase
         .from('project_costs')
         .delete()
@@ -196,8 +289,6 @@ export function useCosts(projectId?: string) {
         ...prev,
         [category]: prev[category].filter(cost => cost.id !== costId)
       }))
-
-      return true
     } catch (err: any) {
       console.error('Error deleting cost:', err)
       setError(err.message)
@@ -205,20 +296,6 @@ export function useCosts(projectId?: string) {
     } finally {
       setLoading(false)
     }
-  }
-
-  // Calculate total cost based on category
-  const calculateTotalCost = (category: CostCategory, costData: Partial<ProjectCost>): number => {
-    if (category === 'labor') {
-      const stTotal = (costData.st_hours || 0) * (costData.st_rate || 0)
-      const otTotal = (costData.ot_hours || 0) * (costData.ot_rate || 0)
-      const dtTotal = (costData.dt_hours || 0) * (costData.dt_rate || 0)
-      const perDiem = costData.per_diem || 0
-      const mobTotal = (costData.mob_qty || 0) * (costData.mob_rate || 0)
-      return stTotal + otTotal + dtTotal + perDiem + mobTotal
-    }
-    
-    return costData.cost || 0
   }
 
   // Get totals for each category
@@ -233,33 +310,57 @@ export function useCosts(projectId?: string) {
       consumable: 0
     }
 
-    Object.keys(costs).forEach(category => {
-      const categoryKey = category as CostCategory
-      totals[categoryKey] = costs[categoryKey].reduce((sum, cost) => sum + (cost.cost || 0), 0)
+    Object.entries(costs).forEach(([category, costsArray]) => {
+      totals[category as CostCategory] = costsArray.reduce((sum, cost) => sum + (cost.cost || 0), 0)
     })
 
-    return {
-      ...totals,
-      total: Object.values(totals).reduce((sum, value) => sum + value, 0)
-    }
+    return totals
   }
 
-  // Load costs when project changes
-  useEffect(() => {
-    if (projectId && tenant?.id) {
-      loadAllCosts(projectId)
+  // Get grand total across all categories
+  const getGrandTotal = () => {
+    const totals = getTotals()
+    return Object.values(totals).reduce((sum, total) => sum + total, 0)
+  }
+
+  // Get cost count for each category
+  const getCounts = () => {
+    const counts: Record<CostCategory, number> = {
+      material: 0,
+      labor: 0,
+      equipment: 0,
+      subcontractor: 0,
+      others: 0,
+      cap_leases: 0,
+      consumable: 0
     }
-  }, [projectId, tenant?.id])
+
+    Object.entries(costs).forEach(([category, costsArray]) => {
+      counts[category as CostCategory] = costsArray.length
+    })
+
+    return counts
+  }
+
+  // Refresh costs (reload current data)
+  const refreshCosts = () => {
+    if (projectId) {
+      loadAllCosts()
+    }
+  }
 
   return {
     costs,
     loading,
     error,
-    loadCosts,
-    loadAllCosts,
     createCost,
     updateCost,
     deleteCost,
-    getTotals
+    loadCostsByCategory,
+    loadAllCosts,
+    getTotals,
+    getGrandTotal,
+    getCounts,
+    refreshCosts
   }
 }

@@ -1,25 +1,25 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Save, X, AlertCircle, Users } from 'lucide-react'
+import { Save, X, AlertCircle, Users, DollarSign } from 'lucide-react'
 import { useEmployees } from '@/hooks/useEmployees'
+import { useChangeOrders } from '@/hooks/useChangeOrders'
+import { useProjects } from '@/hooks/useProjects'
 import type { ProjectCost, ChangeOrder } from '@/types/app.types'
 import type { CostCategory } from '@/hooks/useCosts'
 
 interface CostEntryFormProps {
   category: CostCategory
-  projectId: string
   onSave: (costData: Omit<ProjectCost, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>) => Promise<void>
   onCancel: () => void
   editItem?: ProjectCost | null
-  changeOrders?: ChangeOrder[]
   loading?: boolean
 }
 
 interface FormField {
   name: string
   label: string
-  type: 'text' | 'number' | 'date' | 'select' | 'checkbox'
+  type: 'text' | 'number' | 'date' | 'select' | 'checkbox' | 'textarea'
   required?: boolean
   step?: string
   min?: string
@@ -28,16 +28,20 @@ interface FormField {
 
 export default function CostEntryForm({
   category,
-  projectId,
   onSave,
   onCancel,
   editItem = null,
-  changeOrders = [],
   loading = false
 }: CostEntryFormProps) {
   const [formData, setFormData] = useState<Partial<ProjectCost>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
-  const { employees, loading: employeesLoading } = useEmployees(projectId)
+  
+  // Get the active project
+  const { activeProject } = useProjects()
+  
+  // Use the active project ID for loading employees and change orders
+  const { employees, loading: employeesLoading } = useEmployees(activeProject?.id)
+  const { changeOrders } = useChangeOrders(activeProject?.id)
 
   // Initialize form data
   useEffect(() => {
@@ -51,7 +55,7 @@ export default function CostEntryForm({
         String(today.getDate()).padStart(2, '0')
       
       const defaultData: Partial<ProjectCost> = {
-        project_id: projectId,
+        project_id: activeProject?.id,
         date: localDateString,
         change_order_id: undefined
       }
@@ -74,10 +78,23 @@ export default function CostEntryForm({
       setFormData(defaultData)
     }
     setErrors({})
-  }, [editItem, category, projectId])
+  }, [editItem, category, activeProject?.id])
 
   // Handle employee selection for labor
   const handleEmployeeChange = (employeeId: string) => {
+    if (!employeeId) {
+      setFormData(prev => ({
+        ...prev,
+        employee_id: undefined,
+        employee_name: '',
+        st_rate: 0,
+        ot_rate: 0,
+        dt_rate: 0,
+        mob_rate: 0
+      }))
+      return
+    }
+
     const employee = employees.find(emp => emp.id === employeeId)
     if (employee) {
       setFormData(prev => ({
@@ -117,6 +134,18 @@ export default function CostEntryForm({
           { name: 'in_system', label: 'In System', type: 'checkbox' }
         ]
 
+      case 'equipment':
+      case 'subcontractor':
+        return [
+          { name: 'date', label: 'Date', type: 'date', required: true },
+          { name: 'vendor', label: 'Vendor', type: 'text', required: true },
+          { name: 'invoice_number', label: 'Invoice Number', type: 'text', required: true },
+          { name: 'subcontractor_name', label: category === 'subcontractor' ? 'Subcontractor Name' : 'Equipment Name', type: 'text' },
+          { name: 'description', label: 'Description', type: 'text' },
+          { name: 'cost', label: 'Cost', type: 'number', required: true, step: '0.01', min: '0' },
+          { name: 'in_system', label: 'In System', type: 'checkbox' }
+        ]
+
       case 'labor':
         return [
           { name: 'employee_id', label: 'Employee', type: 'select', required: true, options: employees },
@@ -128,29 +157,8 @@ export default function CostEntryForm({
           { name: 'dt_hours', label: 'DT Hours', type: 'number', step: '0.1', min: '0' },
           { name: 'dt_rate', label: 'DT Rate ($/hr)', type: 'number', step: '0.01', min: '0' },
           { name: 'per_diem', label: 'Per Diem ($)', type: 'number', step: '0.01', min: '0' },
-          { name: 'mob_qty', label: 'MOB Quantity', type: 'number', step: '0.1', min: '0' },
-          { name: 'mob_rate', label: 'MOB Rate ($)', type: 'number', step: '0.01', min: '0' }
-        ]
-
-      case 'equipment':
-        return [
-          { name: 'date', label: 'Date', type: 'date', required: true },
-          { name: 'vendor', label: 'Vendor', type: 'text', required: true },
-          { name: 'invoice_number', label: 'Invoice Number', type: 'text', required: true },
-          { name: 'description', label: 'Description', type: 'text' },
-          { name: 'cost', label: 'Cost', type: 'number', required: true, step: '0.01', min: '0' },
-          { name: 'in_system', label: 'In System', type: 'checkbox' }
-        ]
-
-      case 'subcontractor':
-        return [
-          { name: 'subcontractor_name', label: 'Subcontractor Name', type: 'text', required: true },
-          { name: 'date', label: 'Date', type: 'date', required: true },
-          { name: 'vendor', label: 'Vendor', type: 'text', required: true },
-          { name: 'invoice_number', label: 'Invoice Number', type: 'text', required: true },
-          { name: 'description', label: 'Description', type: 'text' },
-          { name: 'cost', label: 'Cost', type: 'number', required: true, step: '0.01', min: '0' },
-          { name: 'in_system', label: 'In System', type: 'checkbox' }
+          { name: 'mob_qty', label: 'MOB Quantity', type: 'number', step: '1', min: '0' },
+          { name: 'mob_rate', label: 'MOB Rate ($/unit)', type: 'number', step: '0.01', min: '0' }
         ]
 
       default:
@@ -159,17 +167,25 @@ export default function CostEntryForm({
   }
 
   // Validate form
-  const validateForm = (): boolean => {
+  const validateForm = () => {
     const newErrors: Record<string, string> = {}
     const fields = getFormFields()
 
+    // Check if we have an active project
+    if (!activeProject) {
+      newErrors.project = 'No active project selected'
+      setErrors(newErrors)
+      return false
+    }
+
+    // Check required fields
     fields.forEach(field => {
       if (field.required && !formData[field.name as keyof ProjectCost]) {
         newErrors[field.name] = `${field.label} is required`
       }
     })
 
-    // Special validation for labor
+    // Labor-specific validation
     if (category === 'labor' && formData.employee_id) {
       const totalHours = (formData.st_hours || 0) + (formData.ot_hours || 0) + (formData.dt_hours || 0)
       if (totalHours === 0 && (formData.per_diem || 0) === 0 && (formData.mob_qty || 0) === 0) {
@@ -183,7 +199,8 @@ export default function CostEntryForm({
 
   // Handle input change
   const handleInputChange = (field: FormField, value: any) => {
-    setFormData(prev => ({ ...prev, [field.name]: value }))
+    const processedValue = field.type === 'number' && value === '' ? 0 : value
+    setFormData(prev => ({ ...prev, [field.name]: processedValue }))
     
     // Clear error when user starts typing
     if (errors[field.name]) {
@@ -191,7 +208,7 @@ export default function CostEntryForm({
     }
 
     // Special handling for employee selection
-    if (field.name === 'employee_id' && value) {
+    if (field.name === 'employee_id') {
       handleEmployeeChange(value)
     }
   }
@@ -203,7 +220,16 @@ export default function CostEntryForm({
     if (!validateForm()) return
 
     try {
-      await onSave(formData as Omit<ProjectCost, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>)
+      // Calculate total cost for labor
+      let finalFormData = { ...formData }
+      if (category === 'labor') {
+        finalFormData.cost = calculateLaborTotal()
+      }
+
+      // Ensure project_id is set
+      finalFormData.project_id = activeProject?.id
+
+      await onSave(finalFormData as Omit<ProjectCost, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>)
     } catch (error) {
       console.error('Error saving cost:', error)
     }
@@ -222,125 +248,156 @@ export default function CostEntryForm({
     return stTotal + otTotal + dtTotal + perDiem + mobTotal
   }
 
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD'
+    }).format(amount)
+  }
+
+  const getCategoryDisplayName = () => {
+    const names = {
+      material: 'Material',
+      labor: 'Labor',
+      equipment: 'Equipment',
+      subcontractor: 'Subcontractor',
+      others: 'Others',
+      cap_leases: 'Cap Leases',
+      consumable: 'Consumable'
+    }
+    return names[category] || category
+  }
+
+  // Don't render if no active project
+  if (!activeProject) {
+    return (
+      <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md">
+        <p className="text-sm font-medium">No Active Project</p>
+        <p className="text-sm">Please select an active project before adding costs.</p>
+      </div>
+    )
+  }
+
   return (
     <div className="bg-white p-6 rounded-lg shadow-md">
       <div className="flex justify-between items-center mb-6">
-        <h3 className="text-lg font-semibold text-gray-900 capitalize">
-          {editItem ? 'Edit' : 'Add'} {category.replace('_', ' ')} Cost
+        <h3 className="text-lg font-semibold text-gray-900">
+          {editItem ? `Edit ${getCategoryDisplayName()}` : `Add ${getCategoryDisplayName()}`} Cost
         </h3>
         <button
           onClick={onCancel}
           className="text-gray-400 hover:text-gray-600 transition-colors"
         >
-          <X className="w-6 h-6" />
+          <X className="w-5 h-5" />
         </button>
       </div>
 
-      {employeesLoading && category === 'labor' && (
-        <div className="mb-4 bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-md">
-          Loading employees...
-        </div>
-      )}
+      {/* Project Info */}
+      <div className="bg-blue-50 border border-blue-200 rounded-md p-3 mb-4">
+        <p className="text-sm text-blue-800">
+          <span className="font-medium">Project:</span> {activeProject.jobNumber} - {activeProject.jobName}
+        </p>
+      </div>
 
-      {/* No employees warning for labor */}
-      {category === 'labor' && !employeesLoading && employees.length === 0 && (
-        <div className="mb-4 bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-md">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-5 h-5" />
-            <div>
-              <p className="font-medium">No employees found</p>
-              <p className="text-sm">You need to create employees before adding labor costs.</p>
-              <a 
-                href="/employees" 
-                className="inline-flex items-center gap-1 mt-2 text-sm bg-yellow-200 hover:bg-yellow-300 px-3 py-1 rounded-md transition-colors"
-              >
-                <Users className="w-4 h-4" />
-                Manage Employees
-              </a>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Form Fields */}
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Form Fields Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {getFormFields().map((field) => (
-            <div key={field.name} className={field.type === 'checkbox' ? 'md:col-span-2' : ''}>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+            <div key={field.name} className={field.name === 'description' ? 'md:col-span-2' : ''}>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
                 {field.label} {field.required && <span className="text-red-500">*</span>}
               </label>
               
-              {field.type === 'select' ? (
-                <select
-                  value={formData[field.name as keyof ProjectCost] as string || ''}
-                  onChange={(e) => handleInputChange(field, e.target.value)}
-                  className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                    errors[field.name] ? 'border-red-300 focus:ring-red-500' : 'border-gray-300'
-                  }`}
-                  required={field.required}
-                  disabled={category === 'labor' && field.name === 'employee_id' && employees.length === 0}
-                >
-                  <option value="">
-                    {category === 'labor' && field.name === 'employee_id' && employees.length === 0 
-                      ? 'No employees available - Create employees first' 
-                      : `Select ${field.label}`}
-                  </option>
-                  {field.options?.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.name}
-                    </option>
-                  ))}
-                </select>
+              {field.type === 'select' && field.name === 'employee_id' ? (
+                <div className="relative">
+                  <Users className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <select
+                    value={formData[field.name as keyof ProjectCost] as string || ''}
+                    onChange={(e) => handleInputChange(field, e.target.value)}
+                    className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                      errors[field.name] ? 'border-red-300' : 'border-gray-300'
+                    }`}
+                    disabled={employeesLoading}
+                  >
+                    <option value="">Select Employee</option>
+                    {employees.map(emp => (
+                      <option key={emp.id} value={emp.id}>{emp.name}</option>
+                    ))}
+                  </select>
+                  {employeesLoading && (
+                    <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                    </div>
+                  )}
+                </div>
               ) : field.type === 'checkbox' ? (
-                <div className="flex items-center">
+                <label className="flex items-center">
                   <input
                     type="checkbox"
                     checked={formData[field.name as keyof ProjectCost] as boolean || false}
                     onChange={(e) => handleInputChange(field, e.target.checked)}
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
                   />
-                  <span className="ml-2 text-sm text-gray-600">Mark as in system</span>
+                  <span className="ml-2 text-sm text-gray-600">Mark as processed in system</span>
+                </label>
+              ) : field.type === 'textarea' ? (
+                <textarea
+                  value={formData[field.name as keyof ProjectCost] as string || ''}
+                  onChange={(e) => handleInputChange(field, e.target.value)}
+                  className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    errors[field.name] ? 'border-red-300' : 'border-gray-300'
+                  }`}
+                  rows={3}
+                  placeholder={`Enter ${field.label.toLowerCase()}...`}
+                />
+              ) : field.name === 'cost' ? (
+                <div className="relative">
+                  <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <input
+                    type={field.type}
+                    value={formData[field.name as keyof ProjectCost] as string || ''}
+                    onChange={(e) => handleInputChange(field, e.target.value)}
+                    className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                      errors[field.name] ? 'border-red-300' : 'border-gray-300'
+                    }`}
+                    step={field.step}
+                    min={field.min}
+                    placeholder="0.00"
+                  />
                 </div>
               ) : (
                 <input
                   type={field.type}
                   value={formData[field.name as keyof ProjectCost] as string || ''}
-                  onChange={(e) => handleInputChange(field, field.type === 'number' ? 
-                    (e.target.value === '' ? '' : parseFloat(e.target.value)) : e.target.value)}
+                  onChange={(e) => handleInputChange(field, e.target.value)}
                   className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                    errors[field.name] ? 'border-red-300 focus:ring-red-500' : 'border-gray-300'
+                    errors[field.name] ? 'border-red-300' : 'border-gray-300'
                   }`}
-                  required={field.required}
                   step={field.step}
                   min={field.min}
-                  disabled={
-                    category === 'labor' && 
-                    ['st_rate', 'ot_rate', 'dt_rate', 'mob_rate'].includes(field.name) && 
-                    !formData.employee_id
-                  }
+                  disabled={category === 'labor' && ['st_rate', 'ot_rate', 'dt_rate', 'mob_rate'].includes(field.name) && !formData.employee_id}
                 />
               )}
-
+              
               {errors[field.name] && (
-                <p className="mt-1 text-sm text-red-600">{errors[field.name]}</p>
+                <p className="text-red-600 text-sm mt-1">{errors[field.name]}</p>
               )}
             </div>
           ))}
         </div>
 
-        {/* Labor Total Cost Display */}
+        {/* Labor Cost Summary */}
         {category === 'labor' && formData.employee_id && (
-          <div className="bg-gray-50 p-4 rounded-md">
-            <h4 className="text-sm font-medium text-gray-700 mb-2">Cost Calculation</h4>
-            <div className="text-sm space-y-1">
+          <div className="bg-blue-50 p-4 rounded-lg">
+            <h4 className="font-medium text-blue-900 mb-2">Cost Breakdown</h4>
+            <div className="text-sm text-blue-800 space-y-1">
               <div>ST: {formData.st_hours || 0} hrs × ${formData.st_rate || 0} = ${((formData.st_hours || 0) * (formData.st_rate || 0)).toFixed(2)}</div>
               <div>OT: {formData.ot_hours || 0} hrs × ${formData.ot_rate || 0} = ${((formData.ot_hours || 0) * (formData.ot_rate || 0)).toFixed(2)}</div>
               <div>DT: {formData.dt_hours || 0} hrs × ${formData.dt_rate || 0} = ${((formData.dt_hours || 0) * (formData.dt_rate || 0)).toFixed(2)}</div>
               <div>Per Diem: ${formData.per_diem || 0}</div>
               <div>MOB: {formData.mob_qty || 0} × ${formData.mob_rate || 0} = ${((formData.mob_qty || 0) * (formData.mob_rate || 0)).toFixed(2)}</div>
               <div className="font-semibold border-t pt-1">
-                Total: ${calculateLaborTotal().toFixed(2)}
+                Total: {formatCurrency(calculateLaborTotal())}
               </div>
             </div>
           </div>
