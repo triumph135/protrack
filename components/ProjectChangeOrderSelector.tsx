@@ -10,7 +10,7 @@ interface ProjectChangeOrderSelectorProps {
   selectedChangeOrderId?: string | null
   onChangeOrderChange?: (changeOrderId: string | null) => void
   showChangeOrderSelector?: boolean
-  disableChangeOrderSelector?: boolean // New prop to disable change order selection
+  disableChangeOrderSelector?: boolean
 }
 
 export default function ProjectChangeOrderSelector({ 
@@ -21,7 +21,6 @@ export default function ProjectChangeOrderSelector({
 }: ProjectChangeOrderSelectorProps) {
   const { user } = useAuth()
   const { projects, activeProject, setActiveProject, loading: projectsLoading } = useProjects()
-  // Only load change orders for the active project
   const { changeOrders, loading: changeOrdersLoading } = useChangeOrders(activeProject?.id)
   
   // Local state for change order selection when no external control
@@ -38,6 +37,25 @@ export default function ProjectChangeOrderSelector({
       setLocalSelectedChangeOrder(null)
     }
   }, [activeProject?.id, onChangeOrderChange])
+
+  // Auto-reset selection if selected change order no longer exists
+  useEffect(() => {
+    if (currentChangeOrderId && 
+        currentChangeOrderId !== 'all' && 
+        currentChangeOrderId !== 'base' && 
+        changeOrders.length > 0) {
+      
+      const changeOrderExists = changeOrders.some(co => co.id === currentChangeOrderId)
+      if (!changeOrderExists) {
+        // Selected change order no longer exists, reset to 'all'
+        if (onChangeOrderChange) {
+          onChangeOrderChange(null)
+        } else {
+          setLocalSelectedChangeOrder(null)
+        }
+      }
+    }
+  }, [changeOrders, currentChangeOrderId, onChangeOrderChange])
 
   const hasPermission = (area: string, level: 'read' | 'write' = 'read') => {
     if (!user) return false
@@ -78,7 +96,7 @@ export default function ProjectChangeOrderSelector({
     if (changeOrderId === 'base') return 'Base Contract'
     
     const changeOrder = changeOrders.find(co => co.id === changeOrderId)
-    return changeOrder ? changeOrder.name : 'Unknown Change Order'
+    return changeOrder ? changeOrder.name : 'All Change Orders' // Reset to "All" instead of "Unknown"
   }
 
   if (projectsLoading) {
@@ -139,7 +157,7 @@ export default function ProjectChangeOrderSelector({
           </div>
         </div>
 
-        {/* Change Order Selector - Only show if we have change orders or want to show the base contract option */}
+        {/* Change Order Selector */}
         {showChangeOrderSelector && hasPermission('projects', 'read') && (
           <div className="flex items-center space-x-3">
             <FileText className="w-5 h-5 text-gray-400" />
@@ -156,7 +174,8 @@ export default function ProjectChangeOrderSelector({
                   <>
                     <select
                       value={currentChangeOrderId === null ? 'all' : 
-                             currentChangeOrderId === 'base' ? 'base' : currentChangeOrderId}
+                             currentChangeOrderId === 'base' ? 'base' : 
+                             changeOrders.some(co => co.id === currentChangeOrderId) ? currentChangeOrderId : 'all'}
                       onChange={(e) => handleChangeOrderChange(e.target.value)}
                       className="appearance-none bg-white border border-gray-300 rounded-md px-3 py-2 pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                       disabled={changeOrdersLoading || disableChangeOrderSelector}
