@@ -32,16 +32,31 @@ export function useCosts(projectId?: string, changeOrderId?: string | null) {
   const supabase = createClient()
 
   // Helper function to calculate total cost for different categories
-  const calculateTotalCost = (category: CostCategory, costData: Partial<ProjectCost>): number => {
-    if (category === 'labor') {
-      const stTotal = (costData.st_hours || 0) * (costData.st_rate || 0)
-      const otTotal = (costData.ot_hours || 0) * (costData.ot_rate || 0)
-      const dtTotal = (costData.dt_hours || 0) * (costData.dt_rate || 0)
-      const mobTotal = (costData.mob_qty || 0) * (costData.mob_rate || 0)
-      return stTotal + otTotal + dtTotal + (costData.per_diem || 0) + mobTotal
-    }
-    return costData.cost || 0
+const calculateTotalCost = (category: CostCategory, costData: Partial<ProjectCost>): number => {
+  if (category === 'labor') {
+    // Ensure all values are numbers, not strings
+    const stTotal = Number(costData.st_hours || 0) * Number(costData.st_rate || 0)
+    const otTotal = Number(costData.ot_hours || 0) * Number(costData.ot_rate || 0)
+    const dtTotal = Number(costData.dt_hours || 0) * Number(costData.dt_rate || 0)
+    const mobTotal = Number(costData.mob_qty || 0) * Number(costData.mob_rate || 0)
+    const perDiem = Number(costData.per_diem || 0)
+    
+    const total = stTotal + otTotal + dtTotal + perDiem + mobTotal
+    
+    // Debug logging
+    console.log('Labor cost calculation:', {
+      stTotal: `${costData.st_hours || 0} × ${costData.st_rate || 0} = ${stTotal}`,
+      otTotal: `${costData.ot_hours || 0} × ${costData.ot_rate || 0} = ${otTotal}`,
+      dtTotal: `${costData.dt_hours || 0} × ${costData.dt_rate || 0} = ${dtTotal}`,
+      mobTotal: `${costData.mob_qty || 0} × ${costData.mob_rate || 0} = ${mobTotal}`,
+      perDiem,
+      total
+    })
+    
+    return total
   }
+  return Number(costData.cost || 0)
+}
 
   // Load costs by category with optional change order filtering
   const loadCostsByCategory = useCallback(async (category: CostCategory, filters: CostFilters = {}) => {

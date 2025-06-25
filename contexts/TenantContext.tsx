@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react'
 import { useAuth } from './AuthContext'
 import { createClient } from '@/lib/supabase'
 
@@ -30,107 +30,92 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   const { user, loading: authLoading } = useAuth()
   const supabase = createClient()
 
-  const refreshTenant = async () => {
-    console.log('TenantContext: refreshTenant called', { 
-      user: !!user, 
-      userEmail: user?.email, 
-      tenantId: user?.tenant_id,
-      authLoading,
-      initialized
-    })
-
-    // If auth is still loading, wait
-    if (authLoading) {
-      console.log('TenantContext: Auth still loading, waiting...')
-      return
-    }
-
-    // If no user, clear tenant and finish loading
-    if (!user) {
-      console.log('TenantContext: No user, clearing tenant')
-      if (tenant !== null) setTenant(null)
-      if (loading) setLoading(false)
-      if (!initialized) setInitialized(true)
-      return
-    }
-
-    // If user has no tenant_id, they have no tenant
-    if (!user.tenant_id) {
-      console.log('TenantContext: User has no tenant_id')
-      if (tenant !== null) setTenant(null)
-      if (loading) setLoading(false)
-      if (!initialized) setInitialized(true)
-      return
-    }
-
-    // If we already have the correct tenant, don't reload
-    if (tenant && tenant.id === user.tenant_id && initialized) {
-      console.log('TenantContext: Tenant already loaded and current, no reload needed')
-      if (loading) setLoading(false)
-      return
-    }
-
+  const refreshTenant = useCallback(async () => {
+    console.log('TenantContext: refreshTenant called', { user: user?.email, tenantId: user?.tenant_id })
+    
     try {
+      setLoading(true)
+      
+      if (!user) {
+        console.log('TenantContext: No user, clearing tenant')
+        setTenant(null)
+        setLoading(false)
+        setInitialized(true)
+        return
+      }
+  
+      if (!user.tenant_id) {
+        console.log('TenantContext: User has no tenant_id')
+        setTenant(null)
+        setLoading(false)
+        setInitialized(true)
+        return
+      }
+  
       console.log('TenantContext: Fetching tenant data for ID:', user.tenant_id)
-      const { data, error } = await supabase
+      const { data, error: fetchError } = await supabase
         .from('tenants')
         .select('*')
         .eq('id', user.tenant_id)
         .single()
-
-      console.log('TenantContext: Database response:', { 
-        data: !!data, 
-        error: error?.message, 
-        tenantName: data?.name 
-      })
-
-      if (error) throw error
+  
+      console.log('TenantContext: Database response:', { data, error: fetchError })
+  
+      if (fetchError) throw fetchError
+  
+      if (data) {
+        console.log('TenantContext: Setting tenant in context:', data.name)
+        setTenant(data)
+      } else {
+        console.log('TenantContext: No tenant data found')
+        setTenant(null)
+      }
       
-      console.log('TenantContext: Setting tenant in context:', data.name)
-      setTenant(data)
-    } catch (error) {
-      console.error('TenantContext: Error fetching tenant:', error)
-      if (tenant !== null) setTenant(null)
-    } finally {
       console.log('TenantContext: Setting loading to false and initialized to true')
-      if (loading) setLoading(false)
-      if (!initialized) setInitialized(true)
+      setLoading(false)
+      setInitialized(true)
+      
+    } catch (err: any) {
+      console.error('TenantContext: Error refreshing tenant:', err)
+      setTenant(null)
+      setLoading(false)
+      setInitialized(true)
     }
-  }
+  }, [user, supabase])
 
   useEffect(() => {
     console.log('TenantContext: useEffect triggered', { 
-      user: !!user, 
-      userEmail: user?.email,
-      tenantId: user?.tenant_id,
-      authLoading,
-      initialized,
-      hasCurrentTenant: !!tenant,
-      lastUserId,
-      currentUserId: user?.id
+      user: user?.email, 
+      authLoading, 
+      currentTenant: tenant?.name,
+      tenantLoading: loading
     })
     
-    // Check if user actually changed (including null -> user, user -> null, user1 -> user2)
-    const userChanged = lastUserId !== (user?.id || null)
-    const needsInitialization = !initialized && !authLoading
+    // Don't proceed if auth is still loading
+    if (authLoading) {
+      console.log('TenantContext: Auth still loading, waiting...')
+      return
+    }
     
-    if (needsInitialization || (userChanged && !authLoading)) {
+    // Check if refresh is needed
+    const shouldRefresh = user && (!tenant || tenant.id !== user.tenant_id)
+    
+    if (shouldRefresh) {
       console.log('TenantContext: Refreshing tenant data', { 
-        needsInitialization, 
-        userChanged, 
-        lastUserId, 
-        currentUserId: user?.id 
+        userId: user.id, 
+        userTenantId: user.tenant_id,
+        currentTenantId: tenant?.id 
       })
-      
-      // Update the tracked user ID
-      setLastUserId(user?.id || null)
-      
-      if (!initialized) setLoading(true)
       refreshTenant()
     } else {
       console.log('TenantContext: No refresh needed')
+      // Ensure loading is false if we don't need to refresh
+      if (loading) {
+        setLoading(false)
+        setInitialized(true)
+      }
     }
-  }, [user?.id, user?.tenant_id, authLoading])
+  }, [user, authLoading, refreshTenant]) // Remove tenant from dependencies to prevent loops
 
   console.log('TenantContext: Rendering with state:', { 
     tenant: !!tenant, 

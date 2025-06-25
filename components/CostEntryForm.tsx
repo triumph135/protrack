@@ -199,19 +199,32 @@ export default function CostEntryForm({
 
   // Handle input change
   const handleInputChange = (field: FormField, value: any) => {
-    const processedValue = field.type === 'number' && value === '' ? 0 : value
-    setFormData(prev => ({ ...prev, [field.name]: processedValue }))
-    
-    // Clear error when user starts typing
-    if (errors[field.name]) {
-      setErrors(prev => ({ ...prev, [field.name]: '' }))
-    }
-
-    // Special handling for employee selection
-    if (field.name === 'employee_id') {
-      handleEmployeeChange(value)
+  // Convert numeric inputs to numbers immediately
+  let processedValue = value
+  if (field.type === 'number') {
+    if (value === '' || value === null || value === undefined) {
+      processedValue = 0
+    } else {
+      processedValue = Number(value)
+      // Ensure it's a valid number
+      if (isNaN(processedValue)) {
+        processedValue = 0
+      }
     }
   }
+  
+  setFormData(prev => ({ ...prev, [field.name]: processedValue }))
+  
+  // Clear error when user starts typing
+  if (errors[field.name]) {
+    setErrors(prev => ({ ...prev, [field.name]: '' }))
+  }
+
+  // Special handling for employee selection
+  if (field.name === 'employee_id') {
+    handleEmployeeChange(value)
+  }
+}
 
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
@@ -235,24 +248,38 @@ export default function CostEntryForm({
     }
   }
 
-  // Calculate total cost for labor
-  const calculateLaborTotal = (): number => {
-    if (category !== 'labor') return 0
-    
-    const stTotal = (formData.st_hours || 0) * (formData.st_rate || 0)
-    const otTotal = (formData.ot_hours || 0) * (formData.ot_rate || 0)
-    const dtTotal = (formData.dt_hours || 0) * (formData.dt_rate || 0)
-    const perDiem = formData.per_diem || 0
-    const mobTotal = (formData.mob_qty || 0) * (formData.mob_rate || 0)
-    
-    return stTotal + otTotal + dtTotal + perDiem + mobTotal
-  }
-
+  // Format currency helper
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD'
     }).format(amount)
+  }
+
+  // Calculate total cost for labor
+  const calculateLaborTotal = (): number => {
+    if (category !== 'labor') return 0
+    
+    // Ensure all values are converted to numbers
+    const stTotal = Number(formData.st_hours || 0) * Number(formData.st_rate || 0)
+    const otTotal = Number(formData.ot_hours || 0) * Number(formData.ot_rate || 0)
+    const dtTotal = Number(formData.dt_hours || 0) * Number(formData.dt_rate || 0)
+    const perDiem = Number(formData.per_diem || 0)
+    const mobTotal = Number(formData.mob_qty || 0) * Number(formData.mob_rate || 0)
+    
+    const total = stTotal + otTotal + dtTotal + perDiem + mobTotal
+    
+    console.log('Form labor calculation:', {
+      formData: formData,
+      stTotal: `${formData.st_hours || 0} × ${formData.st_rate || 0} = ${stTotal}`,
+      otTotal: `${formData.ot_hours || 0} × ${formData.ot_rate || 0} = ${otTotal}`,
+      dtTotal: `${formData.dt_hours || 0} × ${formData.dt_rate || 0} = ${dtTotal}`,
+      mobTotal: `${formData.mob_qty || 0} × ${formData.mob_rate || 0} = ${mobTotal}`,
+      perDiem,
+      total
+    })
+    
+    return total
   }
 
   const getCategoryDisplayName = () => {
