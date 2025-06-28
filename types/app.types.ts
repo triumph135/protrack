@@ -254,3 +254,34 @@ export interface Attachment {
   created_at?: string
   updated_at?: string
 }
+
+// Updated types/app.types.ts - Add this to your existing file
+
+export interface UserInvitation {
+  id: string
+  tenant_id: string
+  email: string
+  role: 'master' | 'entry' | 'view'
+  permissions: UserPermissions
+  invited_by: string
+  invitation_token: string
+  status: 'pending' | 'accepted' | 'expired'
+  expires_at: string
+  created_at: string
+  updated_at: string
+}
+
+// Update the User interface to include role type union
+export interface User {
+  id: string
+  tenant_id?: string
+  name: string
+  email: string
+  role: 'master' | 'entry' | 'view'  // Updated to be more specific
+  permissions: UserPermissions
+  password_hash?: string
+  is_active?: boolean
+  last_login?: string
+  created_at?: string
+  updated_at?: string
+}
