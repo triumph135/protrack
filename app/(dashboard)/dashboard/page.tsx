@@ -158,9 +158,9 @@ export default function DashboardPage() {
           showChangeOrderSelector={true}
           disableChangeOrderSelector={true}
         />
-        <div className="bg-white p-6 rounded-lg shadow-md text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading dashboard...</p>
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md border dark:border-gray-700 text-center transition-theme">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 dark:border-blue-400 mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-300">Loading dashboard...</p>
         </div>
       </div>
     )
@@ -172,10 +172,10 @@ export default function DashboardPage() {
         <ProjectChangeOrderSelector 
           showChangeOrderSelector={false}
         />
-        <div className="bg-white p-6 rounded-lg shadow-md text-center">
-          <BarChart3 className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Welcome to ProTrack!</h2>
-          <p className="text-gray-600 mb-6">Get started by creating your first project.</p>
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md border dark:border-gray-700 text-center transition-theme">
+          <BarChart3 className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500 mb-4" />
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">Welcome!</h2>
+          <p className="text-gray-600 dark:text-gray-300 mb-6">Get started by creating your first project.</p>
           {hasPermission('projects', 'write') ? (
             <Link
               href="/projects"
@@ -201,22 +201,22 @@ export default function DashboardPage() {
       />
 
       {/* Header with Project Info */}
-      <div className="bg-white overflow-hidden shadow rounded-lg">
-        <div className="p-6">
-          <div className="flex items-center justify-between">
+      <div className="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg border dark:border-gray-700 transition-theme">
+        <div className="p-4 sm:p-6">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-              <p className="text-gray-600">Welcome back, {user?.name}!</p>
-              <p className="text-sm text-gray-500 mt-1">
+              <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100">Dashboard</h1>
+              <p className="text-gray-600 dark:text-gray-300 text-sm sm:text-base">Welcome back, {user?.name}!</p>
+              <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1">
                 Viewing: Complete Project Overview
               </p>
             </div>
-            <div className="text-right">
-              <p className="text-sm text-gray-500">Active Project</p>
-              <p className="text-lg font-semibold text-blue-600">
+            <div className="lg:text-right">
+              <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Active Project</p>
+              <p className="text-base sm:text-lg font-semibold text-blue-600 dark:text-blue-400 break-words">
                 {activeProject.jobNumber} - {activeProject.jobName}
               </p>
-              <p className="text-sm text-gray-600">{activeProject.customer}</p>
+              <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">{activeProject.customer}</p>
             </div>
           </div>
         </div>
@@ -225,17 +225,17 @@ export default function DashboardPage() {
       {/* Financial Metrics - Primary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 lg:gap-6">
         {/* Total Contract Value */}
-        <div className="bg-white p-4 lg:p-6 rounded-lg shadow-md">
+        <div className="bg-white dark:bg-gray-800 p-4 lg:p-6 rounded-lg shadow-md border dark:border-gray-700 transition-theme">
           <div className="flex items-start space-x-3">
             <div className="flex-shrink-0">
-              <Building className="h-6 w-6 lg:h-8 lg:w-8 text-blue-500" />
+              <Building className="h-6 w-6 lg:h-8 lg:w-8 text-blue-500 dark:text-blue-400" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-lg lg:text-2xl font-semibold text-gray-900 break-words">
+              <p className="text-lg lg:text-2xl font-semibold text-gray-900 dark:text-gray-100 break-words">
                 {formatCurrency(metrics.totalContractValue)}
               </p>
-              <p className="text-sm lg:text-base text-gray-600">Total Contract Value</p>
-              <div className="text-xs text-gray-500 mt-1 break-words">
+              <p className="text-sm lg:text-base text-gray-600 dark:text-gray-300">Total Contract Value</p>
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 break-words">
                 Base: {formatCurrency(metrics.baseContractValue)}<br />
                 COs: {formatCurrency(metrics.changeOrderValue)}
               </div>
@@ -244,17 +244,17 @@ export default function DashboardPage() {
         </div>
 
         {/* Total Project Costs */}
-        <div className="bg-white p-4 lg:p-6 rounded-lg shadow-md">
+        <div className="bg-white dark:bg-gray-800 p-4 lg:p-6 rounded-lg shadow-md border dark:border-gray-700 transition-theme">
           <div className="flex items-start space-x-3">
             <div className="flex-shrink-0">
-              <DollarSign className="h-6 w-6 lg:h-8 lg:w-8 text-red-500" />
+              <DollarSign className="h-6 w-6 lg:h-8 lg:w-8 text-red-500 dark:text-red-400" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-lg lg:text-2xl font-semibold text-gray-900 break-words">
+              <p className="text-lg lg:text-2xl font-semibold text-gray-900 dark:text-gray-100 break-words">
                 {formatCurrency(metrics.totalProjectCosts)}
               </p>
-              <p className="text-sm lg:text-base text-gray-600">Total Project Costs</p>
-              <div className="text-xs text-gray-500 mt-1">
+              <p className="text-sm lg:text-base text-gray-600 dark:text-gray-300">Total Project Costs</p>
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                 {totalCostEntries} cost entries
               </div>
             </div>
@@ -262,10 +262,10 @@ export default function DashboardPage() {
         </div>
 
         {/* Amount Yet to be Billed */}
-        <div className="bg-white p-4 lg:p-6 rounded-lg shadow-md">
+        <div className="bg-white dark:bg-gray-800 p-4 lg:p-6 rounded-lg shadow-md border dark:border-gray-700 transition-theme">
           <div className="flex items-start space-x-3">
             <div className="flex-shrink-0">
-              <FileText className="h-6 w-6 lg:h-8 lg:w-8 text-orange-500" />
+              <FileText className="h-6 w-6 lg:h-8 lg:w-8 text-orange-500 dark:text-orange-400" />
             </div>
             <div className="min-w-0 flex-1">
               <p className={`text-lg lg:text-2xl font-semibold break-words ${getStatusColor(metrics.amountYetToBilled)}`}>

@@ -1,10 +1,14 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Save, X, AlertCircle } from 'lucide-react'
+import { Save, X, AlertCircle, DollarSign, FileText } from 'lucide-react'
 import { useChangeOrders } from '@/hooks/useChangeOrders'
 import { useProjects } from '@/contexts/ProjectContext'
 import type { CustomerInvoice } from '@/types/app.types'
+import { getTodayLocalDateString } from '@/lib/dateUtils'
+import FileAttachments from '@/components/FileAttachments'
+import { useAuth } from '@/contexts/AuthContext'
+import { useTenant } from '@/contexts/TenantContext'
 
 interface InvoiceFormProps {
   onSave: (invoiceData: Omit<CustomerInvoice, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>) => Promise<void>
@@ -25,23 +29,20 @@ export default function InvoiceForm({
   // Get the active project and change orders
   const { activeProject } = useProjects()
   const { changeOrders } = useChangeOrders(activeProject?.id)
+  const { user } = useAuth()
+  const { tenant } = useTenant()
 
   // Initialize form data
   useEffect(() => {
     if (editItem) {
       setFormData(editItem)
     } else {
-      // Set default values for new invoice
-      const today = new Date()
-      const localDateString = today.getFullYear() + '-' + 
-        String(today.getMonth() + 1).padStart(2, '0') + '-' + 
-        String(today.getDate()).padStart(2, '0')
-      
+      // Set default values for new invoice using the proper date utility
       setFormData({
         project_id: activeProject?.id,
         invoice_number: '',
         amount: 0,
-        date_billed: localDateString,
+        date_billed: getTodayLocalDateString(),
         change_order_id: undefined
       })
     }
@@ -98,22 +99,22 @@ export default function InvoiceForm({
   }
 
   return (
-    <div className="bg-gray-50 p-6 rounded-lg border">
-      <div className="flex justify-between items-center mb-6">
+    <div className="bg-gray-50 p-4 sm:p-6 rounded-lg border">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 sm:mb-6">
         <h3 className="text-lg font-semibold text-gray-900">
           {editItem ? 'Edit Invoice' : 'Add New Invoice'}
         </h3>
         <button
           type="button"
           onClick={onCancel}
-          className="text-gray-400 hover:text-gray-600"
+          className="text-gray-400 hover:text-gray-600 self-end sm:self-auto"
         >
           <X className="h-5 w-5" />
         </button>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4">
           {/* Invoice Number */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -142,18 +143,21 @@ export default function InvoiceForm({
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Amount *
             </label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={formData.amount || ''}
-              onChange={(e) => handleInputChange('amount', e.target.value)}
-              className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                errors.amount ? 'border-red-300' : 'border-gray-300'
-              }`}
-              placeholder="0.00"
-              disabled={loading}
-            />
+            <div className="relative">
+              <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={formData.amount || ''}
+                onChange={(e) => handleInputChange('amount', e.target.value)}
+                className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  errors.amount ? 'border-red-300' : 'border-gray-300'
+                }`}
+                placeholder="0.00"
+                disabled={loading}
+              />
+            </div>
             {errors.amount && (
               <p className="mt-1 text-sm text-red-600 flex items-center">
                 <AlertCircle className="h-4 w-4 mr-1" />
@@ -208,12 +212,41 @@ export default function InvoiceForm({
           </p>
         </div>
 
+        {/* Attachments Section - Only show when editing existing invoice */}
+        {editItem && (
+          <div className="border-t pt-6">
+            <h4 className="text-sm font-medium text-gray-700 mb-4">File Attachments</h4>
+            <FileAttachments
+              entityType="customer_invoice"
+              entityId={editItem.id}
+              tenantId={tenant?.id || ''}
+              userId={user?.id || ''}
+              canEdit={true}
+              className="bg-gray-50 p-4 rounded-lg"
+            />
+          </div>
+        )}
+
+        {!editItem && (
+          <div className="border-t pt-6">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-center gap-2 text-blue-700">
+                <FileText className="w-5 h-5" />
+                <div>
+                  <p className="text-sm font-medium">File Attachments</p>
+                  <p className="text-sm">Save this invoice first, then edit it to add file attachments</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Form Actions */}
-        <div className="flex gap-3 pt-4">
+        <div className="flex flex-col sm:flex-row gap-3 pt-4">
           <button
             type="submit"
             disabled={loading}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Save className="h-4 w-4 mr-2" />
             {loading ? 'Saving...' : 'Save Invoice'}
@@ -223,7 +256,7 @@ export default function InvoiceForm({
             type="button"
             onClick={onCancel}
             disabled={loading}
-            className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Cancel
           </button>

@@ -136,12 +136,11 @@ export default function LoginPage() {
       <div className="max-w-md w-full space-y-8">
         {/* Logo - Always rendered */}
         <div className="text-center">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">ProTrack</h1>
           <h2 className="text-2xl font-semibold text-gray-700">
             {showRedirectScreen ? 'Redirecting...' : 'Welcome back'}
           </h2>
           <p className="mt-2 text-gray-600">
-            {showRedirectScreen ? 'You are already signed in' : 'Sign in to your ProTrack account'}
+            {showRedirectScreen ? 'You are already signed in' : 'Sign in to your account'}
           </p>
         </div>
 

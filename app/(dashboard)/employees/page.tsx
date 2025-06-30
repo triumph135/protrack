@@ -435,48 +435,50 @@ export default function EmployeesPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Employee Management</h1>
-          <p className="text-gray-600">Manage employee information and labor rates</p>
+      <div className="bg-white overflow-hidden shadow rounded-lg p-4 sm:p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Employee Management</h1>
+            <p className="text-gray-600 text-sm sm:text-base">Manage employee information and labor rates</p>
+          </div>
+          {canWrite && (
+            <button
+              onClick={handleAddEmployee}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center justify-center gap-2 transition-colors w-full sm:w-auto"
+            >
+              <Plus className="w-4 h-4" />
+              Add Employee
+            </button>
+          )}
         </div>
-        {canWrite && (
-          <button
-            onClick={handleAddEmployee}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center gap-2 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            Add Employee
-          </button>
-        )}
       </div>
 
       {/* Summary Card */}
-      <div className="bg-white p-6 rounded-lg shadow-md">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="bg-white p-4 sm:p-6 rounded-lg shadow-md">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
           <div className="text-center">
-            <div className="text-2xl font-bold text-blue-600">{employees.length}</div>
-            <div className="text-sm text-gray-600">Total Employees</div>
+            <div className="text-xl sm:text-2xl font-bold text-blue-600">{employees.length}</div>
+            <div className="text-xs sm:text-sm text-gray-600">Total Employees</div>
           </div>
           <div className="text-center">
-            <div className="text-2xl font-bold text-green-600">
+            <div className="text-xl sm:text-2xl font-bold text-green-600">
               {employees.filter(emp => !emp.project_id).length}
             </div>
-            <div className="text-sm text-gray-600">Global Employees</div>
+            <div className="text-xs sm:text-sm text-gray-600">Global Employees</div>
           </div>
           <div className="text-center">
-            <div className="text-2xl font-bold text-purple-600">
+            <div className="text-xl sm:text-2xl font-bold text-purple-600">
               {employees.filter(emp => emp.project_id === activeProject?.id).length}
             </div>
-            <div className="text-sm text-gray-600">Project Employees</div>
+            <div className="text-xs sm:text-sm text-gray-600">Project Employees</div>
           </div>
         </div>
       </div>
 
       {/* Filters */}
-      <div className="bg-white p-6 rounded-lg shadow-md">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Filters</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="bg-white p-4 sm:p-6 rounded-lg shadow-md">
+        <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">Filters</h3>
+        <div className="grid grid-cols-1 gap-4">
           <div className="relative">
             <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
             <input

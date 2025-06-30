@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, Suspense, useEffect } from 'react'
+import { useState, Suspense, useEffect, useCallback, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { Plus, Edit, Trash2, DollarSign, Users, Search, Lock, Download, Filter } from 'lucide-react'
+import { Plus, Edit, Trash2, DollarSign, Users, Search, Lock, Download, Filter, Paperclip } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useProjects } from '@/contexts/ProjectContext'
 import { useCosts, type CostCategory } from '@/hooks/useCosts'
@@ -15,6 +15,8 @@ import ProjectChangeOrderSelector from '@/components/ProjectChangeOrderSelector'
 import type { ProjectCost } from '@/types/app.types'
 import { createClient } from '@/lib/supabase'
 import { useTenant } from '@/contexts/TenantContext'
+import { fileUploadService } from '@/lib/fileUploadService'
+import { formatLocalDateForDisplay } from '@/lib/dateUtils'
 
 function CostsContent() {
   const searchParams = useSearchParams()
@@ -38,6 +40,8 @@ function CostsContent() {
   const [searchTerm, setSearchTerm] = useState('')
   const [dateFilter, setDateFilter] = useState({ start: '', end: '' })
   const [showFilters, setShowFilters] = useState(false)
+  const [attachmentCounts, setAttachmentCounts] = useState<Record<string, number>>({})
+  
 
   // Load budget when project changes
   useEffect(() => {
@@ -55,6 +59,7 @@ function CostsContent() {
       })
     }
   }, [category, activeProject?.id, selectedChangeOrderId, loadCostsByCategory])
+  
 
   const loadBudget = async () => {
     if (!tenant?.id || !activeProject?.id) return
@@ -129,45 +134,94 @@ function CostsContent() {
   // Filter costs based on search and date filters
   // Note: The useCosts hook should already filter by project and change order,
   // but we add an extra safety check here to ensure no cross-project data is shown
-  const filteredCosts = costs[category]?.filter(cost => {
-    // CRITICAL: Ensure this cost belongs to the active project
-    if (!activeProject || cost.project_id !== activeProject.id) {
-      console.warn('Cost with wrong project_id found:', cost.project_id, 'expected:', activeProject?.id)
-      return false
-    }
+  const filteredCosts = useMemo(() => {
+    return costs[category]?.filter(cost => {
+      // CRITICAL: Ensure this cost belongs to the active project
+      if (!activeProject || cost.project_id !== activeProject.id) {
+        console.warn('Cost with wrong project_id found:', cost.project_id, 'expected:', activeProject?.id)
+        return false
+      }
 
-    // CRITICAL: Apply change order filtering
-    if (selectedChangeOrderId !== null) {
-      if (selectedChangeOrderId === 'base') {
-        // Show only base contract costs (no change order)
-        if (cost.change_order_id !== null) {
-          return false
-        }
-      } else {
-        // Show only costs for the selected change order
-        if (cost.change_order_id !== selectedChangeOrderId) {
-          return false
+      // CRITICAL: Apply change order filtering
+      if (selectedChangeOrderId !== null) {
+        if (selectedChangeOrderId === 'base') {
+          // Show only base contract costs (no change order)
+          if (cost.change_order_id !== null) {
+            return false
+          }
+        } else {
+          // Show only costs for the selected change order
+          if (cost.change_order_id !== selectedChangeOrderId) {
+            return false
+          }
         }
       }
-    }
-    // If selectedChangeOrderId is null, show all costs for the project
+      // If selectedChangeOrderId is null, show all costs for the project
 
-    // Apply search filtering
-    const matchesSearch = !searchTerm || 
-      (cost.vendor?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-       cost.invoice_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-       cost.employee_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-       cost.subcontractor_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-       cost.description?.toLowerCase().includes(searchTerm.toLowerCase()))
-    
-    // Apply date filtering
-    const matchesDateStart = !dateFilter.start || cost.date >= dateFilter.start
-    const matchesDateEnd = !dateFilter.end || cost.date <= dateFilter.end
-    
-    return matchesSearch && matchesDateStart && matchesDateEnd
-  }) || []
+      // Apply search filtering
+      const matchesSearch = !searchTerm || 
+        (cost.vendor?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+         cost.invoice_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+         cost.employee_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+         cost.subcontractor_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+         cost.description?.toLowerCase().includes(searchTerm.toLowerCase()))
+      
+      // Apply date filtering
+      const matchesDateStart = !dateFilter.start || cost.date >= dateFilter.start
+      const matchesDateEnd = !dateFilter.end || cost.date <= dateFilter.end
+      
+      return matchesSearch && matchesDateStart && matchesDateEnd
+    }) || []
+  }, [costs, category, activeProject, selectedChangeOrderId, searchTerm, dateFilter.start, dateFilter.end])
 
   const totalFilteredCost = filteredCosts.reduce((sum, cost) => sum + (cost.cost || 0), 0)
+
+  // Memoize the cost IDs string to avoid unnecessary re-renders
+  const costIdsString = useMemo(() => {
+    return filteredCosts.map(cost => cost.id).sort().join(',')
+  }, [filteredCosts])
+
+  // Memoize the actual cost IDs array based on the string
+  const costIds = useMemo(() => {
+    return costIdsString ? costIdsString.split(',') : []
+  }, [costIdsString])
+
+  const loadAttachmentCounts = useCallback(async () => {
+    if (!tenant?.id || !user?.id || !costIds.length) return
+
+    try {
+      fileUploadService.setContext(tenant.id, user.id)
+      const counts: Record<string, number> = {}
+      
+      // Load attachment counts for each cost entry
+      await Promise.all(
+        costIds.map(async (costId) => {
+          try {
+            const attachments = await fileUploadService.getAttachments('cost', costId)
+            counts[costId] = attachments.length
+          } catch (error) {
+            console.error(`Error loading attachments for cost ${costId}:`, error)
+            counts[costId] = 0
+          }
+        })
+      )
+      
+      setAttachmentCounts(counts)
+    } catch (error) {
+      console.error('Error loading attachment counts:', error)
+    }
+  }, [tenant?.id, user?.id, costIdsString])
+
+  // Load attachment counts when cost IDs change
+  useEffect(() => {
+    if (costIds.length > 0) {
+      loadAttachmentCounts()
+    }
+    // Clear attachment counts when no costs
+    else {
+      setAttachmentCounts({})
+    }
+  }, [loadAttachmentCounts, costIds.length])
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -177,7 +231,7 @@ function CostsContent() {
   }
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString()
+    return formatLocalDateForDisplay(dateString)
   }
 
   const handleAddCost = () => {
@@ -269,6 +323,7 @@ function CostsContent() {
       })
     ].join('\n')
 
+
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -333,6 +388,28 @@ function CostsContent() {
         showChangeOrderSelector={true}
       />
 
+      {/* Budget Tracking - moved to top */}
+      {!budgetLoading && budget && (
+        <BudgetTrackingSection
+          category={category}
+          actualAmount={costs[category]?.reduce((sum, cost) => sum + (cost.cost || 0), 0) || 0}
+          budgetAmount={budget[`${category}_budget`] || 0}
+          variance={(budget[`${category}_budget`] || 0) - (costs[category]?.reduce((sum, cost) => sum + (cost.cost || 0), 0) || 0)}
+          onUpdateBudget={async (cat, amount) => {
+            const field = `${cat}_budget`
+            await supabase
+              .from('project_budgets')
+              .upsert({
+                tenant_id: tenant?.id,
+                project_id: activeProject?.id,
+                [field]: amount
+              }, { onConflict: 'tenant_id,project_id' })
+            await loadBudget()
+          }}
+          canEdit={canWrite}
+        />
+      )}
+
       {/* Page Header */}
       <div className="bg-white p-6 rounded-lg shadow-md">
         <div className="flex items-center justify-between">
@@ -365,83 +442,6 @@ function CostsContent() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="bg-white p-6 rounded-lg shadow-md">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-medium text-gray-900">Filters</h3>
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className="text-blue-600 hover:text-blue-800 flex items-center gap-1"
-          >
-            <Filter className="w-4 h-4" />
-            {showFilters ? 'Hide' : 'Show'} Filters
-          </button>
-        </div>
-        
-        {showFilters && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Search */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <input
-                  type="text"
-                  placeholder="Search vendor, invoice, employee..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </div>
-
-            {/* Date Start */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Date From</label>
-              <input
-                type="date"
-                value={dateFilter.start}
-                onChange={(e) => setDateFilter(prev => ({ ...prev, start: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            {/* Date End */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Date To</label>
-              <input
-                type="date"
-                value={dateFilter.end}
-                onChange={(e) => setDateFilter(prev => ({ ...prev, end: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Budget Tracking */}
-      {!budgetLoading && budget && (
-        <BudgetTrackingSection
-          category={category}
-          actualAmount={costs[category]?.reduce((sum, cost) => sum + (cost.cost || 0), 0) || 0}
-          budgetAmount={budget[`${category}_budget`] || 0}
-          variance={(budget[`${category}_budget`] || 0) - (costs[category]?.reduce((sum, cost) => sum + (cost.cost || 0), 0) || 0)}
-          onUpdateBudget={async (cat, amount) => {
-            const field = `${cat}_budget`
-            await supabase
-              .from('project_budgets')
-              .upsert({
-                tenant_id: tenant?.id,
-                project_id: activeProject?.id,
-                [field]: amount
-              }, { onConflict: 'tenant_id,project_id' })
-            await loadBudget()
-          }}
-          canEdit={canWrite}
-        />
-      )}
-
       {/* Cost Entry Form */}
       {showForm && (
         <div className="bg-white p-6 rounded-lg shadow-md">
@@ -458,8 +458,63 @@ function CostsContent() {
         </div>
       )}
 
-      {/* Costs Table */}
+      {/* Filters - moved directly above table */}
       <div className="bg-white rounded-lg shadow-md overflow-hidden">
+        <div className="p-6 border-b border-gray-200">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-medium text-gray-900">Filters</h3>
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className="text-blue-600 hover:text-blue-800 flex items-center gap-1"
+            >
+              <Filter className="w-4 h-4" />
+              {showFilters ? 'Hide' : 'Show'} Filters
+            </button>
+          </div>
+          
+          {showFilters && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Search */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <input
+                    type="text"
+                    placeholder="Search vendor, invoice, employee..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* Date Start */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Date From</label>
+                <input
+                  type="date"
+                  value={dateFilter.start}
+                  onChange={(e) => setDateFilter(prev => ({ ...prev, start: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Date End */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Date To</label>
+                <input
+                  type="date"
+                  value={dateFilter.end}
+                  onChange={(e) => setDateFilter(prev => ({ ...prev, end: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Costs Table */}
         {loading ? (
           <div className="p-8 text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
@@ -521,6 +576,11 @@ function CostsContent() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Change Order
                   </th>
+
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <Paperclip className="w-4 h-4 mx-auto" />
+                  </th>
+                  
                   {canWrite && (
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Actions
@@ -564,6 +624,14 @@ function CostsContent() {
                         ? changeOrders.find(co => co.id === cost.change_order_id)?.name || 'Unknown'
                         : 'Base Contract'
                       }
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                      {attachmentCounts[cost.id] > 0 && (
+                        <div className="flex items-center justify-center">
+                          <Paperclip className="w-4 h-4 text-blue-600" />
+                          <span className="ml-1 text-xs text-gray-600">{attachmentCounts[cost.id]}</span>
+                        </div>
+                      )}
                     </td>
                     {canWrite && (
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">

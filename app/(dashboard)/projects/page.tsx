@@ -129,16 +129,16 @@ export default function ProjectsPage() {
   return (
     <div className="space-y-6">
       {/* Page Header */}
-      <div className="bg-white p-6 rounded-lg shadow-md">
-        <div className="flex items-center justify-between">
+      <div className="bg-white p-4 sm:p-6 rounded-lg shadow-md">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Projects</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Projects</h1>
             <p className="text-gray-600 mt-1">Manage your construction projects and change orders</p>
           </div>
           {hasPermission('projects', 'write') && (
             <button
               onClick={handleCreateProject}
-              className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center gap-2 transition-colors"
+              className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center gap-2 transition-colors w-fit"
             >
               <Plus className="w-4 h-4" />
               Add Project
@@ -148,7 +148,7 @@ export default function ProjectsPage() {
       </div>
 
       {/* Filters */}
-      <div className="bg-white p-6 rounded-lg shadow-md">
+      <div className="bg-white p-4 sm:p-6 rounded-lg shadow-md">
         <div className="flex flex-col sm:flex-row gap-4">
           {/* Search */}
           <div className="flex-1">
@@ -350,37 +350,39 @@ function ProjectCard({
     <div className="bg-white rounded-lg shadow-md overflow-hidden">
       {/* Project Header */}
       <div className="p-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div className="flex items-start space-x-4 flex-1">
             <button
               onClick={onToggleExpansion}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="text-gray-400 hover:text-gray-600 transition-colors mt-1"
             >
               {isExpanded ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
             </button>
             
-            <div>
-              <div className="flex items-center space-x-3">
-                <h3 className="text-lg font-semibold text-gray-900">
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-3 gap-2">
+                <h3 className="text-lg font-semibold text-gray-900 break-words">
                   {project.jobNumber} - {project.jobName}
                 </h3>
                 {isActive && (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 w-fit">
                     Active Project
                   </span>
                 )}
               </div>
-              <p className="text-gray-600">{project.customer}</p>
-              <div className="flex items-center space-x-4 mt-2 text-sm text-gray-500">
+              <p className="text-gray-600 mt-1">{project.customer}</p>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-4 gap-1 sm:gap-0 mt-2 text-sm text-gray-500">
                 <span>Contract: {formatCurrency(project.totalContractValue)}</span>
                 <span>Change Orders: {formatCurrency(totalChangeOrderValue)}</span>
-                <span>Total: {formatCurrency((project.totalContractValue || 0) + totalChangeOrderValue)}</span>
+                <span className="font-medium">Total: {formatCurrency((project.totalContractValue || 0) + totalChangeOrderValue)}</span>
               </div>
             </div>
           </div>
 
-          <div className="flex items-center space-x-2">
-            <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+          {/* Mobile: Status and Actions - stacked vertically */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 lg:gap-2">
+            {/* Status Badge */}
+            <span className={`inline-flex px-3 py-1 text-sm font-medium rounded-full w-fit ${
               project.status === 'Active' ? 'bg-green-100 text-green-800' :
               project.status === 'Completed' ? 'bg-blue-100 text-blue-800' :
               project.status === 'Inactive' ? 'bg-gray-100 text-gray-800' :
@@ -389,35 +391,37 @@ function ProjectCard({
               {project.status}
             </span>
 
-            {/* Actions */}
-            {!isActive && (
-              <button
-                onClick={onSetActive}
-                className="text-green-600 hover:text-green-900 p-1 rounded transition-colors"
-                title="Set as active project"
-              >
-                <Eye className="w-4 h-4" />
-              </button>
-            )}
+            {/* Action Buttons */}
+            <div className="flex items-center space-x-2">
+              {!isActive && (
+                <button
+                  onClick={onSetActive}
+                  className="text-green-600 hover:text-green-900 p-2 rounded-md border border-green-200 hover:border-green-300 transition-colors"
+                  title="Set as active project"
+                >
+                  <Eye className="w-4 h-4" />
+                </button>
+              )}
 
-            {hasPermission('projects', 'write') && (
-              <>
-                <button
-                  onClick={onEdit}
-                  className="text-blue-600 hover:text-blue-900 p-1 rounded transition-colors"
-                  title="Edit project"
-                >
-                  <Edit className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={onDelete}
-                  className="text-red-600 hover:text-red-900 p-1 rounded transition-colors"
-                  title="Delete project"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </>
-            )}
+              {hasPermission('projects', 'write') && (
+                <>
+                  <button
+                    onClick={onEdit}
+                    className="text-blue-600 hover:text-blue-900 p-2 rounded-md border border-blue-200 hover:border-blue-300 transition-colors"
+                    title="Edit project"
+                  >
+                    <Edit className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={onDelete}
+                    className="text-red-600 hover:text-red-900 p-2 rounded-md border border-red-200 hover:border-red-300 transition-colors"
+                    title="Delete project"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>

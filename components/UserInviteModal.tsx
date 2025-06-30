@@ -176,171 +176,171 @@ export default function UserInviteModal({ isOpen, onClose, onInvite, loading = f
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-      <div className="relative top-20 mx-auto p-5 border w-11/12 max-w-2xl shadow-lg rounded-md bg-white">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">Invite New User</h3>
-          <button
-            onClick={handleClose}
-            disabled={isSubmitting}
-            className="text-gray-400 hover:text-gray-600 disabled:opacity-50"
-          >
-            <X className="h-6 w-6" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Email Input */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Email Address
-            </label>
-            <div className="relative">
-              <input
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className={`block w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-1 ${
-                  errors.email
-                    ? 'border-red-300 focus:ring-red-500 focus:border-red-500'
-                    : 'border-gray-300 focus:ring-blue-500 focus:border-blue-500'
-                }`}
-                placeholder="user@example.com"
-                disabled={isSubmitting}
-              />
-              <Mail className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
-            </div>
-            {errors.email && (
-              <p className="mt-1 text-sm text-red-600">{errors.email}</p>
-            )}
+    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 p-4">
+      <div className="relative top-4 sm:top-20 mx-auto border w-full max-w-2xl shadow-lg rounded-md bg-white max-h-[90vh] overflow-y-auto">
+        <div className="p-4 sm:p-6">
+          <div className="flex items-center justify-between mb-4 sm:mb-6">
+            <h3 className="text-lg sm:text-xl font-semibold text-gray-900">Invite New User</h3>
+            <button
+              onClick={handleClose}
+              disabled={isSubmitting}
+              className="text-gray-400 hover:text-gray-600 disabled:opacity-50"
+            >
+              <X className="h-6 w-6" />
+            </button>
           </div>
 
-          {/* Role Selection */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              User Role
-            </label>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              {(['master', 'entry', 'view'] as const).map((role) => (
-                <div
-                  key={role}
-                  className={`relative rounded-lg border p-4 cursor-pointer focus:outline-none ${
-                    formData.role === role
-                      ? 'border-blue-500 ring-2 ring-blue-500'
-                      : 'border-gray-300 hover:border-gray-400'
+          <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
+            {/* Email Input */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email Address
+              </label>
+              <div className="relative">
+                <input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    errors.email ? 'border-red-300' : 'border-gray-300'
                   }`}
-                  onClick={() => !isSubmitting && handleRoleChange(role)}
-                >
-                  <div className="flex items-center">
-                    <div className="flex-shrink-0">
-                      {role === 'master' && <Shield className="h-5 w-5 text-red-500" />}
-                      {role === 'entry' && <User className="h-5 w-5 text-blue-500" />}
-                      {role === 'view' && <CheckCircle className="h-5 w-5 text-green-500" />}
-                    </div>
-                    <div className="ml-3">
-                      <div className="text-sm font-medium text-gray-900 capitalize">
-                        {role === 'master' ? 'Master' : role === 'entry' ? 'Project Manager' : 'Viewer'}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {role === 'master' && 'Full access to all features'}
-                        {role === 'entry' && 'Can manage costs and data entry'}
-                        {role === 'view' && 'Read-only access to reports'}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Permissions Detail */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-3">
-              Detailed Permissions
-            </label>
-            
-            {/* Role-specific warning for view users */}
-            {formData.role === 'view' && (
-              <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-md">
-                <div className="flex items-start">
-                  <CheckCircle className="h-5 w-5 text-amber-500 mt-0.5 mr-2 flex-shrink-0" />
-                  <div>
-                    <p className="text-sm text-amber-800 font-medium">Viewer Role Restrictions</p>
-                    <p className="text-xs text-amber-700 mt-1">
-                      Viewers have read-only access to protect data integrity. Permissions cannot be elevated above read level.
-                    </p>
-                  </div>
-                </div>
+                  placeholder="user@example.com"
+                  disabled={isSubmitting}
+                />
+                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               </div>
-            )}
-            
-            <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-              <div className="grid grid-cols-1 gap-3">
-                {PERMISSION_AREAS.map((area) => (
-                  <div key={area.key} className="flex items-center justify-between">
-                    <span className="text-sm text-gray-700">{area.label}</span>
-                    <div className="flex space-x-2">
-                      {(['none', 'read', 'write'] as const).map((level) => {
-                        const isAllowed = isPermissionAllowed(formData.role, area.key, level)
-                        const isChecked = permissions[area.key as keyof UserPermissions] === level
-                        
-                        return (
-                          <label 
-                            key={level} 
-                            className={`inline-flex items-center ${!isAllowed ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
-                          >
-                            <input
-                              type="radio"
-                              name={`permission-${area.key}`}
-                              value={level}
-                              checked={isChecked}
-                              onChange={() => handlePermissionChange(area.key, level)}
-                              disabled={isSubmitting || !isAllowed}
-                              className={`form-radio h-3 w-3 text-blue-600 ${!isAllowed ? 'cursor-not-allowed' : ''}`}
-                            />
-                            <span className={`ml-1 text-xs capitalize ${!isAllowed ? 'text-gray-400' : 'text-gray-600'}`}>
-                              {level}
-                            </span>
-                          </label>
-                        )
-                      })}
+              {errors.email && (
+                <p className="mt-1 text-sm text-red-600">{errors.email}</p>
+              )}
+            </div>
+
+            {/* Role Selection */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                User Role
+              </label>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                {(['master', 'entry', 'view'] as const).map((role) => (
+                  <div
+                    key={role}
+                    className={`relative rounded-lg border p-4 cursor-pointer focus:outline-none ${
+                      formData.role === role
+                        ? 'border-blue-500 ring-2 ring-blue-500'
+                        : 'border-gray-300 hover:border-gray-400'
+                    }`}
+                    onClick={() => !isSubmitting && handleRoleChange(role)}
+                  >
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0">
+                        {role === 'master' && <Shield className="h-5 w-5 text-red-500" />}
+                        {role === 'entry' && <User className="h-5 w-5 text-blue-500" />}
+                        {role === 'view' && <CheckCircle className="h-5 w-5 text-green-500" />}
+                      </div>
+                      <div className="ml-3">
+                        <div className="text-sm font-medium text-gray-900 capitalize">
+                          {role === 'master' ? 'Master' : role === 'entry' ? 'Project Manager' : 'Viewer'}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {role === 'master' && 'Full access to all features'}
+                          {role === 'entry' && 'Can manage costs and data entry'}
+                          {role === 'view' && 'Read-only access to reports'}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* Permissions Detail */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-3">
+                Detailed Permissions
+              </label>
               
-              {/* Permission summary */}
-              <div className="mt-4 pt-3 border-t border-gray-300">
-                <p className="text-xs text-gray-500">
-                  <strong>Role Summary:</strong> 
-                  {formData.role === 'master' && ' Full system access with all permissions'}
-                  {formData.role === 'entry' && ' Customizable permissions - can be elevated to any level as needed'}
-                  {formData.role === 'view' && ' Read-only access to all areas except user management'}
-                </p>
+              {/* Role-specific warning for view users */}
+              {formData.role === 'view' && (
+                <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-md">
+                  <div className="flex items-start">
+                    <CheckCircle className="h-5 w-5 text-amber-500 mt-0.5 mr-2 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm text-amber-800 font-medium">Viewer Role Restrictions</p>
+                      <p className="text-xs text-amber-700 mt-1">
+                        Viewers have read-only access to protect data integrity. Permissions cannot be elevated above read level.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                <div className="grid grid-cols-1 gap-3">
+                  {PERMISSION_AREAS.map((area) => (
+                    <div key={area.key} className="flex items-center justify-between">
+                      <span className="text-sm text-gray-700">{area.label}</span>
+                      <div className="flex space-x-2">
+                        {(['none', 'read', 'write'] as const).map((level) => {
+                          const isAllowed = isPermissionAllowed(formData.role, area.key, level)
+                          const isChecked = permissions[area.key as keyof UserPermissions] === level
+                          
+                          return (
+                            <label 
+                              key={level} 
+                              className={`inline-flex items-center ${!isAllowed ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+                            >
+                              <input
+                                type="radio"
+                                name={`permission-${area.key}`}
+                                value={level}
+                                checked={isChecked}
+                                onChange={() => handlePermissionChange(area.key, level)}
+                                disabled={isSubmitting || !isAllowed}
+                                className={`form-radio h-3 w-3 text-blue-600 ${!isAllowed ? 'cursor-not-allowed' : ''}`}
+                              />
+                              <span className={`ml-1 text-xs capitalize ${!isAllowed ? 'text-gray-400' : 'text-gray-600'}`}>
+                                {level}
+                              </span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                
+                {/* Permission summary */}
+                <div className="mt-4 pt-3 border-t border-gray-300">
+                  <p className="text-xs text-gray-500">
+                    <strong>Role Summary:</strong> 
+                    {formData.role === 'master' && ' Full system access with all permissions'}
+                    {formData.role === 'entry' && ' Customizable permissions - can be elevated to any level as needed'}
+                    {formData.role === 'view' && ' Read-only access to all areas except user management'}
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Actions */}
-          <div className="flex justify-end space-x-3 pt-4">
-            <button
-              type="button"
-              onClick={handleClose}
-              disabled={isSubmitting}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-            >
-              {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Send Invitation
-            </button>
-          </div>
-        </form>
+            {/* Actions */}
+            <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4">
+              <button
+                type="button"
+                onClick={handleClose}
+                disabled={isSubmitting}
+                className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+              >
+                {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Send Invitation
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   )

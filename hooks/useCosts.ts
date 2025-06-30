@@ -43,16 +43,7 @@ const calculateTotalCost = (category: CostCategory, costData: Partial<ProjectCos
     
     const total = stTotal + otTotal + dtTotal + perDiem + mobTotal
     
-    // Debug logging
-    console.log('Labor cost calculation:', {
-      stTotal: `${costData.st_hours || 0} × ${costData.st_rate || 0} = ${stTotal}`,
-      otTotal: `${costData.ot_hours || 0} × ${costData.ot_rate || 0} = ${otTotal}`,
-      dtTotal: `${costData.dt_hours || 0} × ${costData.dt_rate || 0} = ${dtTotal}`,
-      mobTotal: `${costData.mob_qty || 0} × ${costData.mob_rate || 0} = ${mobTotal}`,
-      perDiem,
-      total
-    })
-    
+        
     return total
   }
   return Number(costData.cost || 0)

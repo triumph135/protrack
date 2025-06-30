@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { Plus, Edit, Trash2, FileText, DollarSign, Calendar, Filter, Download, Search } from 'lucide-react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { Plus, Edit, Trash2, FileText, DollarSign, Calendar, Filter, Download, Search, Paperclip } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
 import { useProjects } from '@/contexts/ProjectContext'
@@ -10,6 +10,8 @@ import { useChangeOrders } from '@/hooks/useChangeOrders'
 import InvoiceForm from '@/components/InvoiceForm'
 import ProjectChangeOrderSelector from '@/components/ProjectChangeOrderSelector'
 import type { CustomerInvoice } from '@/types/app.types'
+import { formatLocalDateForDisplay } from '@/lib/dateUtils'
+import { fileUploadService } from '@/lib/fileUploadService'
 
 interface InvoiceFilters {
   startDate: string
@@ -36,6 +38,7 @@ export default function InvoicesPage() {
     minAmount: '',
     maxAmount: ''
   })
+  const [attachmentCounts, setAttachmentCounts] = useState<Record<string, number>>({})
 
   // Data hooks - Convert change order selection for the hook
   const changeOrderForHook = selectedChangeOrder === 'all' ? undefined : 
@@ -115,15 +118,54 @@ export default function InvoicesPage() {
     setShowForm(true)
   }
 
-  // Apply filters to invoices
-  const filteredInvoices = invoices.filter(invoice => {
-    if (filters.startDate && invoice.date_billed < filters.startDate) return false
-    if (filters.endDate && invoice.date_billed > filters.endDate) return false
-    if (filters.invoiceNumber && !invoice.invoice_number.toLowerCase().includes(filters.invoiceNumber.toLowerCase())) return false
-    if (filters.minAmount && invoice.amount < parseFloat(filters.minAmount)) return false
-    if (filters.maxAmount && invoice.amount > parseFloat(filters.maxAmount)) return false
-    return true
-  })
+  // Apply filters to invoices with memoization to prevent infinite loops
+  const filteredInvoices = useMemo(() => {
+    return invoices.filter(invoice => {
+      if (filters.startDate && invoice.date_billed < filters.startDate) return false
+      if (filters.endDate && invoice.date_billed > filters.endDate) return false
+      if (filters.invoiceNumber && !invoice.invoice_number.toLowerCase().includes(filters.invoiceNumber.toLowerCase())) return false
+      if (filters.minAmount && invoice.amount < parseFloat(filters.minAmount)) return false
+      if (filters.maxAmount && invoice.amount > parseFloat(filters.maxAmount)) return false
+      return true
+    })
+  }, [invoices, filters.startDate, filters.endDate, filters.invoiceNumber, filters.minAmount, filters.maxAmount])
+
+  // Memoize the invoice IDs string to avoid unnecessary re-renders
+  const invoiceIdsString = useMemo(() => {
+    return filteredInvoices.map(invoice => invoice.id).sort().join(',')
+  }, [filteredInvoices])
+
+  // Memoize the actual invoice IDs array based on the string
+  const invoiceIds = useMemo(() => {
+    return invoiceIdsString ? invoiceIdsString.split(',') : []
+  }, [invoiceIdsString])
+
+  // Load attachment counts for invoices
+  const loadAttachmentCounts = useCallback(async () => {
+    if (!tenant?.id || !user?.id || !invoiceIds.length) return
+
+    try {
+      fileUploadService.setContext(tenant.id, user.id)
+      const counts: Record<string, number> = {}
+      
+      // Load attachment counts for each invoice
+      await Promise.all(
+        invoiceIds.map(async (invoiceId) => {
+          try {
+            const attachments = await fileUploadService.getAttachments('customer_invoice', invoiceId)
+            counts[invoiceId] = attachments.length
+          } catch (error) {
+            console.error(`Error loading attachments for invoice ${invoiceId}:`, error)
+            counts[invoiceId] = 0
+          }
+        })
+      )
+      
+      setAttachmentCounts(counts)
+    } catch (error) {
+      console.error('Error loading attachment counts:', error)
+    }
+  }, [tenant?.id, user?.id, invoiceIdsString])
 
   // Calculate filtered total
   const filteredTotal = filteredInvoices.reduce((sum, inv) => sum + inv.amount, 0)
@@ -150,6 +192,17 @@ export default function InvoicesPage() {
       loadInvoices(activeProject.id, changeOrderForHook)
     }
   }, [selectedChangeOrder, activeProject?.id, changeOrderForHook])
+
+  // Load attachment counts when invoice IDs change
+  useEffect(() => {
+    if (invoiceIds.length > 0) {
+      loadAttachmentCounts()
+    }
+    // Clear attachment counts when no invoices
+    else {
+      setAttachmentCounts({})
+    }
+  }, [loadAttachmentCounts, invoiceIds.length])
 
   if (!canRead) {
     return (
@@ -211,113 +264,6 @@ export default function InvoicesPage() {
         </div>
       </div>
 
-      {/* Action Bar */}
-      <div className="bg-white p-4 rounded-lg shadow-md">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div className="flex items-center gap-4">
-            {canWrite && (
-              <button
-                onClick={() => {
-                  setEditingInvoice(null)
-                  setShowForm(true)
-                }}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Add Invoice
-              </button>
-            )}
-            
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-            >
-              <Filter className="h-4 w-4 mr-2" />
-              Filters
-            </button>
-          </div>
-
-          {/* Summary */}
-          <div className="text-right">
-            <div className="flex items-center text-sm text-gray-500">
-              <DollarSign className="h-4 w-4 mr-1" />
-              Total Billed: 
-              <span className="ml-1 font-semibold text-green-600">
-                ${filteredTotal.toLocaleString()}
-              </span>
-            </div>
-            <p className="text-xs text-gray-400">
-              {filteredInvoices.length} invoice{filteredInvoices.length !== 1 ? 's' : ''}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Filters */}
-      {showFilters && (
-        <div className="bg-gray-50 p-4 rounded-lg border">
-          <h4 className="text-sm font-medium text-gray-900 mb-3">Filter Invoices</h4>
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Start Date</label>
-              <input
-                type="date"
-                value={filters.startDate}
-                onChange={(e) => handleFilterChange('startDate', e.target.value)}
-                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">End Date</label>
-              <input
-                type="date"
-                value={filters.endDate}
-                onChange={(e) => handleFilterChange('endDate', e.target.value)}
-                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Invoice Number</label>
-              <input
-                type="text"
-                value={filters.invoiceNumber}
-                onChange={(e) => handleFilterChange('invoiceNumber', e.target.value)}
-                placeholder="Search..."
-                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Min Amount</label>
-              <input
-                type="number"
-                value={filters.minAmount}
-                onChange={(e) => handleFilterChange('minAmount', e.target.value)}
-                placeholder="0"
-                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Max Amount</label>
-              <input
-                type="number"
-                value={filters.maxAmount}
-                onChange={(e) => handleFilterChange('maxAmount', e.target.value)}
-                placeholder="1000000"
-                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-            </div>
-          </div>
-          <div className="mt-3">
-            <button
-              onClick={clearFilters}
-              className="text-sm text-blue-600 hover:text-blue-800"
-            >
-              Clear all filters
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Form */}
       {showForm && canWrite && (
         <InvoiceForm
@@ -331,8 +277,116 @@ export default function InvoicesPage() {
         />
       )}
 
-      {/* Invoice List */}
+      {/* Action Bar + Filters + Invoice List combined */}
       <div className="bg-white rounded-lg shadow-md overflow-hidden">
+        {/* Action Bar */}
+        <div className="p-4 border-b border-gray-200">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div className="flex items-center gap-4">
+              {canWrite && (
+                <button
+                  onClick={() => {
+                    setEditingInvoice(null)
+                    setShowForm(true)
+                  }}
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Invoice
+                </button>
+              )}
+              
+              <button
+                onClick={() => setShowFilters(!showFilters)}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              >
+                <Filter className="h-4 w-4 mr-2" />
+                Filters
+              </button>
+            </div>
+
+            {/* Summary */}
+            <div className="text-right">
+              <div className="flex items-center text-sm text-gray-500">
+                <DollarSign className="h-4 w-4 mr-1" />
+                Total Billed: 
+                <span className="ml-1 font-semibold text-green-600">
+                  ${filteredTotal.toLocaleString()}
+                </span>
+              </div>
+              <p className="text-xs text-gray-400">
+                {filteredInvoices.length} invoice{filteredInvoices.length !== 1 ? 's' : ''}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Filters */}
+        {showFilters && (
+          <div className="bg-gray-50 p-4 border-b border-gray-200">
+            <h4 className="text-sm font-medium text-gray-900 mb-3">Filter Invoices</h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Start Date</label>
+                <input
+                  type="date"
+                  value={filters.startDate}
+                  onChange={(e) => handleFilterChange('startDate', e.target.value)}
+                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">End Date</label>
+                <input
+                  type="date"
+                  value={filters.endDate}
+                  onChange={(e) => handleFilterChange('endDate', e.target.value)}
+                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Invoice Number</label>
+                <input
+                  type="text"
+                  value={filters.invoiceNumber}
+                  onChange={(e) => handleFilterChange('invoiceNumber', e.target.value)}
+                  placeholder="Search..."
+                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Min Amount</label>
+                <input
+                  type="number"
+                  value={filters.minAmount}
+                  onChange={(e) => handleFilterChange('minAmount', e.target.value)}
+                  placeholder="0"
+                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Max Amount</label>
+                <input
+                  type="number"
+                  value={filters.maxAmount}
+                  onChange={(e) => handleFilterChange('maxAmount', e.target.value)}
+                  placeholder="1000000"
+                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <div className="mt-3">
+              <button
+                onClick={clearFilters}
+                className="text-sm text-blue-600 hover:text-blue-800"
+              >
+                Clear all filters
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Invoice List */}
         {loading ? (
           <div className="p-8 text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
@@ -359,6 +413,9 @@ export default function InvoicesPage() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Change Order
                   </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <Paperclip className="w-4 h-4 mx-auto" />
+                  </th>
                   {canWrite && (
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Actions
@@ -383,7 +440,7 @@ export default function InvoicesPage() {
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {new Date(invoice.date_billed).toLocaleDateString()}
+                        {formatLocalDateForDisplay(invoice.date_billed)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {invoice.change_order_id ? (
@@ -394,6 +451,14 @@ export default function InvoicesPage() {
                           )
                         ) : (
                           'Base Contract'
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        {attachmentCounts[invoice.id] > 0 && (
+                          <div className="flex items-center justify-center">
+                            <Paperclip className="w-4 h-4 text-blue-600" />
+                            <span className="ml-1 text-xs text-gray-600">{attachmentCounts[invoice.id]}</span>
+                          </div>
                         )}
                       </td>
                       {canWrite && (

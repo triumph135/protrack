@@ -1,12 +1,16 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Save, X, AlertCircle, Users, DollarSign } from 'lucide-react'
+import { Save, X, AlertCircle, Users, DollarSign, FileText } from 'lucide-react'
 import { useEmployees } from '@/hooks/useEmployees'
 import { useChangeOrders } from '@/hooks/useChangeOrders'
 import { useProjects } from '@/contexts/ProjectContext'
 import type { ProjectCost, ChangeOrder } from '@/types/app.types'
 import type { CostCategory } from '@/hooks/useCosts'
+import FileAttachments from '@/components/FileAttachments'
+import { useAuth } from '@/contexts/AuthContext'
+import { useTenant } from '@/contexts/TenantContext'
+import { getTodayLocalDateString } from '@/lib/dateUtils'
 
 interface CostEntryFormProps {
   category: CostCategory
@@ -38,6 +42,8 @@ export default function CostEntryForm({
   
   // Get the active project
   const { activeProject } = useProjects()
+  const { user } = useAuth()
+  const { tenant } = useTenant()
   
   // Use the active project ID for loading employees and change orders
   const { employees, loading: employeesLoading } = useEmployees(activeProject?.id)
@@ -48,15 +54,10 @@ export default function CostEntryForm({
     if (editItem) {
       setFormData(editItem)
     } else {
-      // Set default values
-      const today = new Date()
-      const localDateString = today.getFullYear() + '-' + 
-        String(today.getMonth() + 1).padStart(2, '0') + '-' + 
-        String(today.getDate()).padStart(2, '0')
-      
+      // Set default values using the proper date utility
       const defaultData: Partial<ProjectCost> = {
         project_id: activeProject?.id,
-        date: localDateString,
+        date: getTodayLocalDateString(),
         change_order_id: undefined
       }
 
@@ -268,17 +269,7 @@ export default function CostEntryForm({
     const mobTotal = Number(formData.mob_qty || 0) * Number(formData.mob_rate || 0)
     
     const total = stTotal + otTotal + dtTotal + perDiem + mobTotal
-    
-    console.log('Form labor calculation:', {
-      formData: formData,
-      stTotal: `${formData.st_hours || 0} × ${formData.st_rate || 0} = ${stTotal}`,
-      otTotal: `${formData.ot_hours || 0} × ${formData.ot_rate || 0} = ${otTotal}`,
-      dtTotal: `${formData.dt_hours || 0} × ${formData.dt_rate || 0} = ${dtTotal}`,
-      mobTotal: `${formData.mob_qty || 0} × ${formData.mob_rate || 0} = ${mobTotal}`,
-      perDiem,
-      total
-    })
-    
+        
     return total
   }
 
@@ -306,14 +297,14 @@ export default function CostEntryForm({
   }
 
   return (
-    <div className="bg-white p-6 rounded-lg shadow-md">
-      <div className="flex justify-between items-center mb-6">
+    <div className="bg-white p-4 sm:p-6 rounded-lg shadow-md">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 sm:mb-6">
         <h3 className="text-lg font-semibold text-gray-900">
           {editItem ? `Edit ${getCategoryDisplayName()}` : `Add ${getCategoryDisplayName()}`} Cost
         </h3>
         <button
           onClick={onCancel}
-          className="text-gray-400 hover:text-gray-600 transition-colors"
+          className="text-gray-400 hover:text-gray-600 transition-colors self-end sm:self-auto"
         >
           <X className="w-5 h-5" />
         </button>
@@ -321,16 +312,16 @@ export default function CostEntryForm({
 
       {/* Project Info */}
       <div className="bg-blue-50 border border-blue-200 rounded-md p-3 mb-4">
-        <p className="text-sm text-blue-800">
+        <p className="text-xs sm:text-sm text-blue-800 break-words">
           <span className="font-medium">Project:</span> {activeProject.jobNumber} - {activeProject.jobName}
         </p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Form Fields Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4">
           {getFormFields().map((field) => (
-            <div key={field.name} className={field.name === 'description' ? 'md:col-span-2' : ''}>
+            <div key={field.name} className={field.name === 'description' ? '' : ''}>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 {field.label} {field.required && <span className="text-red-500">*</span>}
               </label>
@@ -450,13 +441,31 @@ export default function CostEntryForm({
           </select>
         </div>
 
-        {/* File Attachments Info */}
+        {/* Attachments Section - Only show when editing existing item */}
+        {editItem && (
+          <div className="border-t pt-6">
+            <h4 className="text-sm font-medium text-gray-700 mb-4">File Attachments</h4>
+            <FileAttachments
+              entityType="cost"
+              entityId={editItem.id}
+              tenantId={tenant?.id || ''}
+              userId={user?.id || ''}
+              canEdit={true}
+              className="bg-gray-50 p-4 rounded-lg"
+            />
+          </div>
+        )}
+
         {!editItem && (
-          <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-md flex items-start gap-2">
-            <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0" />
-            <div>
-              <p className="text-sm font-medium">File Attachments</p>
-              <p className="text-sm">Save this entry first, then edit it to add file attachments</p>
+          <div className="border-t pt-6">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-center gap-2 text-blue-700">
+                <FileText className="w-5 h-5" />
+                <div>
+                  <p className="text-sm font-medium">File Attachments</p>
+                  <p className="text-sm">Save this entry first, then edit it to add file attachments</p>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -474,18 +483,18 @@ export default function CostEntryForm({
         )}
 
         {/* Form Actions */}
-        <div className="flex justify-end space-x-3 pt-6 border-t">
+        <div className="flex flex-col sm:flex-row justify-end gap-3 pt-6 border-t">
           <button
             type="button"
             onClick={onCancel}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+            className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={loading || (category === 'labor' && employees.length === 0)}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             <Save className="w-4 h-4" />
             {loading ? 'Saving...' : 

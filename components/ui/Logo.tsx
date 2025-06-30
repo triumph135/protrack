@@ -24,7 +24,7 @@ export default function Logo({ size = 'md', className = '' }: LogoProps) {
       <text 
         x="95" 
         y="32" 
-        fill="#1F2937" 
+        className="fill-gray-800 dark:fill-gray-100 transition-colors duration-200"
         fontSize="26" 
         fontWeight="700" 
         fontFamily="Inter, system-ui, sans-serif"
@@ -44,7 +44,12 @@ export default function Logo({ size = 'md', className = '' }: LogoProps) {
       <rect x="171" y="15" width="4" height="25" fill="#06B6D4" rx="2"/>
       
       {/* Connecting dotted line */}
-      <path d="M35 25 L155 25" stroke="#E5E7EB" strokeWidth="1" strokeDasharray="2,2"/>
+      <path 
+        d="M35 25 L155 25" 
+        className="stroke-gray-300 dark:stroke-gray-600 transition-colors duration-200"
+        strokeWidth="1" 
+        strokeDasharray="2,2"
+      />
     </svg>
   )
 }
