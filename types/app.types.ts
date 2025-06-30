@@ -255,7 +255,7 @@ export interface Attachment {
   updated_at?: string
 }
 
-// Updated types/app.types.ts - Add this to your existing file
+// Updated types/app.types.ts
 
 export interface UserInvitation {
   id: string

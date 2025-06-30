@@ -13,6 +13,8 @@ export default function AuthLayout({
   const isTenantSetup = pathname === '/tenant-setup'
   const isAcceptInvitation = pathname === '/accept-invitation' || pathname.startsWith('/accept-invitation?')
   const isJoinTenant = pathname === '/join-tenant' || pathname.startsWith('/join-tenant?')
+  const isResetPassword = pathname === '/reset-password'
+  const isForgotPassword = pathname === '/forgot-password'
 
   const content = (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center px-4">
@@ -28,7 +30,7 @@ export default function AuthLayout({
   )
 
   // These pages handle their own auth logic
-  if (isTenantSetup || isAcceptInvitation || isJoinTenant) {
+  if (isTenantSetup || isAcceptInvitation || isJoinTenant || isResetPassword || isForgotPassword) {
     return content
   }
 

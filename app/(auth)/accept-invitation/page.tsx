@@ -64,15 +64,16 @@ export default function AcceptInvitationPage() {
         return
       }
 
-      // Check if user already exists
+      // Check if user already exists in this specific tenant
       const { data: existingUser } = await supabase
         .from('users')
         .select('id')
         .eq('email', data.email)
+        .eq('tenant_id', data.tenant_id)
         .single()
 
       if (existingUser) {
-        setError('An account with this email already exists. Please log in instead.')
+        setError('You are already a member of this organization. Please log in instead.')
         return
       }
 
@@ -124,70 +125,37 @@ export default function AcceptInvitationPage() {
     e.preventDefault()
     
     if (!validateForm() || !invitation) return
-
+  
     try {
       setSubmitting(true)
       setError('')
-
-      // Create user account using Supabase Auth
-      const { data: authData, error: signUpError } = await supabase.auth.signUp({
-        email: invitation.email,
-        password: formData.password,
-        options: {
-          data: {
-            name: formData.name
-          }
-        }
-      })
-
-      if (signUpError) throw signUpError
-
-      if (!authData.user) {
-        throw new Error('Failed to create user account')
-      }
-
-      // Create user record in our database
-      const { error: insertError } = await supabase
-        .from('users')
-        .insert({
-          id: authData.user.id,
-          tenant_id: invitation.tenant_id,
-          name: formData.name,
-          email: invitation.email,
-          role: invitation.role,
-          permissions: invitation.permissions,
-          is_active: true
+  
+      // Use the new API endpoint to create user with admin API
+      const response = await fetch('/api/create-invited-user', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          invitationToken: token,
+          password: formData.password,
+          name: formData.name
         })
-
-      if (insertError) throw insertError
-
-      // Update invitation status via API
-     try {
-         const response = await fetch('/api/accept-invitation', {
-         method: 'POST',
-         headers: {
-             'Content-Type': 'application/json',
-         },
-         body: JSON.stringify({
-             invitationId: invitation.id
-         })
-         })
-        
-         if (!response.ok) {
-         console.warn('Failed to update invitation status via API')
-         }
-     } catch (updateError) {
-         console.warn('Failed to update invitation status:', updateError)
-         // Don't fail the whole process for this
-     }
-
+      })
+  
+      const result = await response.json()
+  
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to create account')
+      }
+  
       setSuccess(true)
       
       // Redirect to login after a brief delay
       setTimeout(() => {
         router.push('/login?message=Account created successfully! Please log in.')
       }, 2000)
-
+  
     } catch (err: any) {
       console.error('Error accepting invitation:', err)
       setError(err.message || 'Failed to create account. Please try again.')

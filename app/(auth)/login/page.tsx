@@ -43,7 +43,21 @@ export default function LoginPage() {
     }
   }, [loading, user, supabaseUser])
 
-  // Hook 3: Perform actual redirect
+  // Hook 3: Check for password reset fragment auth
+  useEffect(() => {
+    const hashParams = new URLSearchParams(window.location.hash.substring(1))
+    const accessToken = hashParams.get('access_token')
+    const authType = hashParams.get('type')
+    
+    if (accessToken && authType === 'recovery') {
+      console.log('Password reset detected on login page - redirecting to reset-password')
+      const resetUrl = `/reset-password${window.location.hash}`
+      window.location.href = resetUrl
+      return
+    }
+  }, [])
+
+  // Hook 4: Perform actual redirect
   useEffect(() => {
     if (showRedirectScreen && user && !isSubmitting) {
       const targetUrl = user.tenant_id ? redirectTo : '/tenant-setup'
@@ -248,13 +262,23 @@ export default function LoginPage() {
                 </button>
               </div>
 
-              <div className="text-center">
-                <Link
-                  href="/register"
-                  className="text-blue-600 hover:text-blue-500 text-sm"
-                >
-                  Don't have an account? Sign up
-                </Link>
+              <div className="text-center space-y-2">
+                <div>
+                  <Link
+                    href="/register"
+                    className="text-blue-600 hover:text-blue-500 text-sm"
+                  >
+                    Don't have an account? Sign up
+                  </Link>
+                </div>
+                <div>
+                  <Link
+                    href="/forgot-password"
+                    className="text-blue-600 hover:text-blue-500 text-sm"
+                  >
+                    Forgot your password?
+                  </Link>
+                </div>
               </div>
             </form>
           )}

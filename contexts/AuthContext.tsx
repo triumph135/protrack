@@ -28,29 +28,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const supabase = createClient()
 
-  const fetchUserData = async (userId: string): Promise<User | null> => {
+  const fetchUserData = async (userId: string, fallbackEmail?: string): Promise<User | null> => {
     try {
       console.log('Fetching user data for ID:', userId)
-      const { data, error } = await supabase
+      
+      // First try to get user by ID
+      let { data, error } = await supabase
         .from('users')
         .select('*')
         .eq('id', userId)
-        .single()
-
-      console.log('Database response:', { data: !!data, error: error?.message, errorCode: error?.code })
-
+        .maybeSingle()  // Use maybeSingle() instead of single() to handle no results gracefully
+  
+      // If no user found by ID and we have an email, try by email
+      if (!data && fallbackEmail) {
+        console.log('User not found by ID, trying by email:', fallbackEmail)
+        const { data: emailData, error: emailError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('email', fallbackEmail)
+          .maybeSingle()
+        
+        data = emailData
+        error = emailError
+      }
+  
+      console.log('Database response:', { 
+        hasData: !!data, 
+        error: error?.message, 
+        errorCode: error?.code 
+      })
+  
       if (error) {
         console.error('Error fetching user data:', error)
-        if (error.code === 'PGRST116') {
-          console.log('User profile not found in database')
-        }
-        console.log('fetchUserData completed with error')
         return null
       }
-
+  
       if (data) {
         console.log('User data fetched successfully:', data.email)
-        console.log('Setting user in context...')
         console.log('User object details:', { 
           id: data.id, 
           email: data.email, 
@@ -61,15 +75,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const userData = data as User
         setUser(userData)
         console.log('User set in context:', userData.email)
-        console.log('fetchUserData completed successfully')
         return userData
       }
       
-      console.log('fetchUserData completed with no data')
+      console.log('No user data found')
       return null
     } catch (error) {
       console.error('fetchUserData error:', error)
-      console.log('fetchUserData completed with exception')
       return null
     }
   }
@@ -83,7 +95,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log('Auth already initialized, skipping')
         return
       }
-
+    
       try {
         console.log('Initializing auth...')
         setIsInitializing(true)
@@ -92,29 +104,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const { data: { session }, error } = await supabase.auth.getSession()
         
         if (!mounted) return
-
+    
         if (error) {
           console.error('Error getting session:', error)
           setLoading(false)
           setInitialized(true)
           return
         }
-
+    
         if (session?.user) {
           console.log('Found existing session for:', session.user.email)
           setSupabaseUser(session.user)
-          await fetchUserData(session.user.id)
+          await fetchUserData(session.user.id, session.user.email) // Pass email as fallback
         } else {
           console.log('No existing session found')
           setSupabaseUser(null)
           setUser(null)
         }
-
+    
         console.log('Auth initialization completed, setting loading to false')
         setLoading(false)
         setInitialized(true)
         setIsInitializing(false)
-
+    
       } catch (error) {
         console.error('Error initializing auth:', error)
         if (mounted) {
@@ -134,13 +146,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('Auth state changed:', event, 'mounted:', mounted, 'initialized:', initialized, 'isProcessingAuth:', isProcessingAuth)
       
       if (!mounted) return
-
+    
       // Prevent concurrent auth processing
       if (isProcessingAuth) {
         console.log('Auth processing already in progress, skipping event:', event)
         return
       }
-
+    
       // Only handle explicit sign in/out events, not token refreshes or initial sessions during initialization
       if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
         // Only skip SIGNED_IN events if initializeAuth is currently running
@@ -148,7 +160,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.log('Skipping SIGNED_IN event during initializeAuth (to prevent duplicates)')
           return
         }
-
+    
         setIsProcessingAuth(true)
         try {
           if (session?.user && event === 'SIGNED_IN') {
@@ -158,7 +170,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             
             // Add timeout protection to prevent infinite hanging
             const fetchWithTimeout = Promise.race([
-              fetchUserData(session.user.id),
+              fetchUserData(session.user.id, session.user.email), // Pass email as fallback
               new Promise((_, reject) => 
                 setTimeout(() => reject(new Error('fetchUserData timeout')), 10000)
               )
@@ -181,7 +193,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } finally {
           setIsProcessingAuth(false)
         }
-
+    
         console.log('Auth state change completed, setting loading to false')
         setLoading(false)
       } else {

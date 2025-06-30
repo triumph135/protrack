@@ -36,8 +36,8 @@ const DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     others: 'write',
     capLeases: 'write',
     consumable: 'write',
-    invoices: 'read',
-    projects: 'read',
+    invoices: 'write',
+    projects: 'write',
     users: 'none'
   },
   view: {
@@ -83,10 +83,48 @@ export default function UserInviteModal({ isOpen, onClose, onInvite, loading = f
   }
 
   const handlePermissionChange = (area: string, level: 'none' | 'read' | 'write') => {
-    setPermissions(prev => ({
-      ...prev,
-      [area]: level
-    }))
+    // Only enforce role-based permission limits for view users
+    if (formData.role === 'view') {
+      const maxAllowedLevel = getMaxPermissionLevel(formData.role, area)
+      const finalLevel = level === 'write' && maxAllowedLevel === 'read' ? 'read' : level
+      
+      setPermissions(prev => ({
+        ...prev,
+        [area]: finalLevel
+      }))
+    } else {
+      // Master and Project Manager users can have any permissions
+      setPermissions(prev => ({
+        ...prev,
+        [area]: level
+      }))
+    }
+  }
+
+  // Helper function to get maximum allowed permission level for a role
+  const getMaxPermissionLevel = (role: 'master' | 'entry' | 'view', area: string): 'none' | 'read' | 'write' => {
+    // Only restrict view users - others can have any permissions
+    if (role === 'view') {
+      const roleDefaults = DEFAULT_PERMISSIONS[role]
+      return roleDefaults[area as keyof UserPermissions] as 'none' | 'read' | 'write'
+    }
+    // Master and Project Manager users have no restrictions
+    return 'write'
+  }
+
+  // Check if a permission level is allowed for the current role
+  const isPermissionAllowed = (role: 'master' | 'entry' | 'view', area: string, level: 'none' | 'read' | 'write'): boolean => {
+    // Only restrict view users
+    if (role === 'view') {
+      const maxLevel = getMaxPermissionLevel(role, area)
+      
+      if (maxLevel === 'none') return level === 'none'
+      if (maxLevel === 'read') return level === 'none' || level === 'read'
+      if (maxLevel === 'write') return true
+    }
+    
+    // Master and Project Manager users can have any permissions
+    return true
   }
 
   const validateForm = () => {
@@ -220,29 +258,65 @@ export default function UserInviteModal({ isOpen, onClose, onInvite, loading = f
             <label className="block text-sm font-medium text-gray-700 mb-3">
               Detailed Permissions
             </label>
+            
+            {/* Role-specific warning for view users */}
+            {formData.role === 'view' && (
+              <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-md">
+                <div className="flex items-start">
+                  <CheckCircle className="h-5 w-5 text-amber-500 mt-0.5 mr-2 flex-shrink-0" />
+                  <div>
+                    <p className="text-sm text-amber-800 font-medium">Viewer Role Restrictions</p>
+                    <p className="text-xs text-amber-700 mt-1">
+                      Viewers have read-only access to protect data integrity. Permissions cannot be elevated above read level.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+            
             <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
               <div className="grid grid-cols-1 gap-3">
                 {PERMISSION_AREAS.map((area) => (
                   <div key={area.key} className="flex items-center justify-between">
                     <span className="text-sm text-gray-700">{area.label}</span>
                     <div className="flex space-x-2">
-                      {(['none', 'read', 'write'] as const).map((level) => (
-                        <label key={level} className="inline-flex items-center">
-                          <input
-                            type="radio"
-                            name={`permission-${area.key}`}
-                            value={level}
-                            checked={permissions[area.key as keyof UserPermissions] === level}
-                            onChange={() => handlePermissionChange(area.key, level)}
-                            disabled={isSubmitting}
-                            className="form-radio h-3 w-3 text-blue-600"
-                          />
-                          <span className="ml-1 text-xs text-gray-600 capitalize">{level}</span>
-                        </label>
-                      ))}
+                      {(['none', 'read', 'write'] as const).map((level) => {
+                        const isAllowed = isPermissionAllowed(formData.role, area.key, level)
+                        const isChecked = permissions[area.key as keyof UserPermissions] === level
+                        
+                        return (
+                          <label 
+                            key={level} 
+                            className={`inline-flex items-center ${!isAllowed ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+                          >
+                            <input
+                              type="radio"
+                              name={`permission-${area.key}`}
+                              value={level}
+                              checked={isChecked}
+                              onChange={() => handlePermissionChange(area.key, level)}
+                              disabled={isSubmitting || !isAllowed}
+                              className={`form-radio h-3 w-3 text-blue-600 ${!isAllowed ? 'cursor-not-allowed' : ''}`}
+                            />
+                            <span className={`ml-1 text-xs capitalize ${!isAllowed ? 'text-gray-400' : 'text-gray-600'}`}>
+                              {level}
+                            </span>
+                          </label>
+                        )
+                      })}
                     </div>
                   </div>
                 ))}
+              </div>
+              
+              {/* Permission summary */}
+              <div className="mt-4 pt-3 border-t border-gray-300">
+                <p className="text-xs text-gray-500">
+                  <strong>Role Summary:</strong> 
+                  {formData.role === 'master' && ' Full system access with all permissions'}
+                  {formData.role === 'entry' && ' Customizable permissions - can be elevated to any level as needed'}
+                  {formData.role === 'view' && ' Read-only access to all areas except user management'}
+                </p>
               </div>
             </div>
           </div>
