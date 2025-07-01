@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Building, User, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
@@ -17,7 +17,25 @@ interface InvitationDetails {
   permissions: any
 }
 
-export default function JoinTenantPage() {
+// Loading fallback component
+function LoadingFallback() {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center px-4">
+      <div className="max-w-md w-full space-y-8">
+        <div className="text-center">
+          <div className="flex justify-center items-center mb-6">
+            <Logo size="lg" className="mr-3" />
+          </div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading invitation...</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Component that actually uses useSearchParams
+function JoinTenantContent() {
   const [loading, setLoading] = useState(true)
   const [joining, setJoining] = useState(false)
   const [error, setError] = useState('')
@@ -327,5 +345,13 @@ export default function JoinTenantPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function JoinTenantPage() {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <JoinTenantContent />
+    </Suspense>
   )
 }
