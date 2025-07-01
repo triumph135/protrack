@@ -34,7 +34,6 @@ function TenantSetupContent() {
   useEffect(() => {
     const ensureUserExists = async () => {
       if (supabaseUser && !user) {
-        console.log('User exists in auth but not in database, attempting to create profile...')
         try {
           const { error: insertError } = await supabase
             .from('users')
@@ -61,7 +60,6 @@ function TenantSetupContent() {
           if (insertError) {
             console.error('Error creating user profile in tenant setup:', insertError)
           } else {
-            console.log('User profile created successfully in tenant setup')
             await refreshUser()
           }
         } catch (error) {
@@ -276,9 +274,8 @@ function TenantSetupContent() {
                 className="block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                 disabled={loading}
               >
-                <option value="starter">Starter - Free</option>
-                <option value="professional">Professional - $29/month</option>
-                <option value="enterprise">Enterprise - $99/month</option>
+                <option value="professional">Professional - $35/month</option>
+                <option value="enterprise">Enterprise - $65/month</option>
               </select>
             </div>
           </div>

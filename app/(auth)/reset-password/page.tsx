@@ -45,10 +45,6 @@ function ResetPasswordContent() {
 
   useEffect(() => {
     const handleAuth = async () => {
-      console.log('🔍 Reset password page - handling authentication...')
-      console.log('🔍 Current URL:', window.location.href)
-      console.log('🔍 Has query token:', !!token, 'Has tokenHash:', !!tokenHash)
-      
       try {
         // First, check for URL fragment-based auth (access_token, refresh_token in #)
         const hashParams = new URLSearchParams(window.location.hash.substring(1))
@@ -56,16 +52,8 @@ function ResetPasswordContent() {
         const refreshToken = hashParams.get('refresh_token')
         const authType = hashParams.get('type')
         
-        console.log('🔍 URL fragment check:', {
-          hasAccessToken: !!accessToken,
-          hasRefreshToken: !!refreshToken,
-          type: authType
-        })
-        
         // If we have fragment-based auth tokens for recovery
         if (accessToken && refreshToken && authType === 'recovery') {
-          console.log('🔐 Fragment-based password reset detected')
-          
           // Set the session using the tokens from URL fragment
           const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
             access_token: accessToken,
@@ -80,7 +68,6 @@ function ResetPasswordContent() {
           }
           
           if (sessionData.user) {
-            console.log('✅ Fragment-based session established for user:', sessionData.user.email)
             setUser(sessionData.user)
             
             // Clean up the URL by removing the fragment
@@ -95,16 +82,8 @@ function ResetPasswordContent() {
         // Fallback: check for existing session
         const { data: { session }, error } = await supabase.auth.getSession()
         
-        console.log('🔍 Session check result:', {
-          hasSession: !!session,
-          hasUser: !!session?.user,
-          userEmail: session?.user?.email,
-          error: error?.message
-        })
-        
         // If we have a valid session, use it
         if (session && session.user) {
-          console.log('✅ Valid session found for user:', session.user.email)
           setUser(session.user)
           setLoading(false)
           return
@@ -112,8 +91,6 @@ function ResetPasswordContent() {
         
         // If no session but we have tokens from query params, this might be a token-based flow
         if (!session && (token || tokenHash)) {
-          console.log('🔍 No session but query tokens found - this may be a direct token link')
-          console.log('💡 Setting up minimal user state for token-based reset')
           // For token-based flow, we'll handle verification during password update
           setUser({ email: 'Token-based reset' } as User)
           setLoading(false)
@@ -121,7 +98,6 @@ function ResetPasswordContent() {
         }
         
         // No session and no tokens
-        console.log('❌ No valid session or tokens found')
         setError('Invalid or expired reset link. Please request a new password reset.')
         setLoading(false)
         
@@ -160,12 +136,8 @@ function ResetPasswordContent() {
       setSubmitting(true)
       setError('')
   
-      console.log('🔄 Updating password for user:', user.email)
-  
       // Check if this is a token-based reset
       if (token || tokenHash) {
-        console.log('🔐 Using token-based password reset')
-        
         if (tokenHash) {
           // Use verifyOtp for token_hash
           const { error: verifyError } = await supabase.auth.verifyOtp({
@@ -190,7 +162,6 @@ function ResetPasswordContent() {
         }
       } else {
         // Session-based password update
-        console.log('🔐 Using session-based password reset')
         const { error: passwordError } = await supabase.auth.updateUser({
           password: password
         })
@@ -201,7 +172,6 @@ function ResetPasswordContent() {
         }
       }
   
-      console.log('✅ Password updated successfully')
       setSuccess(true)
       
       // Sign out after password update and redirect to login

@@ -36,47 +36,32 @@ function LoginContent() {
 
   // ALWAYS call all hooks in the same order - no conditional hooks!
   
-  // Hook 1: Debug auth state
-  useEffect(() => {
-    console.log('Login page auth state:', { 
-      loading, 
-      hasUser: !!user, 
-      hasSupabaseUser: !!supabaseUser,
-      userEmail: user?.email,
-      supabaseEmail: supabaseUser?.email,
-      hasTenant: user?.tenant_id ? 'Yes' : 'No'
-    })
-  }, [loading, user, supabaseUser])
-
-  // Hook 2: Handle showing redirect screen
+  // Hook 1: Handle showing redirect screen
   useEffect(() => {
     if (!loading && user && supabaseUser) {
-      console.log('User is authenticated, showing redirect screen')
       setShowRedirectScreen(true)
     } else {
       setShowRedirectScreen(false)
     }
   }, [loading, user, supabaseUser])
 
-  // Hook 3: Check for password reset fragment auth
+  // Hook 2: Check for password reset fragment auth
   useEffect(() => {
     const hashParams = new URLSearchParams(window.location.hash.substring(1))
     const accessToken = hashParams.get('access_token')
     const authType = hashParams.get('type')
     
     if (accessToken && authType === 'recovery') {
-      console.log('Password reset detected on login page - redirecting to reset-password')
       const resetUrl = `/reset-password${window.location.hash}`
       window.location.href = resetUrl
       return
     }
   }, [])
 
-  // Hook 4: Perform actual redirect
+  // Hook 3: Perform actual redirect
   useEffect(() => {
     if (showRedirectScreen && user && !isSubmitting) {
       const targetUrl = user.tenant_id ? redirectTo : '/tenant-setup'
-      console.log('Redirecting authenticated user to:', targetUrl)
       
       const timer = setTimeout(() => {
         window.location.href = targetUrl
@@ -89,7 +74,6 @@ function LoginContent() {
   // Manual redirect handler for the button
   const handleManualRedirect = () => {
     const targetUrl = user?.tenant_id ? redirectTo : '/tenant-setup'
-    console.log('Manual redirect to:', targetUrl)
     // Use window.location.href for a more forceful redirect
     window.location.href = targetUrl
   }
@@ -115,7 +99,6 @@ function LoginContent() {
     
     // If already showing redirect screen, don't submit
     if (showRedirectScreen) {
-      console.log('Already authenticated, preventing duplicate submission')
       return
     }
     
@@ -125,7 +108,6 @@ function LoginContent() {
     setError('')
 
     try {
-      console.log('Attempting sign in for:', email)
       const result = await signIn(email, password)
       
       if (result.error) {
@@ -133,7 +115,6 @@ function LoginContent() {
         setError(result.error.message)
         setIsSubmitting(false)
       } else {
-        console.log('Sign in successful, waiting for auth state update...')
         // Don't set isSubmitting to false - let the redirect handle it
       }
     } catch (err: any) {
@@ -168,7 +149,6 @@ function LoginContent() {
             <p>Show Redirect: {showRedirectScreen ? 'Yes' : 'No'}</p>
             <p>Has User: {user ? 'Yes' : 'No'}</p>
             <p>Has Supabase User: {supabaseUser ? 'Yes' : 'No'}</p>
-            {user && <p>User Email: {user.email}</p>}
             {user && <p>Has Tenant: {user.tenant_id ? 'Yes' : 'No'}</p>}
           </div>
         )}

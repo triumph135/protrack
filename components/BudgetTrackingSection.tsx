@@ -51,10 +51,8 @@ export default function BudgetTrackingSection({
 
     try {
       setSaving(true)
-      console.log(`Updating budget for ${category} to ${newAmount}`) // Debug log
       await onUpdateBudget(category, newAmount)
       setEditing(false)
-      console.log('Budget update successful') // Debug log
     } catch (error) {
       console.error('Error updating budget:', error)
       alert('Failed to update budget. Please try again.')

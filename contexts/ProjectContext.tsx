@@ -192,7 +192,6 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
   }
 
   const setActiveProject = (project: Project) => {
-    console.log('ProjectContext: setActiveProject called - changing from:', activeProject?.jobName, 'to:', project.jobName)
     setActiveProjectState(project)
   }
 

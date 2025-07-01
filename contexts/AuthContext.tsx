@@ -30,8 +30,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchUserData = async (userId: string, fallbackEmail?: string): Promise<User | null> => {
     try {
-      console.log('Fetching user data for ID:', userId)
-      
       // First try to get user by ID
       let { data, error } = await supabase
         .from('users')
@@ -41,7 +39,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   
       // If no user found by ID and we have an email, try by email
       if (!data && fallbackEmail) {
-        console.log('User not found by ID, trying by email:', fallbackEmail)
         const { data: emailData, error: emailError } = await supabase
           .from('users')
           .select('*')
@@ -52,33 +49,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         error = emailError
       }
   
-      console.log('Database response:', { 
-        hasData: !!data, 
-        error: error?.message, 
-        errorCode: error?.code 
-      })
-  
       if (error) {
         console.error('Error fetching user data:', error)
         return null
       }
   
       if (data) {
-        console.log('User data fetched successfully:', data.email)
-        console.log('User object details:', { 
-          id: data.id, 
-          email: data.email, 
-          name: data.name, 
-          role: data.role, 
-          tenant_id: data.tenant_id 
-        })
         const userData = data as User
         setUser(userData)
-        console.log('User set in context:', userData.email)
         return userData
       }
       
-      console.log('No user data found')
       return null
     } catch (error) {
       console.error('fetchUserData error:', error)
@@ -92,12 +73,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const initializeAuth = async () => {
       // Only initialize once ever
       if (initialized) {
-        console.log('Auth already initialized, skipping')
         return
       }
     
       try {
-        console.log('Initializing auth...')
         setIsInitializing(true)
         
         // Get initial session
@@ -113,16 +92,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
     
         if (session?.user) {
-          console.log('Found existing session for:', session.user.email)
           setSupabaseUser(session.user)
           await fetchUserData(session.user.id, session.user.email) // Pass email as fallback
         } else {
-          console.log('No existing session found')
           setSupabaseUser(null)
           setUser(null)
         }
     
-        console.log('Auth initialization completed, setting loading to false')
         setLoading(false)
         setInitialized(true)
         setIsInitializing(false)
@@ -130,7 +106,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch (error) {
         console.error('Error initializing auth:', error)
         if (mounted) {
-          console.log('Auth initialization failed, setting loading to false')
           setLoading(false)
           setInitialized(true)
           setIsInitializing(false)
@@ -143,13 +118,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Set up auth state listener - but only for actual sign in/out events
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state changed:', event, 'mounted:', mounted, 'initialized:', initialized, 'isProcessingAuth:', isProcessingAuth)
-      
       if (!mounted) return
     
       // Prevent concurrent auth processing
       if (isProcessingAuth) {
-        console.log('Auth processing already in progress, skipping event:', event)
         return
       }
     
@@ -157,16 +129,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
         // Only skip SIGNED_IN events if initializeAuth is currently running
         if (event === 'SIGNED_IN' && isInitializing) {
-          console.log('Skipping SIGNED_IN event during initializeAuth (to prevent duplicates)')
           return
         }
     
         setIsProcessingAuth(true)
         try {
           if (session?.user && event === 'SIGNED_IN') {
-            console.log('User signed in:', session.user.email)
             setSupabaseUser(session.user)
-            console.log('Starting fetchUserData with timeout protection...')
             
             // Add timeout protection to prevent infinite hanging
             const fetchWithTimeout = Promise.race([
@@ -177,27 +146,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             ])
             
             await fetchWithTimeout
-            console.log('fetchUserData completed successfully in auth state change')
           } else if (event === 'SIGNED_OUT') {
-            console.log('User signed out')
             setSupabaseUser(null)
             setUser(null)
             // Reset initialized state so that next sign in will trigger initializeAuth
             setInitialized(false)
-            console.log('Reset initialized state for next sign in')
           }
         } catch (error) {
           console.error('Error handling auth state change:', error)
           // If fetchUserData fails or times out, still set loading to false
-          console.log('Continuing despite fetchUserData error...')
         } finally {
           setIsProcessingAuth(false)
         }
     
-        console.log('Auth state change completed, setting loading to false')
         setLoading(false)
-      } else {
-        console.log('Ignoring auth event:', event, '(not a sign in/out)')
       }
     })
 
@@ -209,7 +171,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     try {
-      console.log('Starting sign in for:', email)
       setLoading(true)
       
       const { error } = await supabase.auth.signInWithPassword({
@@ -223,7 +184,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error }
       }
 
-      console.log('Sign in successful')
       // Don't set loading to false here - let the auth state change handle it
       return { error: null }
     } catch (error) {
@@ -235,7 +195,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signUp = async (email: string, password: string, userData: { name: string }) => {
     try {
-      console.log('Starting signup for:', email)
       setLoading(true)
       
       const { data, error } = await supabase.auth.signUp({
@@ -250,8 +209,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
   
       if (data.user) {
-        console.log('Creating user profile...')
-        
         const { error: profileError } = await supabase
           .from('users')
           .insert({
@@ -280,8 +237,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setLoading(false)
           return { error: new Error(`Failed to create profile: ${profileError.message}`) }
         }
-  
-        console.log('User profile created')
       }
   
       setLoading(false)
@@ -295,7 +250,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     try {
-      console.log('Starting sign out...')
       setLoading(true)
       
       // Sign out from Supabase
@@ -303,8 +257,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       if (error) {
         console.error('Sign out error:', error)
-      } else {
-        console.log('Sign out successful')
       }
       
       // Clear local state immediately
@@ -312,7 +264,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSupabaseUser(null)
       
       // Navigate to login page
-      console.log('Redirecting to login page...')
       router.push('/login')
       
     } catch (error) {

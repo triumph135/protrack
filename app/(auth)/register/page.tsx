@@ -54,7 +54,6 @@ export default function RegisterPage() {
   
     setLoading(true)
     try {
-      console.log('Attempting signup with:', { email, name })
       const { error } = await signUp(email, password, { name })
       
       if (error) {
@@ -66,7 +65,6 @@ export default function RegisterPage() {
         }
         setLoading(false)
       } else {
-        console.log('Signup successful, redirecting to tenant setup...')
         // Redirect to tenant setup immediately after successful signup
         router.push('/tenant-setup')
       }
