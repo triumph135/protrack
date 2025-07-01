@@ -56,30 +56,30 @@ function UserCard({ user, currentUserId, onUpdateUser, onDeactivateUser }: UserC
   const isCurrentUser = user.id === currentUserId
 
   return (
-    <div className={`bg-white dark:bg-gray-800 p-4 sm:p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 transition-theme ${!user.is_active ? 'opacity-60' : ''}`}>
+          <div className={`bg-white p-4 sm:p-6 rounded-lg shadow-sm border border-gray-200 ${!user.is_active ? 'opacity-60' : ''}`}>
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div className="flex items-start space-x-3 sm:space-x-4 flex-1">
-          <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full ${roleInfo.bg} dark:bg-opacity-20 flex items-center justify-center flex-shrink-0`}>
+          <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full ${roleInfo.bg} flex items-center justify-center flex-shrink-0`}>
             <RoleIcon className={`w-5 h-5 sm:w-6 sm:h-6 ${roleInfo.color}`} />
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-2 mb-1">
-              <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 break-words">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900 break-words">
                 {user.name}
               </h3>
               {isCurrentUser && (
-                <span className="px-2 py-1 text-xs font-medium bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full">
+                <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
                   You
                 </span>
               )}
               {!user.is_active && (
-                <span className="px-2 py-1 text-xs font-medium bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200 rounded-full">
+                <span className="px-2 py-1 text-xs font-medium bg-red-100 text-red-800 rounded-full">
                   Inactive
                 </span>
               )}
             </div>
-            <p className="text-gray-600 dark:text-gray-300 text-sm sm:text-base break-all">{user.email}</p>
-            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{roleInfo.label}</p>
+            <p className="text-gray-600 text-sm sm:text-base break-all">{user.email}</p>
+            <p className="text-xs sm:text-sm text-gray-500">{roleInfo.label}</p>
           </div>
         </div>
 
@@ -179,16 +179,16 @@ function InvitationCard({ invitation, onResend, onCancel }: {
   const isExpired = new Date(invitation.expires_at) < new Date()
 
   return (
-    <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-4 rounded-lg transition-theme">
+    <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg">
       <div className="flex items-start justify-between">
         <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 bg-yellow-100 dark:bg-yellow-800 rounded-full flex items-center justify-center">
-            <Mail className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
+          <div className="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center">
+            <Mail className="w-5 h-5 text-yellow-600" />
           </div>
           <div>
-            <h4 className="font-medium text-gray-900 dark:text-gray-100">{invitation.email}</h4>
-            <p className="text-sm text-gray-600 dark:text-gray-300 capitalize">{invitation.role}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
+            <h4 className="font-medium text-gray-900">{invitation.email}</h4>
+            <p className="text-sm text-gray-600 capitalize">{invitation.role}</p>
+            <p className="text-xs text-gray-500">
               {isExpired ? 'Expired' : 'Pending'} • Invited {new Date(invitation.created_at).toLocaleDateString()}
             </p>
           </div>
@@ -198,7 +198,7 @@ function InvitationCard({ invitation, onResend, onCancel }: {
           <button
             onClick={handleResend}
             disabled={loading}
-            className="px-3 py-1 text-xs font-medium text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-800 rounded hover:bg-blue-200 dark:hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            className="px-3 py-1 text-xs font-medium text-blue-700 bg-blue-100 rounded hover:bg-blue-200 disabled:opacity-50 transition-colors"
           >
             <RefreshCw className="w-3 h-3 mr-1 inline" />
             Resend
@@ -206,7 +206,7 @@ function InvitationCard({ invitation, onResend, onCancel }: {
           <button
             onClick={handleCancel}
             disabled={loading}
-            className="px-3 py-1 text-xs font-medium text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-800 rounded hover:bg-red-200 dark:hover:bg-red-700 disabled:opacity-50 transition-colors"
+            className="px-3 py-1 text-xs font-medium text-red-700 bg-red-100 rounded hover:bg-red-200 disabled:opacity-50 transition-colors"
           >
             Cancel
           </button>
@@ -271,14 +271,14 @@ export default function UsersPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg border dark:border-gray-700 transition-theme">
+      <div className="bg-white overflow-hidden shadow rounded-lg border border-gray-200">
         <div className="p-4 sm:p-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex items-center">
-              <Users className="h-6 w-6 sm:h-8 sm:w-8 text-blue-500 dark:text-blue-400 mr-3" />
+              <Users className="h-6 w-6 sm:h-8 sm:w-8 text-blue-500 mr-3" />
               <div>
-                <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100">User Management</h1>
-                <p className="text-gray-600 dark:text-gray-300 text-sm sm:text-base">Manage team members and permissions</p>
+                <h1 className="text-xl sm:text-2xl font-bold text-gray-900">User Management</h1>
+                <p className="text-gray-600 text-sm sm:text-base">Manage team members and permissions</p>
               </div>
             </div>
             {canManageUsers && (
