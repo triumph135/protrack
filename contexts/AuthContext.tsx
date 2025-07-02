@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
@@ -25,6 +25,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [initialized, setInitialized] = useState(false)
   const [isProcessingAuth, setIsProcessingAuth] = useState(false)
   const [isInitializing, setIsInitializing] = useState(false)
+  
+  // Use refs to store current state values to avoid stale closures
+  const initializedRef = useRef(false)
+  const userRef = useRef<User | null>(null)
+  const isProcessingAuthRef = useRef(false)
+  const isInitializingRef = useRef(false)
+  
+  // Update refs whenever state changes
+  useEffect(() => {
+    initializedRef.current = initialized
+  }, [initialized])
+  
+  useEffect(() => {
+    userRef.current = user
+  }, [user])
+  
+  useEffect(() => {
+    isProcessingAuthRef.current = isProcessingAuth
+  }, [isProcessingAuth])
+  
+  useEffect(() => {
+    isInitializingRef.current = isInitializing
+  }, [isInitializing])
+
   const router = useRouter()
   const supabase = createClient()
 
@@ -69,10 +93,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let mounted = true
+    let lastEventTime = 0
+    const eventCooldown = 2000 // 2 seconds cooldown between processing same events
 
     const initializeAuth = async () => {
       // Only initialize once ever
-      if (initialized) {
+      if (initializedRef.current) {
         return
       }
     
@@ -125,17 +151,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return
       }
 
+      // Add cooldown to prevent rapid-fire events
+      const now = Date.now()
+      if (event === 'SIGNED_IN' && now - lastEventTime < eventCooldown) {
+        return
+      }
+      lastEventTime = now
+
       // Skip processing if we're already initialized and this is likely a token refresh
-      if (initialized && event === 'SIGNED_IN' && user) {
+      if (initializedRef.current && event === 'SIGNED_IN' && userRef.current && session?.user) {
         // Just silently update the supabase user without re-fetching
-        if (session?.user) {
-          setSupabaseUser(session.user)
-        }
+        setSupabaseUser(session.user)
+        return
+      }
+
+      // Handle token refresh events explicitly
+      if (event === 'TOKEN_REFRESHED' && session?.user) {
+        setSupabaseUser(session.user)
         return
       }
     
       // Prevent concurrent auth processing
-      if (isProcessingAuth) {
+      if (isProcessingAuthRef.current) {
         return
       }
     
@@ -151,7 +188,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } finally {
           setIsProcessingAuth(false)
         }
-      } else if (event === 'SIGNED_IN' && !initialized && !isInitializing) {
+      } else if (event === 'SIGNED_IN' && !initializedRef.current && !isInitializingRef.current) {
         // Only handle SIGNED_IN events when we're not already initialized
         // This prevents token refresh events from triggering re-authentication
         setIsProcessingAuth(true)
@@ -174,7 +211,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.error('Error handling auth state change:', error)
           // If fetchUserData fails or times out, don't clear user data if we already have it
           // This prevents breaking the app state on temporary network issues
-          if (!user && session?.user) {
+          if (!userRef.current && session?.user) {
             // Only set supabaseUser if we don't have user data yet
             setSupabaseUser(session.user)
           }
@@ -182,9 +219,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } finally {
           setIsProcessingAuth(false)
         }
-      } else if (event === 'TOKEN_REFRESHED' && session?.user) {
-        // Silently update the supabase user on token refresh without refetching data
-        setSupabaseUser(session.user)
       }
     })
 
