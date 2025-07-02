@@ -200,7 +200,7 @@ export default function ChangeOrderManagement({ projectId, canWrite = false }: C
                     ...prev, 
                     additional_contract_value: parseFloat(e.target.value) || 0 
                   }))}
-                  className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 ${
                     formErrors.additional_contract_value ? 'border-red-300' : 'border-gray-300'
                   }`}
                   placeholder="0.00"
@@ -221,7 +221,7 @@ export default function ChangeOrderManagement({ projectId, canWrite = false }: C
               <textarea
                 value={formData.description}
                 onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                 rows={3}
                 placeholder="Describe the scope of work for this change order..."
               />

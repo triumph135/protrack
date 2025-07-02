@@ -124,7 +124,7 @@ export default function InvoiceForm({
               type="text"
               value={formData.invoice_number || ''}
               onChange={(e) => handleInputChange('invoice_number', e.target.value)}
-              className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+              className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 ${
                 errors.invoice_number ? 'border-red-300' : 'border-gray-300'
               }`}
               placeholder="INV-001"
@@ -151,7 +151,7 @@ export default function InvoiceForm({
                 min="0"
                 value={formData.amount || ''}
                 onChange={(e) => handleInputChange('amount', e.target.value)}
-                className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 ${
                   errors.amount ? 'border-red-300' : 'border-gray-300'
                 }`}
                 placeholder="0.00"
@@ -175,7 +175,7 @@ export default function InvoiceForm({
               type="date"
               value={formData.date_billed || ''}
               onChange={(e) => handleInputChange('date_billed', e.target.value)}
-              className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+              className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 ${
                 errors.date_billed ? 'border-red-300' : 'border-gray-300'
               }`}
               disabled={loading}

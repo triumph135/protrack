@@ -47,9 +47,16 @@ export default function AuthGuard({
   
     // If tenant is required but no tenant is set (after loading is complete)
     // Add additional check to ensure we're not in a loading state
+    // Also check if user has tenant_id but tenant failed to load (temporary issue)
     if (requireTenant && user && !tenant && !tenantLoading) {
-      router.push('/tenant-setup')
-      return
+      // Only redirect if user actually has no tenant_id (needs setup)
+      // Don't redirect if they have tenant_id but it failed to load (temporary error)
+      if (!user.tenant_id) {
+        router.push('/tenant-setup')
+        return
+      }
+      // If user has tenant_id but tenant failed to load, just stay on current page
+      // The tenant context will retry loading
     }
   }, [user, tenant, authLoading, tenantLoading, requireAuth, requireTenant, redirectTo, router])
   // Show loading screen while auth or tenant data is loading
@@ -79,7 +86,8 @@ export default function AuthGuard({
   }
 
   // If tenant is required but no tenant is set, don't render children
-  if (requireTenant && user && !tenant) {
+  // But only if user actually has no tenant_id (needs setup)
+  if (requireTenant && user && !tenant && !user.tenant_id) {
     return null
   }
 

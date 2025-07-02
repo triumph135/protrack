@@ -30,7 +30,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   const { user, loading: authLoading } = useAuth()
   const supabase = createClient()
 
-  const refreshTenant = useCallback(async () => {
+  const refreshTenant = useCallback(async (retryCount = 0) => {
     try {
       setLoading(true)
       
@@ -67,11 +67,24 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       
     } catch (err: any) {
       console.error('TenantContext: Error refreshing tenant:', err)
-      setTenant(null)
+      
+      // Retry once after a delay if this is the first failure
+      if (retryCount === 0 && user?.tenant_id) {
+        console.log('TenantContext: Retrying tenant fetch in 2 seconds...')
+        setTimeout(() => {
+          refreshTenant(1) // Retry with count=1 to prevent infinite retries
+        }, 2000)
+        return
+      }
+      
+      // Don't clear existing tenant data on retry failure if we already have it
+      if (!tenant) {
+        setTenant(null)
+      }
       setLoading(false)
       setInitialized(true)
     }
-  }, [user, supabase])
+  }, [user, supabase, tenant])
 
   useEffect(() => {
     // Don't proceed if auth is still loading
@@ -80,10 +93,15 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     }
     
     // Check if refresh is needed
-    const shouldRefresh = user && (!tenant || tenant.id !== user.tenant_id)
+    const shouldRefresh = user && user.tenant_id && (!tenant || tenant.id !== user.tenant_id)
     
     if (shouldRefresh) {
       refreshTenant()
+    } else if (user && !user.tenant_id) {
+      // User has no tenant_id, so no tenant to load
+      setTenant(null)
+      setLoading(false)
+      setInitialized(true)
     } else {
       // Ensure loading is false if we don't need to refresh
       if (loading) {

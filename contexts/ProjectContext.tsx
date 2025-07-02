@@ -87,7 +87,6 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
         .from('projects')
         .select('*')
         .eq('tenant_id', tenant?.id)
-        .eq('status', 'Active')
         .order('created_at', { ascending: false })
 
       if (fetchError) throw fetchError

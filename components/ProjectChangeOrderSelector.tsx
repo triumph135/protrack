@@ -77,6 +77,13 @@ export default function ProjectChangeOrderSelector({
     }
   }
 
+  // Filter to only show active projects in the global selector
+  // But always include the current active project even if it's not "Active" status
+  const activeProjects = projects.filter(project => project.status === 'Active')
+  const visibleProjects = activeProject && activeProject.status !== 'Active' 
+    ? [activeProject, ...activeProjects.filter(p => p.id !== activeProject.id)]
+    : activeProjects
+
   const handleChangeOrderChange = (changeOrderId: string) => {
     if (disableChangeOrderSelector) return
     
@@ -133,7 +140,7 @@ export default function ProjectChangeOrderSelector({
           <Building className="w-5 h-5 text-gray-400" />
           <div className="flex items-center space-x-2">
             <span className="text-sm font-medium text-gray-700">Project:</span>
-            {projects.length > 1 ? (
+            {visibleProjects.length > 1 ? (
               <div className="relative">
                 <select
                   value={activeProject.id}
@@ -141,9 +148,10 @@ export default function ProjectChangeOrderSelector({
                   className="appearance-none bg-white border border-gray-300 rounded-md px-3 py-2 pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                   disabled={!hasPermission('projects', 'read')}
                 >
-                  {projects.map(project => (
+                  {visibleProjects.map(project => (
                     <option key={project.id} value={project.id}>
                       {project.jobNumber} - {project.jobName}
+                      {project.status !== 'Active' ? ` (${project.status})` : ''}
                     </option>
                   ))}
                 </select>

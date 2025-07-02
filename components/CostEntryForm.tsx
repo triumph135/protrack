@@ -8,6 +8,7 @@ import { useProjects } from '@/contexts/ProjectContext'
 import type { ProjectCost, ChangeOrder } from '@/types/app.types'
 import type { CostCategory } from '@/hooks/useCosts'
 import FileAttachments from '@/components/FileAttachments'
+import EmployeeModal from '@/components/EmployeeModal'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
 import { getTodayLocalDateString } from '@/lib/dateUtils'
@@ -40,13 +41,17 @@ export default function CostEntryForm({
   const [formData, setFormData] = useState<Partial<ProjectCost>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
   
+  // Employee modal state
+  const [showEmployeeModal, setShowEmployeeModal] = useState(false)
+  const [employeeLoading, setEmployeeLoading] = useState(false)
+  
   // Get the active project
   const { activeProject } = useProjects()
   const { user } = useAuth()
   const { tenant } = useTenant()
   
   // Use the active project ID for loading employees and change orders
-  const { employees, loading: employeesLoading } = useEmployees(activeProject?.id)
+  const { employees, loading: employeesLoading, createEmployee } = useEmployees(activeProject?.id)
   const { changeOrders } = useChangeOrders(activeProject?.id)
 
   // Initialize form data
@@ -257,6 +262,20 @@ export default function CostEntryForm({
     }).format(amount)
   }
 
+  // Handle employee creation
+  const handleCreateEmployee = async (employeeData: any) => {
+    try {
+      setEmployeeLoading(true)
+      await createEmployee(employeeData)
+      setShowEmployeeModal(false)
+    } catch (error) {
+      console.error('Error creating employee:', error)
+      throw error
+    } finally {
+      setEmployeeLoading(false)
+    }
+  }
+
   // Calculate total cost for labor
   const calculateLaborTotal = (): number => {
     if (category !== 'labor') return 0
@@ -332,7 +351,7 @@ export default function CostEntryForm({
                   <select
                     value={formData[field.name as keyof ProjectCost] as string || ''}
                     onChange={(e) => handleInputChange(field, e.target.value)}
-                    className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 ${
                       errors[field.name] ? 'border-red-300' : 'border-gray-300'
                     }`}
                     disabled={employeesLoading}
@@ -362,7 +381,7 @@ export default function CostEntryForm({
                 <textarea
                   value={formData[field.name as keyof ProjectCost] as string || ''}
                   onChange={(e) => handleInputChange(field, e.target.value)}
-                  className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 ${
                     errors[field.name] ? 'border-red-300' : 'border-gray-300'
                   }`}
                   rows={3}
@@ -375,7 +394,7 @@ export default function CostEntryForm({
                     type={field.type}
                     value={formData[field.name as keyof ProjectCost] as string || ''}
                     onChange={(e) => handleInputChange(field, e.target.value)}
-                    className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 ${
                       errors[field.name] ? 'border-red-300' : 'border-gray-300'
                     }`}
                     step={field.step}
@@ -388,7 +407,7 @@ export default function CostEntryForm({
                   type={field.type}
                   value={formData[field.name as keyof ProjectCost] as string || ''}
                   onChange={(e) => handleInputChange(field, e.target.value)}
-                  className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 ${
                     errors[field.name] ? 'border-red-300' : 'border-gray-300'
                   }`}
                   step={field.step}
@@ -432,7 +451,7 @@ export default function CostEntryForm({
               ...prev, 
               change_order_id: e.target.value || undefined 
             }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
           >
             <option value="">Base Contract</option>
             {changeOrders.map(co => (
@@ -491,18 +510,36 @@ export default function CostEntryForm({
           >
             Cancel
           </button>
-          <button
-            type="submit"
-            disabled={loading || (category === 'labor' && employees.length === 0)}
-            className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-          >
-            <Save className="w-4 h-4" />
-            {loading ? 'Saving...' : 
-             category === 'labor' && employees.length === 0 ? 'Create Employees First' :
-             'Save Cost'}
-          </button>
+          {category === 'labor' && employees.length === 0 ? (
+            <button
+              type="button"
+              onClick={() => setShowEmployeeModal(true)}
+              className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md transition-colors flex items-center justify-center gap-2"
+            >
+              <Users className="w-4 h-4" />
+              Create Employees First
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              <Save className="w-4 h-4" />
+              {loading ? 'Saving...' : 'Save Cost'}
+            </button>
+          )}
         </div>
       </form>
+
+      {/* Employee Modal */}
+      <EmployeeModal
+        isOpen={showEmployeeModal}
+        onClose={() => setShowEmployeeModal(false)}
+        onSubmit={handleCreateEmployee}
+        loading={employeeLoading}
+        projectId={activeProject?.id}
+      />
     </div>
   )
 }

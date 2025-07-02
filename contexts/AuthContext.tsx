@@ -120,46 +120,71 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return
     
+      // Prevent processing when page is not visible (user navigated away)
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        return
+      }
+
+      // Skip processing if we're already initialized and this is likely a token refresh
+      if (initialized && event === 'SIGNED_IN' && user) {
+        // Just silently update the supabase user without re-fetching
+        if (session?.user) {
+          setSupabaseUser(session.user)
+        }
+        return
+      }
+    
       // Prevent concurrent auth processing
       if (isProcessingAuth) {
         return
       }
     
-      // Only handle explicit sign in/out events, not token refreshes or initial sessions during initialization
-      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
-        // Only skip SIGNED_IN events if initializeAuth is currently running
-        if (event === 'SIGNED_IN' && isInitializing) {
-          return
-        }
-    
+      // Only handle explicit sign out events and initial sign in (not token refreshes)
+      if (event === 'SIGNED_OUT') {
         setIsProcessingAuth(true)
         try {
-          if (session?.user && event === 'SIGNED_IN') {
+          setSupabaseUser(null)
+          setUser(null)
+          // Reset initialized state so that next sign in will trigger initializeAuth
+          setInitialized(false)
+          setLoading(false)
+        } finally {
+          setIsProcessingAuth(false)
+        }
+      } else if (event === 'SIGNED_IN' && !initialized && !isInitializing) {
+        // Only handle SIGNED_IN events when we're not already initialized
+        // This prevents token refresh events from triggering re-authentication
+        setIsProcessingAuth(true)
+        try {
+          if (session?.user) {
             setSupabaseUser(session.user)
             
             // Add timeout protection to prevent infinite hanging
             const fetchWithTimeout = Promise.race([
-              fetchUserData(session.user.id, session.user.email), // Pass email as fallback
+              fetchUserData(session.user.id, session.user.email),
               new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('fetchUserData timeout')), 10000)
+                setTimeout(() => reject(new Error('fetchUserData timeout')), 15000)
               )
             ])
             
             await fetchWithTimeout
-          } else if (event === 'SIGNED_OUT') {
-            setSupabaseUser(null)
-            setUser(null)
-            // Reset initialized state so that next sign in will trigger initializeAuth
-            setInitialized(false)
           }
+          setLoading(false)
         } catch (error) {
           console.error('Error handling auth state change:', error)
-          // If fetchUserData fails or times out, still set loading to false
+          // If fetchUserData fails or times out, don't clear user data if we already have it
+          // This prevents breaking the app state on temporary network issues
+          if (!user && session?.user) {
+            // Only set supabaseUser if we don't have user data yet
+            setSupabaseUser(session.user)
+          }
+          setLoading(false)
         } finally {
           setIsProcessingAuth(false)
         }
-    
-        setLoading(false)
+      } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+        // Silently update the supabase user on token refresh without refetching data
+        setSupabaseUser(session.user)
       }
     })
 
