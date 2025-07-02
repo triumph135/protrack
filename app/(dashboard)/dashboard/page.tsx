@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Plus, BarChart3, Building, DollarSign, FileText, Users, TrendingUp, Calendar, AlertTriangle } from 'lucide-react'
+import { Plus, BarChart3, Building, DollarSign, FileText, Users, TrendingUp, Calendar, AlertTriangle, Download } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
 import { useProjects } from '@/contexts/ProjectContext'
@@ -91,8 +91,8 @@ export default function DashboardPage() {
     
     // Calculate remaining metrics
     const amountYetToBilled = totalContractValue - totalInvoicedAmount
-    const grossProfit = totalContractValue - totalProjectCosts
-    const grossProfitPercentage = totalContractValue > 0 ? (grossProfit / totalContractValue) * 100 : 0
+    const grossProfit = totalInvoicedAmount - totalProjectCosts
+    const grossProfitPercentage = totalInvoicedAmount > 0 ? (grossProfit / totalInvoicedAmount) * 100 : 0
 
     return {
       baseContractValue,
@@ -149,6 +149,61 @@ export default function DashboardPage() {
   const getStatusIcon = (value: number) => {
     if (value >= 0) return <TrendingUp className="w-4 h-4" />
     return <AlertTriangle className="w-4 h-4" />
+  }
+
+  // Export dashboard data
+  const exportDashboardData = () => {
+    if (!activeProject) {
+      alert('No active project to export')
+      return
+    }
+
+    const data = [
+      ['Project Information', ''],
+      ['Job Number', activeProject.jobNumber],
+      ['Job Name', activeProject.jobName],
+      ['Customer', activeProject.customer],
+      ['Status', activeProject.status || 'Active'],
+      ['Export Date', new Date().toLocaleDateString()],
+      [''],
+      
+      ['Financial Metrics', ''],
+      ['Base Contract Value', `$${metrics.baseContractValue.toLocaleString()}`],
+      ['Change Orders Value', `$${metrics.changeOrderValue.toLocaleString()}`],
+      ['Total Contract Value', `$${metrics.totalContractValue.toLocaleString()}`],
+      ['Total Project Costs', `$${metrics.totalProjectCosts.toLocaleString()}`],
+      ['Total Invoiced Amount', `$${metrics.totalInvoicedAmount.toLocaleString()}`],
+      ['Amount Yet to Bill', `$${metrics.amountYetToBilled.toLocaleString()}`],
+      ['Gross Profit', `$${metrics.grossProfit.toLocaleString()}`],
+      ['Gross Profit Percentage', `${formatPercentage(metrics.grossProfitPercentage)}`],
+      [''],
+      
+      ['Change Orders Summary', ''],
+      ['Number of Change Orders', changeOrders.length.toString()],
+      ...changeOrders.map(co => [
+        `CO: ${co.name}`, 
+        `$${(co.additional_contract_value || 0).toLocaleString()}`
+      ]),
+      [''],
+      
+      ['Cost Summary', ''],
+      ['Total Cost Entries', totalCostEntries.toString()],
+      ['Total Invoice Entries', customerInvoices.length.toString()]
+    ]
+
+    const csvContent = data.map(row => 
+      row.map(cell => `"${cell.toString().replace(/"/g, '""')}"`).join(',')
+    ).join('\n')
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${activeProject.jobNumber}_dashboard_summary_${new Date().toLocaleDateString().replace(/\//g, '-')}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
   }
 
   if (loading) {
@@ -211,12 +266,21 @@ export default function DashboardPage() {
                 Viewing: Complete Project Overview
               </p>
             </div>
-            <div className="lg:text-right">
-              <p className="text-xs sm:text-sm text-gray-500">Active Project</p>
-              <p className="text-base sm:text-lg font-semibold text-blue-600 break-words">
-                {activeProject.jobNumber} - {activeProject.jobName}
-              </p>
-              <p className="text-xs sm:text-sm text-gray-600">{activeProject.customer}</p>
+            <div className="flex flex-col lg:items-end gap-3">
+              <button
+                onClick={exportDashboardData}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Export Dashboard
+              </button>
+              <div className="lg:text-right">
+                <p className="text-xs sm:text-sm text-gray-500">Active Project</p>
+                <p className="text-base sm:text-lg font-semibold text-blue-600 break-words">
+                  {activeProject.jobNumber} - {activeProject.jobName}
+                </p>
+                <p className="text-xs sm:text-sm text-gray-600">{activeProject.customer}</p>
+              </div>
             </div>
           </div>
         </div>
@@ -306,7 +370,7 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Revenue Breakdown */}
           <div>
-            <h3 className="text-base lg:text-lg font-medium text-gray-900 mb-3">Revenue Breakdown</h3>
+            <h3 className="text-base lg:text-lg font-medium text-gray-900 mb-3">Contract Breakdown</h3>
             <div className="space-y-2">
               <div className="flex justify-between items-start gap-2">
                 <span className="text-gray-600 text-sm lg:text-base flex-shrink-0">Base Contract:</span>
@@ -340,7 +404,7 @@ export default function DashboardPage() {
               <div className="flex justify-between items-start gap-2">
                 <span className="text-gray-600 text-sm lg:text-base flex-shrink-0">Total Revenue:</span>
                 <span className="font-medium text-sm lg:text-base text-right break-words">
-                  {formatCurrency(metrics.totalContractValue)}
+                  {formatCurrency(metrics.totalInvoicedAmount)}
                 </span>
               </div>
               <div className="flex justify-between items-start gap-2">
@@ -374,7 +438,6 @@ export default function DashboardPage() {
                 <p className="text-sm font-medium text-red-800">Low Profit Margin Alert</p>
                 <p className="text-sm text-red-700">
                   Current gross margin is {formatPercentage(metrics.grossProfitPercentage)}. 
-                  Consider reviewing project costs or seeking additional change orders.
                 </p>
               </div>
             </div>

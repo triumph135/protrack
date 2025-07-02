@@ -1,21 +1,25 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, Edit, Trash2, Building, Users, DollarSign, Calendar, Search, Eye, FileText, ChevronDown, ChevronRight } from 'lucide-react'
+import { Plus, Edit, Trash2, Building, Users, DollarSign, Calendar, Search, Eye, FileText, ChevronDown, ChevronRight, Download } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
+import { useTenant } from '@/contexts/TenantContext'
 import { useProjects } from '@/contexts/ProjectContext'
 import { useChangeOrders } from '@/hooks/useChangeOrders'
+import { createClient } from '@/lib/supabase'
 import ProjectModal from '@/components/ProjectModal'
 import type { Project, ChangeOrder } from '@/types/app.types'
 
 export default function ProjectsPage() {
   const { user } = useAuth()
+  const { tenant } = useTenant()
   const { projects, loading, createProject, updateProject, deleteProject, setActiveProject, activeProject } = useProjects()
   const [showModal, setShowModal] = useState(false)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
+  const supabase = createClient()
   
   // Change Order Management State
   const [showChangeOrderForm, setShowChangeOrderForm] = useState<string | null>(null)
@@ -115,6 +119,85 @@ export default function ProjectsPage() {
     }).format(amount)
   }
 
+
+
+  // Export projects data
+  const exportProjectsData = async () => {
+    if (filteredProjects.length === 0) {
+      alert('No projects to export')
+      return
+    }
+
+    // Fetch change orders data directly for export
+    let changeOrdersData: ChangeOrder[] = []
+    if (tenant?.id) {
+      try {
+        const { data, error } = await supabase
+          .from('change_orders')
+          .select('*')
+          .eq('tenant_id', tenant.id)
+          .order('created_at', { ascending: false })
+
+        if (error) throw error
+        changeOrdersData = data || []
+      } catch (error) {
+        console.error('Error loading change orders for export:', error)
+        changeOrdersData = []
+      }
+    }
+
+    // Helper functions for change order calculations using the fetched data
+    const getChangeOrderCount = (projectId: string) => {
+      return changeOrdersData.filter(co => co.project_id === projectId).length
+    }
+
+    const getChangeOrderTotal = (projectId: string) => {
+      return changeOrdersData
+        .filter(co => co.project_id === projectId)
+        .reduce((total, co) => total + (co.additional_contract_value || 0), 0)
+    }
+
+    const projectsData = [
+      ['Project Summary', ''],
+      ['Export Date', new Date().toLocaleDateString()],
+      ['Total Projects', filteredProjects.length.toString()],
+      [''],
+      ['Projects', ''],
+      ['Job Number', 'Job Name', 'Customer', 'Status', 'Base Contract Value', 'Change Orders Count', 'Total CO Value', 'Total Contract Value'],
+      ...filteredProjects.map(project => {
+        const coCount = getChangeOrderCount(project.id)
+        const coTotal = getChangeOrderTotal(project.id)
+        const baseContract = project.totalContractValue || 0
+        const totalContract = baseContract + coTotal
+        
+        return [
+          project.jobNumber,
+          project.jobName,
+          project.customer,
+          project.status || 'Active',
+          baseContract.toLocaleString(),
+          coCount.toString(),
+          coTotal.toLocaleString(),
+          totalContract.toLocaleString()
+        ]
+      })
+    ]
+
+    const csvContent = projectsData.map(row => 
+      row.map(cell => `"${cell.toString().replace(/"/g, '""')}"`).join(',')
+    ).join('\n')
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `projects_summary_${new Date().toLocaleDateString().replace(/\//g, '-')}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -135,15 +218,26 @@ export default function ProjectsPage() {
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Projects</h1>
             <p className="text-gray-600 mt-1">Manage your construction projects and change orders</p>
           </div>
-          {hasPermission('projects', 'write') && (
-            <button
-              onClick={handleCreateProject}
-              className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center gap-2 transition-colors w-fit"
-            >
-              <Plus className="w-4 h-4" />
-              Add Project
-            </button>
-          )}
+          <div className="flex items-center gap-3">
+            {filteredProjects.length > 0 && (
+              <button
+                onClick={exportProjectsData}
+                className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 flex items-center gap-2 transition-colors w-fit"
+              >
+                <Download className="w-4 h-4" />
+                Export
+              </button>
+            )}
+            {hasPermission('projects', 'write') && (
+              <button
+                onClick={handleCreateProject}
+                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center gap-2 transition-colors w-fit"
+              >
+                <Plus className="w-4 h-4" />
+                Add Project
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

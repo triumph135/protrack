@@ -118,6 +118,51 @@ export default function InvoicesPage() {
     setShowForm(true)
   }
 
+  const getCurrentChangeOrderName = () => {
+    if (!changeOrderForSelector) return 'All Change Orders'
+    if (changeOrderForSelector === 'base') return 'Base Contract'
+    
+    const changeOrder = changeOrders.find(co => co.id === changeOrderForSelector)
+    return changeOrder ? changeOrder.name : 'Unknown Change Order'
+  }
+
+  // Export data
+  const exportData = () => {
+    if (filteredInvoices.length === 0) {
+      alert('No data to export')
+      return
+    }
+
+    const headers = ['Date Billed', 'Invoice Number', 'Amount', 'In System', 'Change Order']
+
+    const csvContent = [
+      headers.join(','),
+      ...filteredInvoices.map(invoice => {
+        const changeOrderName = invoice.change_order_id 
+          ? changeOrders.find(co => co.id === invoice.change_order_id)?.name || 'Unknown'
+          : 'Base Contract'
+
+        return [
+          invoice.date_billed,
+          invoice.invoice_number || '',
+          invoice.amount || 0,
+          invoice.in_system ? 'Yes' : 'No',
+          changeOrderName
+        ].join(',')
+      })
+    ].join('\n')
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${activeProject?.jobNumber}_invoices_${getCurrentChangeOrderName()}_${new Date().toLocaleDateString().replace(/\//g, '-')}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
+
   // Apply filters to invoices with memoization to prevent infinite loops
   const filteredInvoices = useMemo(() => {
     return invoices.filter(invoice => {
@@ -283,6 +328,16 @@ export default function InvoicesPage() {
         <div className="p-4 border-b border-gray-200">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div className="flex items-center gap-4">
+              {filteredInvoices.length > 0 && (
+                <button
+                  onClick={exportData}
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Export
+                </button>
+              )}
+              
               {canWrite && (
                 <button
                   onClick={() => {

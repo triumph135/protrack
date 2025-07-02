@@ -43,7 +43,8 @@ export default function InvoiceForm({
         invoice_number: '',
         amount: 0,
         date_billed: getTodayLocalDateString(),
-        change_order_id: undefined
+        change_order_id: undefined,
+        in_system: false
       })
     }
   }, [editItem, activeProject?.id])
@@ -91,7 +92,8 @@ export default function InvoiceForm({
         invoice_number: formData.invoice_number!,
         amount: Number(formData.amount),
         date_billed: formData.date_billed!,
-        change_order_id: formData.change_order_id || undefined
+        change_order_id: formData.change_order_id || undefined,
+        in_system: formData.in_system || false
       })
     } catch (error) {
       console.error('Error saving invoice:', error)
@@ -210,6 +212,22 @@ export default function InvoiceForm({
           <p className="mt-1 text-sm text-gray-500">
             Select a change order if this invoice is related to additional work
           </p>
+        </div>
+
+        {/* Mark as Processed */}
+        <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-lg">
+          <label className="flex items-center space-x-4 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={formData.in_system || false}
+              onChange={(e) => handleInputChange('in_system', e.target.checked)}
+              className="w-5 h-5 text-blue-600 bg-white border-2 border-gray-400 rounded focus:ring-blue-500 focus:ring-2 cursor-pointer checked:bg-blue-600 checked:border-blue-600 appearance-none relative checked:after:content-['✓'] checked:after:text-white checked:after:text-sm checked:after:font-bold checked:after:absolute checked:after:inset-0 checked:after:flex checked:after:items-center checked:after:justify-center"
+              disabled={loading}
+            />
+            <span className="text-sm font-medium text-gray-800 select-none">
+              Mark as processed in system
+            </span>
+          </label>
         </div>
 
         {/* Attachments Section - Only show when editing existing invoice */}

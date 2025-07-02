@@ -236,6 +236,7 @@ export interface CustomerInvoice {
   amount: number
   date_billed: string
   change_order_id?: string
+  in_system?: boolean
   created_at?: string
   updated_at?: string
 }

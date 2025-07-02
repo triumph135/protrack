@@ -127,7 +127,7 @@ export default function CostEntryForm({
           { name: 'invoice_number', label: 'Invoice Number', type: 'text', required: true },
           { name: 'description', label: 'Description', type: 'text' },
           { name: 'cost', label: 'Cost', type: 'number', required: true, step: '0.01', min: '0' },
-          { name: 'in_system', label: 'In System', type: 'checkbox' }
+          { name: 'in_system', label: '', type: 'checkbox' }
         ]
 
       case 'others':
@@ -137,7 +137,7 @@ export default function CostEntryForm({
           { name: 'invoice_number', label: 'Invoice Number', type: 'text', required: true },
           { name: 'description', label: 'Description', type: 'text' },
           { name: 'cost', label: 'Cost', type: 'number', required: true, step: '0.01', min: '0' },
-          { name: 'in_system', label: 'In System', type: 'checkbox' }
+          { name: 'in_system', label: '', type: 'checkbox' }
         ]
 
       case 'equipment':
@@ -149,7 +149,7 @@ export default function CostEntryForm({
           { name: 'subcontractor_name', label: category === 'subcontractor' ? 'Subcontractor Name' : 'Equipment Name', type: 'text' },
           { name: 'description', label: 'Description', type: 'text' },
           { name: 'cost', label: 'Cost', type: 'number', required: true, step: '0.01', min: '0' },
-          { name: 'in_system', label: 'In System', type: 'checkbox' }
+          { name: 'in_system', label: '', type: 'checkbox' }
         ]
 
       case 'labor':
@@ -164,7 +164,8 @@ export default function CostEntryForm({
           { name: 'dt_rate', label: 'DT Rate ($/hr)', type: 'number', step: '0.01', min: '0' },
           { name: 'per_diem', label: 'Per Diem ($)', type: 'number', step: '0.01', min: '0' },
           { name: 'mob_qty', label: 'MOB Quantity', type: 'number', step: '1', min: '0' },
-          { name: 'mob_rate', label: 'MOB Rate ($/unit)', type: 'number', step: '0.01', min: '0' }
+          { name: 'mob_rate', label: 'MOB Rate ($/unit)', type: 'number', step: '0.01', min: '0' },
+          { name: 'in_system', label: '', type: 'checkbox' }
         ]
 
       default:
@@ -368,15 +369,19 @@ export default function CostEntryForm({
                   )}
                 </div>
               ) : field.type === 'checkbox' ? (
-                <label className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={formData[field.name as keyof ProjectCost] as boolean || false}
-                    onChange={(e) => handleInputChange(field, e.target.checked)}
-                    className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
-                  />
-                  <span className="ml-2 text-sm text-gray-600">Mark as processed in system</span>
-                </label>
+                <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-lg">
+                  <label className="flex items-center space-x-4 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData[field.name as keyof ProjectCost] as boolean || false}
+                      onChange={(e) => handleInputChange(field, e.target.checked)}
+                      className="w-5 h-5 text-blue-600 bg-white border-2 border-gray-400 rounded focus:ring-blue-500 focus:ring-2 cursor-pointer checked:bg-blue-600 checked:border-blue-600 appearance-none relative checked:after:content-['✓'] checked:after:text-white checked:after:text-sm checked:after:font-bold checked:after:absolute checked:after:inset-0 checked:after:flex checked:after:items-center checked:after:justify-center"
+                    />
+                    <span className="text-sm font-medium text-gray-800 select-none">
+                      Mark as processed in system
+                    </span>
+                  </label>
+                </div>
               ) : field.type === 'textarea' ? (
                 <textarea
                   value={formData[field.name as keyof ProjectCost] as string || ''}
