@@ -286,18 +286,32 @@ export default function UserInviteModal({ isOpen, onClose, onInvite, loading = f
                           return (
                             <label 
                               key={level} 
-                              className={`inline-flex items-center ${!isAllowed ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+                              className={`inline-flex items-center cursor-pointer ${!isAllowed ? 'opacity-40 cursor-not-allowed' : ''}`}
                             >
-                              <input
-                                type="radio"
-                                name={`permission-${area.key}`}
-                                value={level}
-                                checked={isChecked}
-                                onChange={() => handlePermissionChange(area.key, level)}
-                                disabled={isSubmitting || !isAllowed}
-                                className={`form-radio h-3 w-3 text-blue-600 ${!isAllowed ? 'cursor-not-allowed' : ''}`}
-                              />
-                              <span className={`ml-1 text-xs capitalize ${!isAllowed ? 'text-gray-400' : 'text-gray-600'}`}>
+                              <div className="relative">
+                                <input
+                                  type="radio"
+                                  name={`permission-${area.key}`}
+                                  value={level}
+                                  checked={isChecked}
+                                  onChange={() => handlePermissionChange(area.key, level)}
+                                  disabled={isSubmitting || !isAllowed}
+                                  className="sr-only"
+                                />
+                                <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                                  isChecked 
+                                    ? 'border-blue-500 bg-blue-500' 
+                                    : 'border-gray-300 bg-white'
+                                } ${!isAllowed ? 'opacity-40' : ''}`}>
+                                  {isChecked && (
+                                    <div className="w-2 h-2 rounded-full bg-white"></div>
+                                  )}
+                                </div>
+                              </div>
+                              <span className={`ml-2 text-xs capitalize ${
+                                isChecked ? 'text-blue-600 font-medium' : 
+                                !isAllowed ? 'text-gray-400' : 'text-gray-600'
+                              }`}>
                                 {level}
                               </span>
                             </label>
