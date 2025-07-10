@@ -5,13 +5,15 @@ import { Save, X, AlertCircle, Users, DollarSign, FileText } from 'lucide-react'
 import { useEmployees } from '@/hooks/useEmployees'
 import { useChangeOrders } from '@/hooks/useChangeOrders'
 import { useProjects } from '@/contexts/ProjectContext'
-import type { ProjectCost, ChangeOrder } from '@/types/app.types'
+import type { ProjectCost, ChangeOrder, Project } from '@/types/app.types'
 import type { CostCategory } from '@/hooks/useCosts'
 import FileAttachments from '@/components/FileAttachments'
 import EmployeeModal from '@/components/EmployeeModal'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
 import { getTodayLocalDateString } from '@/lib/dateUtils'
+import { createClient } from '@/lib/supabase'
+
 
 interface CostEntryFormProps {
   category: CostCategory
@@ -44,6 +46,10 @@ export default function CostEntryForm({
   // Employee modal state
   const [showEmployeeModal, setShowEmployeeModal] = useState(false)
   const [employeeLoading, setEmployeeLoading] = useState(false)
+
+  // Add ability to edit project on cost entries
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('')
+  const [availableProjects, setAvailableProjects] = useState<Project[]>([])
   
   // Get the active project
   const { activeProject } = useProjects()
@@ -52,16 +58,20 @@ export default function CostEntryForm({
   
   // Use the active project ID for loading employees and change orders
   const { employees, loading: employeesLoading, createEmployee } = useEmployees(activeProject?.id)
-  const { changeOrders } = useChangeOrders(activeProject?.id)
+  // Use selected project for change orders, fallback to active project
+  const { changeOrders } = useChangeOrders(selectedProjectId || activeProject?.id)
+
+
 
   // Initialize form data
   useEffect(() => {
     if (editItem) {
       setFormData(editItem)
+      setSelectedProjectId(editItem.project_id || '')
     } else {
       // Set default values using the proper date utility
       const defaultData: Partial<ProjectCost> = {
-        project_id: activeProject?.id,
+        project_id: activeProject?.id || '',
         date: getTodayLocalDateString(),
         change_order_id: undefined
       }
@@ -82,9 +92,34 @@ export default function CostEntryForm({
       }
 
       setFormData(defaultData)
+      setSelectedProjectId(activeProject?.id || '')
     }
     setErrors({})
   }, [editItem, category, activeProject?.id])
+
+  // Load all available projects that user has access to
+  useEffect(() => {
+    const loadAvailableProjects = async () => {
+      if (!tenant?.id) return
+      
+      try {
+        const supabase = createClient()
+        const { data, error } = await supabase
+          .from('projects')
+          .select('*')
+          .eq('tenant_id', tenant.id)
+          .eq('status', 'Active')
+          .order('jobNumber')
+        
+        if (error) throw error
+        setAvailableProjects(data || [])
+      } catch (error) {
+        console.error('Error loading projects:', error)
+      }
+    }
+    
+    loadAvailableProjects()
+  }, [tenant?.id])
 
   // Handle employee selection for labor
   const handleEmployeeChange = (employeeId: string) => {
@@ -112,6 +147,24 @@ export default function CostEntryForm({
         dt_rate: employee.dt_rate,
         mob_rate: employee.mob_rate || 0
       }))
+    }
+  }
+
+  // Handle project selection change
+  const handleProjectChange = (projectId: string) => {
+    setSelectedProjectId(projectId)
+    setFormData(prev => ({
+      ...prev,
+      project_id: projectId,
+      change_order_id: undefined // Always reset to Base Contract when changing projects
+    }))
+    
+    // Clear any change order related errors
+    if (errors.change_order_id) {
+      setErrors(prevErrors => {
+        const { change_order_id, ...rest } = prevErrors
+        return rest
+      })
     }
   }
 
@@ -174,24 +227,36 @@ export default function CostEntryForm({
   }
 
   // Validate form
-  const validateForm = () => {
+  const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {}
-    const fields = getFormFields()
-
-    // Check if we have an active project
-    if (!activeProject) {
-      newErrors.project = 'No active project selected'
-      setErrors(newErrors)
-      return false
+  
+    // Validate project selection
+    if (!selectedProjectId) {
+      newErrors.project_id = 'Project is required'
     }
-
-    // Check required fields
-    fields.forEach(field => {
-      if (field.required && !formData[field.name as keyof ProjectCost]) {
-        newErrors[field.name] = `${field.label} is required`
+  
+    // Validate date
+    if (!formData.date) {
+      newErrors.date = 'Date is required'
+    }
+  
+    // Category-specific validation
+    if (category === 'labor') {
+      if (!formData.employee_id) {
+        newErrors.employee_id = 'Employee is required'
       }
-    })
-
+    } else {
+      if (!formData.vendor?.trim()) {
+        newErrors.vendor = 'Vendor is required'
+      }
+      if (!formData.invoice_number?.trim()) {
+        newErrors.invoice_number = 'Invoice number is required'
+      }
+      if (!formData.cost || formData.cost <= 0) {
+        newErrors.cost = 'Cost must be greater than 0'
+      }
+    }
+  
     // Labor-specific validation
     if (category === 'labor' && formData.employee_id) {
       const totalHours = (formData.st_hours || 0) + (formData.ot_hours || 0) + (formData.dt_hours || 0)
@@ -199,7 +264,7 @@ export default function CostEntryForm({
         newErrors.hours = 'Must enter hours, per diem, or MOB quantity'
       }
     }
-
+  
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
@@ -246,8 +311,11 @@ export default function CostEntryForm({
         finalFormData.cost = calculateLaborTotal()
       }
 
-      // Ensure project_id is set
-      finalFormData.project_id = activeProject?.id
+      // Ensure project_id is set to selected project
+      finalFormData.project_id = selectedProjectId
+      
+      // Ensure change_order_id is properly handled (undefined should become null in DB)
+      finalFormData.change_order_id = formData.change_order_id || undefined
 
       await onSave(finalFormData as Omit<ProjectCost, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>)
     } catch (error) {
@@ -306,12 +374,12 @@ export default function CostEntryForm({
     return names[category] || category
   }
 
-  // Don't render if no active project
-  if (!activeProject) {
+  // Don't render if no projects available
+  if (availableProjects.length === 0) {
     return (
       <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md">
-        <p className="text-sm font-medium">No Active Project</p>
-        <p className="text-sm">Please select an active project before adding costs.</p>
+        <p className="text-sm font-medium">No Projects Available</p>
+        <p className="text-sm">Please create a project before adding costs.</p>
       </div>
     )
   }
@@ -330,11 +398,29 @@ export default function CostEntryForm({
         </button>
       </div>
 
-      {/* Project Info */}
-      <div className="bg-blue-50 border border-blue-200 rounded-md p-3 mb-4">
-        <p className="text-xs sm:text-sm text-blue-800 break-words">
-          <span className="font-medium">Project:</span> {activeProject.jobNumber} - {activeProject.jobName}
-        </p>
+      {/* Project Selector */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Project <span className="text-red-500">*</span>
+        </label>
+        <select
+          value={selectedProjectId}
+          onChange={(e) => handleProjectChange(e.target.value)}
+          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 ${
+            errors.project_id ? 'border-red-300' : 'border-gray-300'
+          }`}
+          disabled={loading}
+        >
+          <option value="">Select a project</option>
+          {availableProjects.map(project => (
+            <option key={project.id} value={project.id}>
+              {project.jobNumber} - {project.jobName}
+            </option>
+          ))}
+        </select>
+        {errors.project_id && (
+          <p className="text-red-600 text-sm mt-1">{errors.project_id}</p>
+        )}
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -457,12 +543,18 @@ export default function CostEntryForm({
               change_order_id: e.target.value || undefined 
             }))}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+            disabled={loading}
           >
             <option value="">Base Contract</option>
             {changeOrders.map(co => (
               <option key={co.id} value={co.id}>{co.name}</option>
             ))}
           </select>
+          {changeOrders.length === 0 && (
+            <p className="mt-1 text-sm text-gray-500">
+              This project has no change orders. Entry will be assigned to Base Contract.
+            </p>
+          )}
         </div>
 
         {/* Attachments Section - Only show when editing existing item */}

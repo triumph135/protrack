@@ -290,7 +290,7 @@ function CostsContent() {
       headers.join(','),
       ...filteredCosts.map(cost => {
         const changeOrderName = cost.change_order_id 
-          ? changeOrders.find(co => co.id === cost.change_order_id)?.name || 'Unknown'
+          ? changeOrders.find(co => co.id === cost.change_order_id)?.name || 'Base Contract'
           : 'Base Contract'
 
         if (category === 'labor') {
@@ -621,7 +621,7 @@ function CostsContent() {
                     )}
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                       {cost.change_order_id 
-                        ? changeOrders.find(co => co.id === cost.change_order_id)?.name || 'Unknown'
+                        ? changeOrders.find(co => co.id === cost.change_order_id)?.name || 'Base Contract'
                         : 'Base Contract'
                       }
                     </td>

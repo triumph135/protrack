@@ -234,7 +234,8 @@ const calculateTotalCost = (category: CostCategory, costData: Partial<ProjectCos
 
       const updatedData = {
         ...updates,
-        cost: calculateTotalCost(category, updates)
+        cost: calculateTotalCost(category, updates),
+        change_order_id: updates.change_order_id === undefined ? null : updates.change_order_id
       }
 
       console.log('Updating cost:', costId, updatedData)

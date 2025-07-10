@@ -103,7 +103,8 @@ export function useInvoices(projectId?: string, changeOrderId?: string | null) {
       const updatePayload = {
         ...updates,
         amount: updates.amount ? Number(updates.amount) : undefined,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        change_order_id: updates.change_order_id === undefined ? null : updates.change_order_id
       }
 
       const { data, error } = await supabase

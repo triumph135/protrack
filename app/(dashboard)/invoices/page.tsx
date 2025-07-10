@@ -139,7 +139,7 @@ export default function InvoicesPage() {
       headers.join(','),
       ...filteredInvoices.map(invoice => {
         const changeOrderName = invoice.change_order_id 
-          ? changeOrders.find(co => co.id === invoice.change_order_id)?.name || 'Unknown'
+          ? changeOrders.find(co => co.id === invoice.change_order_id)?.name || 'Base Contract'
           : 'Base Contract'
 
         return [

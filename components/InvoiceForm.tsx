@@ -1,14 +1,15 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Save, X, AlertCircle, DollarSign, FileText } from 'lucide-react'
 import { useChangeOrders } from '@/hooks/useChangeOrders'
 import { useProjects } from '@/contexts/ProjectContext'
-import type { CustomerInvoice } from '@/types/app.types'
+import type { CustomerInvoice, Project } from '@/types/app.types'
 import { getTodayLocalDateString } from '@/lib/dateUtils'
 import FileAttachments from '@/components/FileAttachments'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
+import { createClient } from '@/lib/supabase'
 
 interface InvoiceFormProps {
   onSave: (invoiceData: Omit<CustomerInvoice, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>) => Promise<void>
@@ -26,9 +27,14 @@ export default function InvoiceForm({
   const [formData, setFormData] = useState<Partial<CustomerInvoice>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
   
+  // Add these new state variables
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('')
+  const [availableProjects, setAvailableProjects] = useState<Project[]>([])
+  const supabase = createClient()
+  
   // Get the active project and change orders
   const { activeProject } = useProjects()
-  const { changeOrders } = useChangeOrders(activeProject?.id)
+  const { changeOrders } = useChangeOrders(selectedProjectId || activeProject?.id)
   const { user } = useAuth()
   const { tenant } = useTenant()
 
@@ -36,18 +42,43 @@ export default function InvoiceForm({
   useEffect(() => {
     if (editItem) {
       setFormData(editItem)
+      setSelectedProjectId(editItem.project_id)
     } else {
       // Set default values for new invoice using the proper date utility
       setFormData({
-        project_id: activeProject?.id,
+        project_id: activeProject?.id || '',
         invoice_number: '',
         amount: 0,
         date_billed: getTodayLocalDateString(),
         change_order_id: undefined,
         in_system: false
       })
+      setSelectedProjectId(activeProject?.id || '')
     }
   }, [editItem, activeProject?.id])
+
+  // Load all available projects
+  useEffect(() => {
+    const loadAvailableProjects = async () => {
+      if (!tenant?.id) return
+      
+      try {
+        const { data, error } = await supabase
+          .from('projects')
+          .select('*')
+          .eq('tenant_id', tenant.id)
+          .eq('status', 'Active')
+          .order('jobNumber')
+        
+        if (error) throw error
+        setAvailableProjects(data || [])
+      } catch (error) {
+        console.error('Error loading projects:', error)
+      }
+    }
+    
+    loadAvailableProjects()
+  }, [tenant?.id])
 
   const handleInputChange = (field: string, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }))
@@ -58,25 +89,43 @@ export default function InvoiceForm({
     }
   }
 
+  // Handle project selection change
+  const handleProjectChange = (projectId: string) => {
+    setSelectedProjectId(projectId)
+    setFormData(prev => ({
+      ...prev,
+      project_id: projectId,
+      change_order_id: undefined // Always reset to Base Contract when changing projects
+    }))
+    
+    // Clear any project-related errors
+    if (errors.project_id) {
+      setErrors(prevErrors => {
+        const { project_id, ...rest } = prevErrors
+        return rest
+      })
+    }
+  }
+
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {}
-
+  
+    if (!selectedProjectId) {
+      newErrors.project_id = 'Project is required'
+    }
+  
     if (!formData.invoice_number?.trim()) {
       newErrors.invoice_number = 'Invoice number is required'
     }
-
+  
     if (!formData.amount || Number(formData.amount) <= 0) {
       newErrors.amount = 'Amount must be greater than 0'
     }
-
+  
     if (!formData.date_billed) {
       newErrors.date_billed = 'Date billed is required'
     }
-
-    if (!formData.project_id) {
-      newErrors.project_id = 'Project is required'
-    }
-
+  
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
@@ -85,10 +134,10 @@ export default function InvoiceForm({
     e.preventDefault()
     
     if (!validateForm()) return
-
+  
     try {
       await onSave({
-        project_id: formData.project_id!,
+        project_id: selectedProjectId,
         invoice_number: formData.invoice_number!,
         amount: Number(formData.amount),
         date_billed: formData.date_billed!,
@@ -115,51 +164,76 @@ export default function InvoiceForm({
         </button>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="grid grid-cols-1 gap-4">
-          {/* Invoice Number */}
+      <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Project Selector */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Project <span className="text-red-500">*</span>
+          </label>
+          <select
+            value={selectedProjectId}
+            onChange={(e) => handleProjectChange(e.target.value)}
+            className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+              errors.project_id ? 'border-red-300' : 'border-gray-300'
+            }`}
+            disabled={loading}
+          >
+            <option value="">Select a project</option>
+            {availableProjects.map(project => (
+              <option key={project.id} value={project.id}>
+                {project.jobNumber} - {project.jobName}
+              </option>
+            ))}
+          </select>
+          {errors.project_id && (
+            <p className="mt-1 text-sm text-red-600 flex items-center">
+              <AlertCircle className="h-4 w-4 mr-1" />
+              {errors.project_id}
+            </p>
+          )}
+        </div>
+
+        {/* Invoice Number */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Invoice Number <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            value={formData.invoice_number || ''}
+            onChange={(e) => handleInputChange('invoice_number', e.target.value)}
+            className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+              errors.invoice_number ? 'border-red-300' : 'border-gray-300'
+            }`}
+            placeholder="Enter invoice number"
+            disabled={loading}
+          />
+          {errors.invoice_number && (
+            <p className="mt-1 text-sm text-red-600 flex items-center">
+              <AlertCircle className="h-4 w-4 mr-1" />
+              {errors.invoice_number}
+            </p>
+          )}
+        </div>
+
+        {/* Amount and Date */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Invoice Number *
+              Amount <span className="text-red-500">*</span>
             </label>
             <input
-              type="text"
-              value={formData.invoice_number || ''}
-              onChange={(e) => handleInputChange('invoice_number', e.target.value)}
-              className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 ${
-                errors.invoice_number ? 'border-red-300' : 'border-gray-300'
+              type="number"
+              value={formData.amount || ''}
+              onChange={(e) => handleInputChange('amount', e.target.value)}
+              className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                errors.amount ? 'border-red-300' : 'border-gray-300'
               }`}
-              placeholder="INV-001"
+              placeholder="0.00"
+              step="0.01"
+              min="0"
               disabled={loading}
             />
-            {errors.invoice_number && (
-              <p className="mt-1 text-sm text-red-600 flex items-center">
-                <AlertCircle className="h-4 w-4 mr-1" />
-                {errors.invoice_number}
-              </p>
-            )}
-          </div>
-
-          {/* Amount */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Amount *
-            </label>
-            <div className="relative">
-              <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.amount || ''}
-                onChange={(e) => handleInputChange('amount', e.target.value)}
-                className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 ${
-                  errors.amount ? 'border-red-300' : 'border-gray-300'
-                }`}
-                placeholder="0.00"
-                disabled={loading}
-              />
-            </div>
             {errors.amount && (
               <p className="mt-1 text-sm text-red-600 flex items-center">
                 <AlertCircle className="h-4 w-4 mr-1" />
@@ -168,16 +242,15 @@ export default function InvoiceForm({
             )}
           </div>
 
-          {/* Date Billed */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Date Billed *
+              Date Billed <span className="text-red-500">*</span>
             </label>
             <input
               type="date"
               value={formData.date_billed || ''}
               onChange={(e) => handleInputChange('date_billed', e.target.value)}
-              className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 ${
+              className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                 errors.date_billed ? 'border-red-300' : 'border-gray-300'
               }`}
               disabled={loading}
@@ -209,9 +282,15 @@ export default function InvoiceForm({
               </option>
             ))}
           </select>
-          <p className="mt-1 text-sm text-gray-500">
-            Select a change order if this invoice is related to additional work
-          </p>
+          {changeOrders.length === 0 ? (
+            <p className="mt-1 text-sm text-gray-500">
+              This project has no change orders. Invoice will be assigned to Base Contract.
+            </p>
+          ) : (
+            <p className="mt-1 text-sm text-gray-500">
+              Select a change order if this invoice is related to additional work
+            </p>
+          )}
         </div>
 
         {/* Mark as Processed */}
@@ -245,38 +324,22 @@ export default function InvoiceForm({
           </div>
         )}
 
-        {!editItem && (
-          <div className="border-t pt-6">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <div className="flex items-center gap-2 text-blue-700">
-                <FileText className="w-5 h-5" />
-                <div>
-                  <p className="text-sm font-medium">File Attachments</p>
-                  <p className="text-sm">Save this invoice first, then edit it to add file attachments</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Form Actions */}
-        <div className="flex flex-col sm:flex-row gap-3 pt-4">
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Save className="h-4 w-4 mr-2" />
-            {loading ? 'Saving...' : 'Save Invoice'}
-          </button>
-          
+        <div className="flex justify-end space-x-3 pt-6 border-t">
           <button
             type="button"
             onClick={onCancel}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
             disabled={loading}
-            className="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Cancel
+          </button>
+          <button
+            type="submit"
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+            disabled={loading}
+          >
+            {loading ? 'Saving...' : editItem ? 'Update Invoice' : 'Create Invoice'}
           </button>
         </div>
       </form>
