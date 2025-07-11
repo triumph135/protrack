@@ -332,12 +332,12 @@ export default function DashboardPage() {
               <FileText className="h-6 w-6 lg:h-8 lg:w-8 text-orange-500" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className={`text-lg lg:text-2xl font-semibold break-words ${getStatusColor(metrics.amountYetToBilled)}`}>
-                {formatCurrency(metrics.amountYetToBilled)}
+              <p className={`text-lg lg:text-2xl font-semibold break-words ${metrics.totalInvoicedAmount < metrics.totalProjectCosts ? 'text-red-600' : 'text-green-600'}`}> 
+                {formatCurrency(metrics.totalInvoicedAmount)}
               </p>
-              <p className="text-sm lg:text-base text-gray-600">Amount Yet to Bill</p>
+              <p className="text-sm lg:text-base text-gray-600">Invoiced</p>
               <div className="text-xs text-gray-500 mt-1 break-words">
-                Invoiced: {formatCurrency(metrics.totalInvoicedAmount)}
+                Amount Yet to Bill: {formatCurrency(metrics.amountYetToBilled)}
               </div>
             </div>
           </div>
