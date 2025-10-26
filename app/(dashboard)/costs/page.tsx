@@ -3,7 +3,7 @@
 import { useState, Suspense, useEffect, useCallback, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { Plus, Edit, Trash2, DollarSign, Users, Search, Lock, Download, Filter, Paperclip } from 'lucide-react'
+import { Plus, Edit, Trash2, DollarSign, Users, Search, Lock, Download, Filter, Paperclip, Copy } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useProjects } from '@/contexts/ProjectContext'
 import { useCosts, type CostCategory } from '@/hooks/useCosts'
@@ -37,6 +37,7 @@ function CostsContent() {
   
   const [showForm, setShowForm] = useState(false)
   const [editingItem, setEditingItem] = useState<ProjectCost | null>(null)
+  const [isDuplicateMode, setIsDuplicateMode] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [dateFilter, setDateFilter] = useState({ start: '', end: '' })
   const [showFilters, setShowFilters] = useState(false)
@@ -236,11 +237,19 @@ function CostsContent() {
 
   const handleAddCost = () => {
     setEditingItem(null)
+    setIsDuplicateMode(false)
     setShowForm(true)
   }
 
   const handleEditCost = (cost: ProjectCost) => {
     setEditingItem(cost)
+    setIsDuplicateMode(false)
+    setShowForm(true)
+  }
+
+  const handleDuplicateCost = (cost: ProjectCost) => {
+    setEditingItem(cost)
+    setIsDuplicateMode(true)
     setShowForm(true)
   }
 
@@ -261,13 +270,16 @@ function CostsContent() {
 
   const handleSaveCost = async (costData: Omit<ProjectCost, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>) => {
     try {
-      if (editingItem) {
+      if (editingItem && !isDuplicateMode) {
         await updateCost(category, editingItem.id, costData)
       } else {
-        await createCost(category, costData)
+        // Ensure id is not included when creating a new entry (especially for duplicates)
+        const { id, ...dataToCreate } = costData as any
+        await createCost(category, dataToCreate)
       }
       setShowForm(false)
       setEditingItem(null)
+      setIsDuplicateMode(false)
       // Refresh costs after save
       refreshCosts()
     } catch (error) {
@@ -452,8 +464,10 @@ function CostsContent() {
             onCancel={() => {
               setShowForm(false)
               setEditingItem(null)
+              setIsDuplicateMode(false)
             }}
             loading={loading}
+            duplicateMode={isDuplicateMode}
           />
         </div>
       )}
@@ -642,6 +656,13 @@ function CostsContent() {
                             title="Edit cost"
                           >
                             <Edit className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDuplicateCost(cost)}
+                            className="text-green-600 hover:text-green-900 p-1 rounded transition-colors"
+                            title="Duplicate cost"
+                          >
+                            <Copy className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleDeleteCost(cost)}

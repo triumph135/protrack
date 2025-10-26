@@ -16,13 +16,15 @@ interface InvoiceFormProps {
   onCancel: () => void
   editItem?: CustomerInvoice | null
   loading?: boolean
+  duplicateMode?: boolean
 }
 
 export default function InvoiceForm({
   onSave,
   onCancel,
   editItem = null,
-  loading = false
+  loading = false,
+  duplicateMode = false
 }: InvoiceFormProps) {
   const [formData, setFormData] = useState<Partial<CustomerInvoice>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -41,8 +43,18 @@ export default function InvoiceForm({
   // Initialize form data
   useEffect(() => {
     if (editItem) {
-      setFormData(editItem)
-      setSelectedProjectId(editItem.project_id)
+      const itemData = { ...editItem }
+      // If in duplicate mode, clear the date and invoice number fields
+      if (duplicateMode) {
+        itemData.date_billed = getTodayLocalDateString()
+        itemData.invoice_number = ''
+        // Remove any fields that shouldn't be copied
+        delete (itemData as any).id
+        delete (itemData as any).created_at
+        delete (itemData as any).updated_at
+      }
+      setFormData(itemData)
+      setSelectedProjectId(itemData.project_id)
     } else {
       // Set default values for new invoice using the proper date utility
       setFormData({
@@ -55,7 +67,7 @@ export default function InvoiceForm({
       })
       setSelectedProjectId(activeProject?.id || '')
     }
-  }, [editItem, activeProject?.id])
+  }, [editItem, activeProject?.id, duplicateMode])
 
   // Load all available projects
   useEffect(() => {
@@ -153,7 +165,7 @@ export default function InvoiceForm({
     <div className="bg-gray-50 p-4 sm:p-6 rounded-lg border">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 sm:mb-6">
         <h3 className="text-lg font-semibold text-gray-900">
-          {editItem ? 'Edit Invoice' : 'Add New Invoice'}
+          {duplicateMode ? 'Duplicate Invoice' : editItem ? 'Edit Invoice' : 'Add New Invoice'}
         </h3>
         <button
           type="button"
@@ -309,8 +321,8 @@ export default function InvoiceForm({
           </label>
         </div>
 
-        {/* Attachments Section - Only show when editing existing invoice */}
-        {editItem && (
+        {/* Attachments Section - Only show when editing existing invoice (not duplicating) */}
+        {editItem && !duplicateMode && (
           <div className="border-t pt-6">
             <h4 className="text-sm font-medium text-gray-700 mb-4">File Attachments</h4>
             <FileAttachments
@@ -321,6 +333,21 @@ export default function InvoiceForm({
               canEdit={true}
               className="bg-gray-50 p-4 rounded-lg"
             />
+          </div>
+        )}
+
+        {/* Show message for new/duplicate items about attachments */}
+        {(!editItem || duplicateMode) && (
+          <div className="border-t pt-6">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-center gap-2 text-blue-700">
+                <FileText className="w-5 h-5" />
+                <div>
+                  <p className="text-sm font-medium">File Attachments</p>
+                  <p className="text-sm">Save this entry first, then edit it to add file attachments</p>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 

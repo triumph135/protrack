@@ -21,6 +21,7 @@ interface CostEntryFormProps {
   onCancel: () => void
   editItem?: ProjectCost | null
   loading?: boolean
+  duplicateMode?: boolean
 }
 
 interface FormField {
@@ -38,7 +39,8 @@ export default function CostEntryForm({
   onSave,
   onCancel,
   editItem = null,
-  loading = false
+  loading = false,
+  duplicateMode = false
 }: CostEntryFormProps) {
   const [formData, setFormData] = useState<Partial<ProjectCost>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -66,8 +68,17 @@ export default function CostEntryForm({
   // Initialize form data
   useEffect(() => {
     if (editItem) {
-      setFormData(editItem)
-      setSelectedProjectId(editItem.project_id || '')
+      const itemData = { ...editItem }
+      // If in duplicate mode, clear the date field and ensure no id/attachment data is passed
+      if (duplicateMode) {
+        itemData.date = getTodayLocalDateString()
+        // Remove any fields that shouldn't be copied
+        delete (itemData as any).id
+        delete (itemData as any).created_at
+        delete (itemData as any).updated_at
+      }
+      setFormData(itemData)
+      setSelectedProjectId(itemData.project_id || '')
     } else {
       // Set default values using the proper date utility
       const defaultData: Partial<ProjectCost> = {
@@ -95,7 +106,7 @@ export default function CostEntryForm({
       setSelectedProjectId(activeProject?.id || '')
     }
     setErrors({})
-  }, [editItem, category, activeProject?.id])
+  }, [editItem, category, activeProject?.id, duplicateMode])
 
   // Load all available projects that user has access to
   useEffect(() => {
@@ -388,7 +399,7 @@ export default function CostEntryForm({
     <div className="bg-white p-4 sm:p-6 rounded-lg shadow-md">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 sm:mb-6">
         <h3 className="text-lg font-semibold text-gray-900">
-          {editItem ? `Edit ${getCategoryDisplayName()}` : `Add ${getCategoryDisplayName()}`} Cost
+          {duplicateMode ? `Duplicate ${getCategoryDisplayName()}` : editItem ? `Edit ${getCategoryDisplayName()}` : `Add ${getCategoryDisplayName()}`} Cost
         </h3>
         <button
           onClick={onCancel}
@@ -557,8 +568,8 @@ export default function CostEntryForm({
           )}
         </div>
 
-        {/* Attachments Section - Only show when editing existing item */}
-        {editItem && (
+        {/* Attachments Section - Only show when editing existing item (not duplicating) */}
+        {editItem && !duplicateMode && (
           <div className="border-t pt-6">
             <h4 className="text-sm font-medium text-gray-700 mb-4">File Attachments</h4>
             <FileAttachments
@@ -572,7 +583,7 @@ export default function CostEntryForm({
           </div>
         )}
 
-        {!editItem && (
+        {(!editItem || duplicateMode) && (
           <div className="border-t pt-6">
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
               <div className="flex items-center gap-2 text-blue-700">

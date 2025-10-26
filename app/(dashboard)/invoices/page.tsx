@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Plus, Edit, Trash2, FileText, DollarSign, Calendar, Filter, Download, Search, Paperclip } from 'lucide-react'
+import { Plus, Edit, Trash2, FileText, DollarSign, Calendar, Filter, Download, Search, Paperclip, Copy } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
 import { useProjects } from '@/contexts/ProjectContext'
@@ -30,6 +30,7 @@ export default function InvoicesPage() {
   const [selectedChangeOrder, setSelectedChangeOrder] = useState<string>('all')
   const [showForm, setShowForm] = useState(false)
   const [editingInvoice, setEditingInvoice] = useState<CustomerInvoice | null>(null)
+  const [isDuplicateMode, setIsDuplicateMode] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const [filters, setFilters] = useState<InvoiceFilters>({
     startDate: '',
@@ -86,14 +87,17 @@ export default function InvoicesPage() {
   // Handle form submission
   const handleSave = async (invoiceData: Omit<CustomerInvoice, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>) => {
     try {
-      if (editingInvoice) {
+      if (editingInvoice && !isDuplicateMode) {
         await updateInvoice(editingInvoice.id, invoiceData)
       } else {
-        await createInvoice(invoiceData)
+        // Ensure id is not included when creating a new entry (especially for duplicates)
+        const { id, ...dataToCreate } = invoiceData as any
+        await createInvoice(dataToCreate)
       }
       
       setShowForm(false)
       setEditingInvoice(null)
+      setIsDuplicateMode(false)
     } catch (error) {
       console.error('Error saving invoice:', error)
       alert('Error saving invoice. Please try again.')
@@ -115,6 +119,14 @@ export default function InvoicesPage() {
   // Handle edit
   const handleEdit = (invoice: CustomerInvoice) => {
     setEditingInvoice(invoice)
+    setIsDuplicateMode(false)
+    setShowForm(true)
+  }
+
+  // Handle duplicate
+  const handleDuplicate = (invoice: CustomerInvoice) => {
+    setEditingInvoice(invoice)
+    setIsDuplicateMode(true)
     setShowForm(true)
   }
 
@@ -316,9 +328,11 @@ export default function InvoicesPage() {
           onCancel={() => {
             setShowForm(false)
             setEditingInvoice(null)
+            setIsDuplicateMode(false)
           }}
           editItem={editingInvoice}
           loading={loading}
+          duplicateMode={isDuplicateMode}
         />
       )}
 
@@ -342,6 +356,7 @@ export default function InvoicesPage() {
                 <button
                   onClick={() => {
                     setEditingInvoice(null)
+                    setIsDuplicateMode(false)
                     setShowForm(true)
                   }}
                   className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
@@ -525,6 +540,13 @@ export default function InvoicesPage() {
                               title="Edit invoice"
                             >
                               <Edit className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDuplicate(invoice)}
+                              className="text-green-600 hover:text-green-900"
+                              title="Duplicate invoice"
+                            >
+                              <Copy className="h-4 w-4" />
                             </button>
                             <button
                               onClick={() => handleDelete(invoice.id)}
