@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { useReactToPrint } from 'react-to-print'
 import Link from 'next/link'
-import { Plus, BarChart3, Building, DollarSign, FileText, Users, TrendingUp, Calendar, AlertTriangle, Download } from 'lucide-react'
+import { Plus, BarChart3, Building, DollarSign, FileText, Users, TrendingUp, Calendar, AlertTriangle, Download, FileDown } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
 import { useProjects } from '@/contexts/ProjectContext'
@@ -15,6 +16,7 @@ export default function DashboardPage() {
   const { user } = useAuth()
   const { tenant } = useTenant()
   const { projects, activeProject, setActiveProject, loading } = useProjects()
+  const printRef = useRef<HTMLDivElement>(null)
   
   // Dashboard shows ALL data for the project (no change order filtering)
   const { costs, getTotals, getCounts, refreshCosts } = useCosts(activeProject?.id, null) // null = show all change orders
@@ -151,7 +153,21 @@ export default function DashboardPage() {
     return <AlertTriangle className="w-4 h-4" />
   }
 
-  // Export dashboard data
+  // Export dashboard to PDF
+  const handlePrintPDF = useReactToPrint({
+    contentRef: printRef,
+    documentTitle: `${activeProject?.jobNumber || 'Dashboard'}_${new Date().toLocaleDateString().replace(/\//g, '-')}`,
+  })
+
+  const exportDashboardToPDF = () => {
+    if (!activeProject) {
+      alert('No active project to export')
+      return
+    }
+    handlePrintPDF()
+  }
+
+  // Export dashboard data to CSV
   const exportDashboardData = () => {
     if (!activeProject) {
       alert('No active project to export')
@@ -267,13 +283,22 @@ export default function DashboardPage() {
               </p>
             </div>
             <div className="flex flex-col lg:items-end gap-3">
-              <button
-                onClick={exportDashboardData}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Export Dashboard
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={exportDashboardToPDF}
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                >
+                  <FileDown className="h-4 w-4 mr-2" />
+                  Export PDF
+                </button>
+                <button
+                  onClick={exportDashboardData}
+                  className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Export CSV
+                </button>
+              </div>
               <div className="lg:text-right">
                 <p className="text-xs sm:text-sm text-gray-500">Active Project</p>
                 <p className="text-base sm:text-lg font-semibold text-blue-600 break-words">
@@ -281,6 +306,145 @@ export default function DashboardPage() {
                 </p>
                 <p className="text-xs sm:text-sm text-gray-600">{activeProject.customer}</p>
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* PDF Export Content - Hidden wrapper */}
+      <div className="hidden">
+        <div ref={printRef} className="p-8 bg-white">
+          {/* Print Header */}
+          <div className="mb-6 pb-4 border-b-2 border-gray-300">
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">Dashboard Report</h1>
+            <div className="text-sm text-gray-600">
+              <p><strong>Project:</strong> {activeProject.jobNumber} - {activeProject.jobName}</p>
+              <p><strong>Customer:</strong> {activeProject.customer}</p>
+              <p><strong>Report Date:</strong> {new Date().toLocaleDateString()}</p>
+            </div>
+          </div>
+
+          {/* Financial Metrics */}
+          <div className="mb-6">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="border border-gray-300 rounded-lg p-4">
+                <p className="text-sm text-gray-600 mb-1">Total Contract Value</p>
+                <p className="text-2xl font-bold text-gray-900">{formatCurrency(metrics.totalContractValue)}</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Base: {formatCurrency(metrics.baseContractValue)} | COs: {formatCurrency(metrics.changeOrderValue)}
+                </p>
+              </div>
+              <div className="border border-gray-300 rounded-lg p-4">
+                <p className="text-sm text-gray-600 mb-1">Total Project Costs</p>
+                <p className="text-2xl font-bold text-red-600">{formatCurrency(metrics.totalProjectCosts)}</p>
+                <p className="text-xs text-gray-500 mt-1">{totalCostEntries} cost entries</p>
+              </div>
+              <div className="border border-gray-300 rounded-lg p-4">
+                <p className="text-sm text-gray-600 mb-1">Invoiced</p>
+                <p className={`text-2xl font-bold ${metrics.totalInvoicedAmount < metrics.totalProjectCosts ? 'text-red-600' : 'text-green-600'}`}>
+                  {formatCurrency(metrics.totalInvoicedAmount)}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">Yet to Bill: {formatCurrency(metrics.amountYetToBilled)}</p>
+              </div>
+              <div className="border border-gray-300 rounded-lg p-4">
+                <p className="text-sm text-gray-600 mb-1">Gross Profit</p>
+                <p className={`text-2xl font-bold ${getStatusColor(metrics.grossProfit)}`}>
+                  {formatCurrency(metrics.grossProfit)}
+                </p>
+                <p className={`text-xs font-medium mt-1 ${getStatusColor(metrics.grossProfitPercentage, true)}`}>
+                  {formatPercentage(metrics.grossProfitPercentage)} margin
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Financial Summary */}
+          <div className="mb-6">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">Financial Summary</h2>
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <h3 className="text-base font-semibold text-gray-900 mb-3 border-b pb-2">Contract Breakdown</h3>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Base Contract:</span>
+                    <span className="font-medium">{formatCurrency(metrics.baseContractValue)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Change Orders ({changeOrders.length}):</span>
+                    <span className="font-medium">{formatCurrency(metrics.changeOrderValue)}</span>
+                  </div>
+                  <div className="flex justify-between pt-2 border-t">
+                    <span className="font-semibold text-gray-900">Total Contract Value:</span>
+                    <span className="font-bold text-blue-600">{formatCurrency(metrics.totalContractValue)}</span>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-gray-900 mb-3 border-b pb-2">Profitability Analysis</h3>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Total Revenue:</span>
+                    <span className="font-medium">{formatCurrency(metrics.totalInvoicedAmount)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Total Costs:</span>
+                    <span className="font-medium">{formatCurrency(metrics.totalProjectCosts)}</span>
+                  </div>
+                  <div className="flex justify-between pt-2 border-t">
+                    <span className="font-semibold text-gray-900">Gross Profit:</span>
+                    <span className={`font-bold ${getStatusColor(metrics.grossProfit)}`}>
+                      {formatCurrency(metrics.grossProfit)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-semibold text-gray-900">Gross Margin:</span>
+                    <span className={`font-bold ${getStatusColor(metrics.grossProfitPercentage, true)}`}>
+                      {formatPercentage(metrics.grossProfitPercentage)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            {metrics.grossProfitPercentage < 5 && metrics.totalContractValue > 0 && (
+              <div className="mt-4 bg-red-50 border-2 border-red-300 rounded-lg p-3">
+                <p className="text-sm font-semibold text-red-800">⚠ Low Profit Margin Alert</p>
+                <p className="text-sm text-red-700">
+                  Current gross margin is {formatPercentage(metrics.grossProfitPercentage)}.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Cost Breakdown */}
+          <div className="break-before-page">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">Cost Breakdown by Category</h2>
+            <div className="grid grid-cols-2 gap-4">
+              {Object.entries(costTotals).map(([category, total]) => {
+                const count = costCounts[category as keyof typeof costCounts]
+                const categoryNames = {
+                  material: 'Material',
+                  labor: 'Labor',
+                  equipment: 'Equipment',
+                  subcontractor: 'Subcontractor',
+                  others: 'Others',
+                  cap_leases: 'Cap Leases',
+                  consumable: 'Consumable'
+                }
+                
+                const categoryName = categoryNames[category as keyof typeof categoryNames]
+                const percentage = metrics.totalProjectCosts > 0 ? (total / metrics.totalProjectCosts) * 100 : 0
+                const hasReadPermission = hasPermission(category === 'cap_leases' ? 'capLeases' : category, 'read')
+                
+                if (!hasReadPermission) return null
+                
+                return (
+                  <div key={category} className="border border-gray-300 rounded-lg p-3">
+                    <p className="text-xs font-medium text-gray-600">{categoryName}</p>
+                    <p className="text-lg font-bold text-gray-900">{formatCurrency(total)}</p>
+                    <p className="text-xs text-gray-500">{count} entries • {percentage.toFixed(1)}%</p>
+                  </div>
+                )
+              })}
             </div>
           </div>
         </div>
