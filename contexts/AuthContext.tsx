@@ -188,9 +188,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } finally {
           setIsProcessingAuth(false)
         }
-      } else if (event === 'SIGNED_IN' && !initializedRef.current && !isInitializingRef.current) {
-        // Only handle SIGNED_IN events when we're not already initialized
-        // This prevents token refresh events from triggering re-authentication
+      } else if (event === 'SIGNED_IN' && !userRef.current) {
+        // Handle SIGNED_IN events whenever we don't already have a loaded
+        // profile for the current user. Gating this on `!initializedRef.current`
+        // (the old condition) meant a *real* sign-in from the login form was
+        // silently ignored, because initializeAuth() has almost always already
+        // finished (and set initialized=true) by the time a human finishes
+        // typing a password and clicking submit. That left `loading` stuck at
+        // true and `user` stuck at null forever after a correct login, so the
+        // UI just spun on "Signing In..." until the user manually refreshed
+        // the page (which re-ran initializeAuth from scratch and worked).
         setIsProcessingAuth(true)
         try {
           if (session?.user) {
