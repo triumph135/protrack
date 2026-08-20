@@ -272,7 +272,7 @@ export default function InvoicesPage() {
          />
 
          <div className="bg-white p-6 rounded-lg shadow-md text-center">
-          <p className="text-gray-500">You don't have permission to view invoices.</p>
+          <p className="text-gray-500">You don&apos;t have permission to view invoices.</p>
         </div>
       </div>
     )

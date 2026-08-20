@@ -317,7 +317,7 @@ export default function CostEntryForm({
 
     try {
       // Calculate total cost for labor
-      let finalFormData = { ...formData }
+      const finalFormData = { ...formData }
       if (category === 'labor') {
         finalFormData.cost = calculateLaborTotal()
       }

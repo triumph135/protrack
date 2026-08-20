@@ -253,7 +253,7 @@ export default function UsersPage() {
       <div className="bg-white p-6 rounded-lg shadow-md text-center">
         <AlertCircle className="mx-auto h-12 w-12 text-red-400 mb-4" />
         <h3 className="text-lg font-medium text-gray-900 mb-2">Access Denied</h3>
-        <p className="text-gray-500">You don't have permission to view user management.</p>
+        <p className="text-gray-500">You don&apos;t have permission to view user management.</p>
       </div>
     )
   }
