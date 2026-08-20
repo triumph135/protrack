@@ -39,3 +39,11 @@ jobs:
           # touch the Supabase client at build time.
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          # Several API routes (invitation management) build a privileged
+          # Supabase admin client at module scope using this key. Next.js
+          # imports those route modules during `next build`'s "Collecting
+          # page data" step, so the key must be present at build time even
+          # though it's never bundled client-side (it's not NEXT_PUBLIC_-
+          # prefixed). Missing this caused the build step to fail with
+          # "Error: supabaseUrl is required."
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
