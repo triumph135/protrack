@@ -173,7 +173,7 @@ function TenantSetupContent() {
         Set up your ProTrack workspace
       </h2>
       <p className="mt-2 text-center text-gray-600">
-        Create your organization's project tracking environment
+        Create your organization&apos;s project tracking environment
       </p>
 
       <div className="mt-8 bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">

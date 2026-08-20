@@ -1,0 +1,49 @@
+name: CI
+
+# Runs on every PR and on pushes to main. This is the automated gate that
+# has to pass before a PR is allowed to merge into main (branch protection
+# is configured separately in GitHub repo settings to require this check).
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  build-and-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+        env:
+          # Build-time env vars for the CI build itself. These are NOT the
+          # runtime env vars the deployed app uses (Vercel supplies those
+          # separately per-environment) — they just need to be present and
+          # valid-looking so `next build` can statically analyze pages that
+          # touch the Supabase client at build time.
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          # Several API routes (invitation management) build a privileged
+          # Supabase admin client at module scope using this key. Next.js
+          # imports those route modules during `next build`'s "Collecting
+          # page data" step, so the key must be present at build time even
+          # though it's never bundled client-side (it's not NEXT_PUBLIC_-
+          # prefixed). Missing this caused the build step to fail with
+          # "Error: supabaseUrl is required."
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}

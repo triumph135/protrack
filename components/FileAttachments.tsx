@@ -302,8 +302,8 @@ export default function FileAttachments({
               <p className="text-xs mt-1 break-words">{error}</p>
               {error.includes('Download failed') && (
                 <p className="text-xs mt-2 text-red-600">
-                  <strong>Mobile users:</strong> If download doesn't start automatically, the file will open in a new tab. 
-                  You can then save it using your browser's save/share options.
+                  <strong>Mobile users:</strong> If download doesn&apos;t start automatically, the file will open in a new tab.
+                  You can then save it using your browser&apos;s save/share options.
                 </p>
               )}
             </div>

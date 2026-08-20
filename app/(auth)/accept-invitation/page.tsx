@@ -254,7 +254,7 @@ function AcceptInvitationContent() {
           </div>
           <h2 className="text-3xl font-extrabold text-gray-900">Join ProTrack</h2>
           <p className="mt-2 text-gray-600">
-            You've been invited to join <strong>{invitation?.tenant_name}</strong>
+            You&apos;ve been invited to join <strong>{invitation?.tenant_name}</strong>
           </p>
         </div>
 

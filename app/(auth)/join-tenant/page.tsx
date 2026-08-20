@@ -279,7 +279,7 @@ function JoinTenantContent() {
           </div>
           <h2 className="text-3xl font-extrabold text-gray-900">Join Organization</h2>
           <p className="mt-2 text-gray-600">
-            You've been invited to join <strong>{invitation?.tenant_name}</strong>
+            You&apos;ve been invited to join <strong>{invitation?.tenant_name}</strong>
           </p>
         </div>
 
@@ -319,7 +319,7 @@ function JoinTenantContent() {
           {/* Email Mismatch Warning */}
           {invitation && user && invitation.email !== user.email && (
             <div className="mb-4 bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-3 rounded-md text-sm">
-              <strong>Warning:</strong> This invitation is for {invitation.email}, but you're logged in as {user.email}. 
+              <strong>Warning:</strong> This invitation is for {invitation.email}, but you&apos;re logged in as {user.email}.
               Please log in with the correct account to accept this invitation.
             </div>
           )}

@@ -162,7 +162,7 @@ function LoginContent() {
               <p className="text-gray-600 mb-4">Redirecting to your dashboard...</p>
               <div className="mt-4">
                 <p className="text-sm text-gray-500 mb-3">
-                  If redirect doesn't work, click here:
+                  If redirect doesn&apos;t work, click here:
                 </p>
                 <button
                   onClick={handleManualRedirect}
@@ -262,7 +262,7 @@ function LoginContent() {
                     href="/register"
                     className="text-blue-600 hover:text-blue-500 text-sm"
                   >
-                    Don't have an account? Sign up
+                    Don&apos;t have an account? Sign up
                   </Link>
                 </div>
                 <div>

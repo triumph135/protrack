@@ -97,7 +97,7 @@ export default function EmployeesPage() {
           <Users className="mx-auto h-12 w-12 text-gray-400" />
           <h3 className="mt-2 text-sm font-medium text-gray-900">Access Denied</h3>
           <p className="mt-1 text-sm text-gray-500">
-            You don't have permission to view employees.
+            You don&apos;t have permission to view employees.
           </p>
         </div>
       </div>
