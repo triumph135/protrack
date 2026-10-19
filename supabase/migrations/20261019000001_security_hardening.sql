@@ -39,8 +39,20 @@ as $$
   );
 $$;
 
-alter function public.user_can_access_tenant(uuid) set search_path = public;
-alter function public.get_tenant_id_from_project(uuid) set search_path = public;
+-- These two exist in production but not in every environment.
+do $$
+begin
+  if to_regprocedure('public.user_can_access_tenant(uuid)') is not null then
+    alter function public.user_can_access_tenant(uuid) set search_path = public;
+    revoke execute on function public.user_can_access_tenant(uuid) from public, anon;
+    grant execute on function public.user_can_access_tenant(uuid) to authenticated, service_role;
+  end if;
+  if to_regprocedure('public.get_tenant_id_from_project(uuid)') is not null then
+    alter function public.get_tenant_id_from_project(uuid) set search_path = public;
+    revoke execute on function public.get_tenant_id_from_project(uuid) from public, anon;
+    grant execute on function public.get_tenant_id_from_project(uuid) to authenticated, service_role;
+  end if;
+end $$;
 
 -- send_user_invitation called a function that does not exist and was
 -- callable by anyone. Invitations are now sent from the server.
@@ -48,12 +60,8 @@ drop function if exists public.send_user_invitation(text, uuid, text, text);
 
 revoke execute on function public.get_current_user_tenant_id() from public, anon;
 revoke execute on function public.is_current_user_master() from public, anon;
-revoke execute on function public.user_can_access_tenant(uuid) from public, anon;
-revoke execute on function public.get_tenant_id_from_project(uuid) from public, anon;
 grant execute on function public.get_current_user_tenant_id() to authenticated, service_role;
 grant execute on function public.is_current_user_master() to authenticated, service_role;
-grant execute on function public.user_can_access_tenant(uuid) to authenticated, service_role;
-grant execute on function public.get_tenant_id_from_project(uuid) to authenticated, service_role;
 
 -- 2. View that exposed auth.users -------------------------------------------
 
@@ -316,7 +324,7 @@ begin
   end if;
 
   insert into public.tenants (subdomain, name, email, phone, status, plan)
-  values (v_subdomain, trim(p_name), p_email, p_phone, 'active', 'trial')
+  values (v_subdomain, trim(p_name), p_email, p_phone, 'active', 'starter')
   returning id into v_tenant_id;
 
   update public.users
