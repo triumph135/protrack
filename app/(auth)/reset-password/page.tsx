@@ -116,8 +116,8 @@ function ResetPasswordContent() {
       setError('Password is required')
       return false
     }
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters long')
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters long')
       return false
     }
     if (password !== confirmPassword) {
@@ -306,7 +306,7 @@ function ResetPasswordContent() {
                   {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                 </button>
               </div>
-              <p className="mt-1 text-sm text-gray-500">Minimum 6 characters</p>
+              <p className="mt-1 text-sm text-gray-500">Minimum 8 characters</p>
             </div>
 
             {/* Confirm Password Input */}

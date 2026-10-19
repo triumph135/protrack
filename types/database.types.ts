@@ -499,12 +499,61 @@ export interface Database {
           updated_at?: string | null
         }
       }
+      user_invitations: {
+        Row: {
+          id: string
+          tenant_id: string
+          email: string
+          role: string
+          permissions: Json
+          invited_by: string | null
+          invitation_token: string
+          status: string
+          expires_at: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          tenant_id: string
+          email: string
+          role: string
+          permissions: Json
+          invited_by?: string | null
+          invitation_token?: string
+          status?: string
+          expires_at?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          tenant_id?: string
+          email?: string
+          role?: string
+          permissions?: Json
+          invited_by?: string | null
+          invitation_token?: string
+          status?: string
+          expires_at?: string
+          created_at?: string
+          updated_at?: string
+        }
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      create_tenant_for_current_user: {
+        Args: {
+          p_name: string
+          p_subdomain: string
+          p_email: string
+          p_phone?: string
+        }
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never

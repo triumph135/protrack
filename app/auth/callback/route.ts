@@ -47,14 +47,6 @@ export async function GET(request: NextRequest) {
     console.log('✅ Session exchange successful')
     console.log('🎯 Routing based on type:', type)
 
-    // Check for custom user metadata that might indicate invitation type
-    const { data: { user } } = await supabase.auth.getUser()
-    const userMetadata = user?.user_metadata || {}
-    const invitationType = userMetadata.type
-    const invitationToken = userMetadata.invitation_token
-
-    console.log('🔍 User metadata:', { invitationType, hasInvitationToken: !!invitationToken })
-
     // Route based on the type of authentication flow
     switch (type) {
       case 'recovery':
@@ -74,11 +66,6 @@ export async function GET(request: NextRequest) {
         return NextResponse.redirect(new URL('/dashboard', request.url))
       
       default:
-        // Check for tenant invitation in user metadata
-        if (invitationType === 'tenant_invitation' && invitationToken) {
-          console.log('🏢 Tenant invitation detected - redirecting to join-tenant')
-          return NextResponse.redirect(new URL(`/join-tenant?token=${invitationToken}`, request.url))
-        }
         console.log('🤷 Default case - checking user tenant status')
         // Default case - check if user has tenant, route accordingly
         const { data: { user } } = await supabase.auth.getUser()

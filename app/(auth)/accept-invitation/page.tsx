@@ -3,7 +3,6 @@
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Lock, Eye, EyeOff, Mail, User, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
-import { createClient } from '@/lib/supabase'
 import Logo from '@/components/ui/Logo'
 
 interface InvitationDetails {
@@ -50,7 +49,6 @@ function AcceptInvitationContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const token = searchParams.get('token')
-  const supabase = createClient()
 
   useEffect(() => {
     if (token) {
@@ -79,19 +77,6 @@ function AcceptInvitationContent() {
       // Check if invitation is expired
       if (new Date(data.expires_at) < new Date()) {
         setError('This invitation has expired. Please request a new invitation.')
-        return
-      }
-
-      // Check if user already exists in this specific tenant
-      const { data: existingUser } = await supabase
-        .from('users')
-        .select('id')
-        .eq('email', data.email)
-        .eq('tenant_id', data.tenant_id)
-        .single()
-
-      if (existingUser) {
-        setError('You are already a member of this organization. Please log in instead.')
         return
       }
 
@@ -128,8 +113,8 @@ function AcceptInvitationContent() {
       setError('Password is required')
       return false
     }
-    if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters long')
+    if (formData.password.length < 8) {
+      setError('Password must be at least 8 characters long')
       return false
     }
     if (formData.password !== formData.confirmPassword) {
@@ -324,7 +309,7 @@ function AcceptInvitationContent() {
                   {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                 </button>
               </div>
-              <p className="mt-1 text-sm text-gray-500">Minimum 6 characters</p>
+              <p className="mt-1 text-sm text-gray-500">Minimum 8 characters</p>
             </div>
 
             {/* Confirm Password Input */}

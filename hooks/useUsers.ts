@@ -79,102 +79,32 @@ export function useUsers() {
     }
   }
 
-  // Invite a new user
+  // Invite a new user. The server checks that the caller is an administrator,
+  // creates the invitation and sends the email.
   const inviteUser = async (userData: InviteUserData) => {
     if (!tenant?.id || !user?.id) throw new Error('Missing tenant or user')
 
     try {
       setLoading(true)
+      setError(null)
 
-      // First, check if user can be invited to this tenant
-      const checkResponse = await fetch('/api/check-user-exists', {
+      const response = await fetch('/api/team/invite', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email: userData.email,
-          tenantId: tenant.id
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(userData)
       })
+      const result = await response.json().catch(() => ({}))
 
-      if (!checkResponse.ok) {
-        throw new Error('Failed to verify user eligibility')
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to send invitation')
       }
 
-      const { userExistsInTenant, pendingInvitation, authUserExists, canInvite } = await checkResponse.json()
-
-      if (userExistsInTenant) {
-        throw new Error('A user with this email already exists in your organization')
-      }
-
-      if (pendingInvitation) {
-        throw new Error('An invitation has already been sent to this email')
-      }
-
-      if (!canInvite) {
-        throw new Error('Cannot invite this user at this time')
-      }
-
-      // Create invitation record
-      const { data: invitation, error: inviteError } = await supabase
-        .from('user_invitations')
-        .insert([{
-          ...userData,
-          tenant_id: tenant.id,
-          invited_by: user.id
-        }])
-        .select()
-        .single()
-
-      if (inviteError) throw inviteError
-
-      // Handle email sending based on whether user exists in auth
-      try {
-        if (authUserExists) {
-          // User exists in auth but not in this tenant - send a custom email
-          const response = await fetch('/api/invite-existing-user', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              email: userData.email,
-              tenantName: tenant.name,
-              invitationToken: invitation.invitation_token,
-              redirectUrl: `${window.location.origin}/auth/join-tenant?token=${invitation.invitation_token}`
-            })
-          })
-
-          if (!response.ok) {
-            const errorData = await response.json()
-            console.warn('Failed to send custom invitation email:', errorData)
-          }
-        } else {
-          // New user - send standard invitation
-          const response = await fetch('/api/invite-user', {
-            method: 'PUT',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              email: userData.email,
-              redirectUrl: `${window.location.origin}/accept-invitation?token=${invitation.invitation_token}`
-            })
-          })
-
-          if (!response.ok) {
-            const errorData = await response.json()
-            console.warn('Email invitation failed:', errorData)
-            // Don't throw here, as the invitation record exists and could be resent
-          }
-        }
-      } catch (emailError) {
-        console.warn('Email invitation failed:', emailError)
-        // Don't throw here, as the invitation record exists and could be resent
-      }
-
+      const invitation = result.invitation as UserInvitation
       setInvitations(prev => [invitation, ...prev])
+
+      if (result.emailSent === false) {
+        setError('The invitation was saved but the email could not be sent. Use Resend to try again.')
+      }
       return invitation
     } catch (err: any) {
       console.error('Error inviting user:', err)
@@ -242,82 +172,23 @@ export function useUsers() {
     }
   }
 
-  // Resend invitation
-const resendInvitation = async (invitationId: string) => {
+  // Resend invitation (server sends the email and extends expiry)
+  const resendInvitation = async (invitationId: string) => {
     try {
       setLoading(true)
-  
-      const invitation = invitations.find(inv => inv.id === invitationId)
-      if (!invitation) throw new Error('Invitation not found')
-  
-      // Check if user exists in auth to determine email type
-      const checkResponse = await fetch('/api/check-user-exists', {
+      setError(null)
+
+      const response = await fetch('/api/team/invite/resend', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email: invitation.email,
-          tenantId: invitation.tenant_id
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invitationId })
       })
-  
-      if (!checkResponse.ok) {
-        throw new Error('Failed to verify user status')
+      const result = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to resend invitation')
       }
-  
-      const { authUserExists } = await checkResponse.json()
-  
-      // Send appropriate email type based on user existence
-      if (authUserExists) {
-        // Existing user - send join tenant email
-        const response = await fetch('/api/invite-existing-user', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            email: invitation.email,
-            tenantName: tenant?.name || 'Unknown Organization',
-            invitationToken: invitation.invitation_token,
-            redirectUrl: `${window.location.origin}/auth/join-tenant?token=${invitation.invitation_token}`
-          })
-        })
-  
-        if (!response.ok) {
-          const errorData = await response.json()
-          throw new Error(errorData.error || 'Failed to resend invitation')
-        }
-      } else {
-        // New user - send standard invitation
-        const response = await fetch('/api/invite-user', {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            email: invitation.email,
-            redirectUrl: `${window.location.origin}/accept-invitation?token=${invitation.invitation_token}`
-          })
-        })
-  
-        if (!response.ok) {
-          const errorData = await response.json()
-          throw new Error(errorData.error || 'Failed to resend invitation')
-        }
-      }
-  
-      // Update the invitation timestamp
-      const { error: updateError } = await supabase
-        .from('user_invitations')
-        .update({ 
-          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', invitationId)
-  
-      if (updateError) throw updateError
-  
+
       await loadInvitations() // Refresh invitations
     } catch (err: any) {
       console.error('Error resending invitation:', err)
