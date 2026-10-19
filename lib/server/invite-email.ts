@@ -1,6 +1,9 @@
 import { getSupabaseAdmin } from '@/lib/server/supabase-admin'
 
 export function siteUrl(request: Request) {
+  // Preview deployments always use their own address, so invitation links
+  // never point at production even if the site URL is set for all environments.
+  if (process.env.VERCEL_ENV === 'preview') return new URL(request.url).origin
   const configured = process.env.NEXT_PUBLIC_SITE_URL
   if (configured) return configured.replace(/\/$/, '')
   return new URL(request.url).origin
