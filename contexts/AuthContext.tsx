@@ -11,7 +11,11 @@ type AuthContextType = {
   user: User | null
   loading: boolean
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>
-  signUp: (email: string, password: string, userData: { name: string }) => Promise<{ error: Error | null }>
+  signUp: (
+    email: string,
+    password: string,
+    userData: { name: string }
+  ) => Promise<{ error: Error | null; needsEmailConfirmation?: boolean }>
   signOut: () => Promise<void>
   refreshUser: () => Promise<void>
 }
@@ -262,51 +266,58 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signUp = async (email: string, password: string, userData: { name: string }) => {
     try {
       setLoading(true)
-      
+
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
+        // The name is stored on the auth account. The database creates the
+        // profile row from it (see the lockdown migration).
+        options: { data: { name: userData.name } },
       })
-  
+
       if (error) {
         console.error('Signup error:', error)
         setLoading(false)
         return { error }
       }
-  
-      if (data.user) {
-        const { error: profileError } = await supabase
-          .from('users')
-          .insert({
-            id: data.user.id,
-            email: email,
-            name: userData.name,
-            role: 'entry',
-            tenant_id: null,
-            permissions: {
-              material: 'read',
-              labor: 'read',
-              equipment: 'read',
-              subcontractor: 'read',
-              others: 'read',
-              capLeases: 'read',
-              consumable: 'read',
-              invoices: 'read',
-              projects: 'read',
-              users: 'none'
-            }
-          })
-  
+
+      // Supabase hides whether an email is already registered by returning a
+      // user with no identities.
+      if (data.user && data.user.identities && data.user.identities.length === 0) {
+        setLoading(false)
+        return { error: new Error('User already registered') }
+      }
+
+      // Transitional: until the lockdown migration is applied the profile row
+      // is still created here. Once it is applied the database trigger creates
+      // it and this insert is rejected, which is harmless. Remove afterwards.
+      if (data.user && data.session) {
+        const { error: profileError } = await supabase.from('users').insert({
+          id: data.user.id,
+          email,
+          name: userData.name,
+          role: 'view',
+          tenant_id: null,
+          permissions: {
+            material: 'none',
+            labor: 'none',
+            equipment: 'none',
+            subcontractor: 'none',
+            others: 'none',
+            capLeases: 'none',
+            consumable: 'none',
+            invoices: 'none',
+            projects: 'none',
+            users: 'none',
+          },
+        })
         if (profileError) {
-          console.error('Profile creation error:', profileError)
-          await supabase.auth.signOut()
-          setLoading(false)
-          return { error: new Error(`Failed to create profile: ${profileError.message}`) }
+          console.warn('Profile insert skipped:', profileError.message)
         }
       }
-  
+
       setLoading(false)
-      return { error: null }
+      return { error: null, needsEmailConfirmation: !data.session }
     } catch (error) {
       console.error('Signup failed:', error)
       setLoading(false)

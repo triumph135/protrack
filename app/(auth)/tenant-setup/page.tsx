@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Building, Mail, Phone, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
@@ -22,68 +22,16 @@ function TenantSetupContent() {
     subdomain: '',
     name: '',
     email: '',
-    phone: '',
-    plan: 'professional'
+    phone: ''
   })
   
   const router = useRouter()
-  const { user, supabaseUser, refreshUser } = useAuth()
+  const { refreshUser } = useAuth()
   const supabase = createClient()
 
-  // Check if user exists in database, create if necessary
-  useEffect(() => {
-    const ensureUserExists = async () => {
-      if (supabaseUser && !user) {
-        try {
-          const { error: insertError } = await supabase
-            .from('users')
-            .insert({
-              id: supabaseUser.id,
-              email: supabaseUser.email || '',
-              name: supabaseUser.user_metadata?.name || supabaseUser.email?.split('@')[0] || 'User',
-              role: 'entry',
-              tenant_id: null,
-              permissions: {
-                material: 'read',
-                labor: 'read',
-                equipment: 'read',
-                subcontractor: 'read',
-                others: 'read',
-                capLeases: 'read',
-                consumable: 'read',
-                invoices: 'read',
-                projects: 'read',
-                users: 'none'
-              }
-            })
-
-          if (insertError) {
-            console.error('Error creating user profile in tenant setup:', insertError)
-          } else {
-            await refreshUser()
-          }
-        } catch (error) {
-          console.error('Failed to create user profile:', error)
-        }
-      }
-    }
-
-    ensureUserExists()
-  }, [supabaseUser, user, supabase, refreshUser])
-
   const validateSubdomain = (subdomain: string) => {
-    const regex = /^[a-zA-Z0-9][a-zA-Z0-9-]{1,48}[a-zA-Z0-9]$/
+    const regex = /^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/
     return regex.test(subdomain)
-  }
-
-  const checkSubdomainAvailable = async (subdomain: string) => {
-    const { data, error } = await supabase
-      .from('tenants')
-      .select('id')
-      .eq('subdomain', subdomain)
-      .single()
-    
-    return !data // If no data, subdomain is available
   }
 
   const handleOrgNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -106,53 +54,23 @@ function TenantSetupContent() {
     try {
       // Validate subdomain format
       if (!validateSubdomain(tenantData.subdomain)) {
-        throw new Error('Subdomain must be 3-50 characters, alphanumeric and hyphens only')
+        throw new Error('Subdomain must be 3-30 characters: lowercase letters, numbers and hyphens')
       }
 
-      // Check if subdomain is available
-      const available = await checkSubdomainAvailable(tenantData.subdomain)
-      if (!available) {
-        throw new Error('This subdomain is already taken')
-      }
+      // One server side step: creates the organization and makes this
+      // person its administrator.
+      const { error: rpcError } = await supabase.rpc('create_tenant_for_current_user', {
+        p_name: tenantData.name,
+        p_subdomain: tenantData.subdomain,
+        p_email: tenantData.email,
+        p_phone: tenantData.phone || undefined
+      })
 
-      // Create tenant
-      const { data: newTenant, error: tenantError } = await supabase
-        .from('tenants')
-        .insert({
-          ...tenantData,
-          status: 'active'
-        })
-        .select()
-        .single()
-
-      if (tenantError) throw tenantError
-
-      // Update user with tenant_id and set as master
-      const userId = user?.id || supabaseUser?.id
-      if (userId) {
-        const { error: updateError } = await supabase
-          .from('users')
-          .update({
-            tenant_id: newTenant.id,
-            role: 'master',
-            permissions: {
-              material: 'write',
-              labor: 'write',
-              equipment: 'write',
-              subcontractor: 'write',
-              others: 'write',
-              capLeases: 'write',
-              consumable: 'write',
-              invoices: 'write',
-              projects: 'write',
-              users: 'write'
-            }
-          })
-          .eq('id', userId)
-
-        if (updateError) throw updateError
-      } else {
-        throw new Error('Unable to identify user for tenant setup')
+      if (rpcError) {
+        if (rpcError.code === '23505' && rpcError.message.includes('subdomain')) {
+          throw new Error('This subdomain is already taken')
+        }
+        throw new Error(rpcError.message)
       }
 
       // Refresh user data
@@ -260,23 +178,6 @@ function TenantSetupContent() {
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <Phone className="h-5 w-5 text-gray-400" />
               </div>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Plan
-            </label>
-            <div className="mt-1">
-              <select
-                value={tenantData.plan}
-                onChange={(e) => setTenantData({ ...tenantData, plan: e.target.value })}
-                className="block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                disabled={loading}
-              >
-                <option value="professional">Professional - $35/month</option>
-                <option value="enterprise">Enterprise - $65/month</option>
-              </select>
             </div>
           </div>
 

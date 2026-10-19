@@ -14,6 +14,7 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [checkEmail, setCheckEmail] = useState(false)
   
   const router = useRouter()
   const { signUp } = useAuth()
@@ -35,8 +36,8 @@ export default function RegisterPage() {
       setError('Password is required')
       return false
     }
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters')
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters')
       return false
     }
     if (password !== confirmPassword) {
@@ -54,7 +55,7 @@ export default function RegisterPage() {
   
     setLoading(true)
     try {
-      const { error } = await signUp(email, password, { name })
+      const { error, needsEmailConfirmation } = await signUp(email, password, { name })
       
       if (error) {
         console.error('Signup error:', error)
@@ -63,6 +64,10 @@ export default function RegisterPage() {
         } else {
           setError(error.message)
         }
+        setLoading(false)
+      } else if (needsEmailConfirmation) {
+        // Email confirmation is on: the person must confirm before signing in
+        setCheckEmail(true)
         setLoading(false)
       } else {
         // Redirect to tenant setup immediately after successful signup
@@ -74,6 +79,20 @@ export default function RegisterPage() {
       setError('An unexpected error occurred')
       setLoading(false)
     }
+  }
+
+  if (checkEmail) {
+    return (
+      <div className="bg-white py-8 px-6 shadow-xl rounded-lg text-center">
+        <h2 className="text-2xl font-semibold text-gray-700">Check your email</h2>
+        <p className="mt-3 text-gray-600">
+          We sent a confirmation link to {email}. Open it, then sign in to set up your workspace.
+        </p>
+        <Link href="/login" className="mt-6 inline-block text-blue-600 hover:text-blue-500 font-medium">
+          Go to sign in
+        </Link>
+      </div>
+    )
   }
 
   return (
@@ -144,7 +163,7 @@ export default function RegisterPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="appearance-none relative block w-full px-3 py-3 pl-10 pr-10 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder="Create a password (min 6 characters)"
+                placeholder="Create a password (min 8 characters)"
                 disabled={loading}
               />
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
