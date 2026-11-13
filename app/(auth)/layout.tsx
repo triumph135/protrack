@@ -29,8 +29,13 @@ export default function AuthLayout({
     </div>
   )
 
-  // These pages handle their own auth logic
-  if (isTenantSetup || isAcceptInvitation || isJoinTenant || isResetPassword || isForgotPassword) {
+  // These pages render their own full-page layout.
+  if (isAcceptInvitation || isJoinTenant || isResetPassword || isForgotPassword) {
+    return children
+  }
+
+  // Tenant setup uses the shared auth frame but manages its own session rules.
+  if (isTenantSetup) {
     return content
   }
 

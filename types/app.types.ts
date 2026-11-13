@@ -1,5 +1,9 @@
 // Base types for ProTrack application
 
+import type { UserPermissions } from '@/lib/permissions'
+
+export type { UserPermissions } from '@/lib/permissions'
+
 export interface Tenant {
   id: string
   subdomain: string
@@ -15,19 +19,6 @@ export interface Tenant {
   billing_info?: any
 }
 
-export interface UserPermissions {
-  material: 'none' | 'read' | 'write'
-  labor: 'none' | 'read' | 'write'
-  equipment: 'none' | 'read' | 'write'
-  subcontractor: 'none' | 'read' | 'write'
-  others: 'none' | 'read' | 'write'
-  capLeases: 'none' | 'read' | 'write'
-  consumable: 'none' | 'read' | 'write'
-  invoices: 'none' | 'read' | 'write'
-  projects: 'none' | 'read' | 'write'
-  users: 'none' | 'read' | 'write'
-}
-
 export interface User {
   id: string
   tenant_id?: string
@@ -35,7 +26,6 @@ export interface User {
   email: string
   role: 'master' | 'entry' | 'view'
   permissions: UserPermissions
-  password_hash?: string
   is_active?: boolean
   last_login?: string
   created_at?: string
@@ -256,8 +246,6 @@ export interface Attachment {
   updated_at?: string
 }
 
-// Updated types/app.types.ts
-
 export interface UserInvitation {
   id: string
   tenant_id: string
@@ -270,19 +258,4 @@ export interface UserInvitation {
   expires_at: string
   created_at: string
   updated_at: string
-}
-
-// Update the User interface to include role type union
-export interface User {
-  id: string
-  tenant_id?: string
-  name: string
-  email: string
-  role: 'master' | 'entry' | 'view'  // Updated to be more specific
-  permissions: UserPermissions
-  password_hash?: string
-  is_active?: boolean
-  last_login?: string
-  created_at?: string
-  updated_at?: string
 }

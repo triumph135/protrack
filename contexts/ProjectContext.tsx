@@ -79,6 +79,12 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
   }, [activeProject, tenant?.id])
 
   const loadProjects = async () => {
+    if (!tenant?.id) {
+      setProjects([])
+      setLoading(false)
+      return
+    }
+
     try {
       setLoading(true)
       setError(null)
@@ -101,12 +107,14 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
   }
 
   const createProject = async (projectData: Omit<Project, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>) => {
+    if (!tenant?.id) throw new Error('Missing organization')
+
     try {
       setLoading(true)
       
       const newProject = {
         ...projectData,
-        tenant_id: tenant?.id,
+        tenant_id: tenant.id,
         status: 'Active'
       }
 
@@ -132,6 +140,8 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
   }
 
   const updateProject = async (projectId: string, updates: Partial<Project>) => {
+    if (!tenant?.id) throw new Error('Missing organization')
+
     try {
       setLoading(true)
 
@@ -139,7 +149,7 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
         .from('projects')
         .update(updates)
         .eq('id', projectId)
-        .eq('tenant_id', tenant?.id)
+        .eq('tenant_id', tenant.id)
         .select()
         .single()
 
@@ -162,6 +172,8 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
   }
 
   const deleteProject = async (projectId: string) => {
+    if (!tenant?.id) throw new Error('Missing organization')
+
     try {
       setLoading(true)
 
@@ -169,7 +181,7 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
         .from('projects')
         .delete()
         .eq('id', projectId)
-        .eq('tenant_id', tenant?.id)
+        .eq('tenant_id', tenant.id)
 
       if (error) throw error
 

@@ -15,7 +15,7 @@ import ProjectChangeOrderSelector from '@/components/ProjectChangeOrderSelector'
 export default function DashboardPage() {
   const { user } = useAuth()
   const { tenant } = useTenant()
-  const { projects, activeProject, setActiveProject, loading } = useProjects()
+  const { projects, activeProject, setActiveProject, loading, error: projectsError } = useProjects()
   const printRef = useRef<HTMLDivElement>(null)
   
   // Dashboard shows ALL data for the project (no change order filtering)
@@ -244,6 +244,11 @@ export default function DashboardPage() {
           showChangeOrderSelector={false}
         />
                     <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200 text-center">
+              {projectsError && (
+                <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-left" role="alert">
+                  Could not load projects. {projectsError}
+                </div>
+              )}
               <BarChart3 className="mx-auto h-12 w-12 text-gray-400 mb-4" />
               <h2 className="text-2xl font-bold text-gray-900 mb-4">Welcome!</h2>
               <p className="text-gray-600 mb-6">Get started by creating your first project.</p>
@@ -270,6 +275,12 @@ export default function DashboardPage() {
         showChangeOrderSelector={true}
         disableChangeOrderSelector={true}
       />
+
+      {projectsError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md" role="alert">
+          Some project data could not be refreshed. {projectsError}
+        </div>
+      )}
 
       {/* Header with Project Info */}
       <div className="bg-white overflow-hidden shadow rounded-lg border border-gray-200">

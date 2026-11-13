@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { 
   Upload, File, Trash2, Download, Edit, Save, X, 
-  FileText, Image, AlertCircle, Loader2 
+  FileText, Image as ImageIcon, AlertCircle, Loader2 
 } from 'lucide-react'
 import { fileUploadService } from '@/lib/fileUploadService'
 
@@ -254,7 +254,7 @@ export default function FileAttachments({
 
   const getFileIcon = (fileType: string) => {
     if (fileType.startsWith('image/')) {
-      return <Image className="w-4 h-4 text-blue-500" />
+      return <ImageIcon className="w-4 h-4 text-blue-500" aria-hidden="true" />
     }
     if (fileType === 'application/pdf') {
       return <FileText className="w-4 h-4 text-red-500" />

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
 import type { User } from '@/types/app.types'
+import { ENTRY_PERMISSIONS, PUBLIC_USER_COLUMNS } from '@/lib/permissions'
 
 type AuthContextType = {
   supabaseUser: SupabaseUser | null
@@ -52,26 +53,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const supabase = createClient()
 
-  const fetchUserData = async (userId: string, fallbackEmail?: string): Promise<User | null> => {
+  const fetchUserData = async (userId: string): Promise<User | null> => {
     try {
-      // First try to get user by ID
-      let { data, error } = await supabase
+      const { data, error } = await supabase
         .from('users')
-        .select('*')
+        .select(PUBLIC_USER_COLUMNS)
         .eq('id', userId)
-        .maybeSingle()  // Use maybeSingle() instead of single() to handle no results gracefully
-  
-      // If no user found by ID and we have an email, try by email
-      if (!data && fallbackEmail) {
-        const { data: emailData, error: emailError } = await supabase
-          .from('users')
-          .select('*')
-          .eq('email', fallbackEmail)
-          .maybeSingle()
-        
-        data = emailData
-        error = emailError
-      }
+        .maybeSingle()
   
       if (error) {
         console.error('Error fetching user data:', error)
@@ -119,7 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     
         if (session?.user) {
           setSupabaseUser(session.user)
-          await fetchUserData(session.user.id, session.user.email) // Pass email as fallback
+          await fetchUserData(session.user.id)
         } else {
           setSupabaseUser(null)
           setUser(null)
@@ -205,7 +193,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             
             // Add timeout protection to prevent infinite hanging
             const fetchWithTimeout = Promise.race([
-              fetchUserData(session.user.id, session.user.email),
+              fetchUserData(session.user.id),
               new Promise((_, reject) => 
                 setTimeout(() => reject(new Error('fetchUserData timeout')), 15000)
               )
@@ -283,18 +271,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             name: userData.name,
             role: 'entry',
             tenant_id: null,
-            permissions: {
-              material: 'read',
-              labor: 'read',
-              equipment: 'read',
-              subcontractor: 'read',
-              others: 'read',
-              capLeases: 'read',
-              consumable: 'read',
-              invoices: 'read',
-              projects: 'read',
-              users: 'none'
-            }
+            permissions: ENTRY_PERMISSIONS
           })
   
         if (profileError) {

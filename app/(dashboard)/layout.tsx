@@ -1,11 +1,11 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter, usePathname } from 'next/navigation'
+import { Suspense, useState } from 'react'
+import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { 
   BarChart3, Building, Users, FileText, 
-  LogOut, Menu, X, DollarSign
+  LogOut, Menu, X, DollarSign, Contact
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
@@ -25,6 +25,7 @@ const navigation: NavigationItem[] = [
   { name: 'Projects', href: '/projects', icon: Building, permission: 'projects' },
   { name: 'Material', href: '/costs?category=material', icon: DollarSign, permission: 'material' },
   { name: 'Labor', href: '/costs?category=labor', icon: Users, permission: 'labor' },
+  { name: 'Employees', href: '/employees', icon: Contact, permission: 'labor' },
   { name: 'Equipment', href: '/costs?category=equipment', icon: DollarSign, permission: 'equipment' },
   { name: 'Subcontractor', href: '/costs?category=subcontractor', icon: DollarSign, permission: 'subcontractor' },
   { name: 'Others', href: '/costs?category=others', icon: DollarSign, permission: 'others' },
@@ -42,7 +43,9 @@ export default function DashboardLayout({
   return (
     <AuthGuard requireAuth={true} requireTenant={true}>
       <ProjectProvider>
-        <DashboardContent>{children}</DashboardContent>
+        <Suspense fallback={null}>
+          <DashboardContent>{children}</DashboardContent>
+        </Suspense>
       </ProjectProvider>
     </AuthGuard>
   )
@@ -54,6 +57,18 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
   const { tenant } = useTenant()
   const router = useRouter()
   const pathname = usePathname()
+  const searchParams = useSearchParams()
+
+  const isNavActive = (href: string) => {
+    const [path, query] = href.split('?')
+    if (pathname !== path) return false
+    if (!query) return true
+    const expected = new URLSearchParams(query)
+    for (const [key, value] of expected.entries()) {
+      if (searchParams.get(key) !== value) return false
+    }
+    return true
+  }
 
   const hasPermission = (area: string, level: 'read' | 'write' = 'read') => {
     if (!user) return false
@@ -87,25 +102,25 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     <div className="h-screen flex bg-gray-100">
       {/* Mobile menu */}
       <div className={`fixed inset-0 flex z-40 md:hidden ${sidebarOpen ? '' : 'hidden'}`}>
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-75" onClick={() => setSidebarOpen(false)} />
+        <div className="fixed inset-0 bg-gray-600/75" onClick={() => setSidebarOpen(false)} />
         <div className="relative flex-1 flex flex-col max-w-xs w-full bg-white">
-          <div className="absolute top-0 right-0 -mr-12 pt-2">
-            <button
-              className="ml-1 flex items-center justify-center h-10 w-10 rounded-full focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white"
-              onClick={() => setSidebarOpen(false)}
-            >
-              <X className="h-6 w-6 text-white" />
-            </button>
-          </div>
           <div className="flex-1 h-0 pt-5 pb-4 overflow-y-auto">
-            <div className="flex-shrink-0 flex items-center px-4">
-              <Link href="/dashboard">
+            <div className="flex-shrink-0 flex items-center justify-between px-4">
+              <Link href="/dashboard" aria-label="ProTrack home">
                 <Logo size="lg" className="cursor-pointer" />
               </Link>
+              <button
+                type="button"
+                className="inline-flex items-center justify-center h-10 w-10 rounded-md text-gray-500 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                onClick={() => setSidebarOpen(false)}
+                aria-label="Close menu"
+              >
+                <X className="h-6 w-6" />
+              </button>
             </div>
-            <nav className="mt-5 px-2 space-y-1">
+            <nav className="mt-5 px-2 space-y-1" aria-label="Mobile">
               {visibleNavigation.map((item) => {
-                const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+                const isActive = isNavActive(item.href)
                 return (
                   <Link
                     key={item.name}
@@ -134,7 +149,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                 <button
                   onClick={handleSignOut}
                   className="text-gray-400 hover:text-gray-600 p-1 rounded transition-colors"
-                  title="Sign out"
+                  aria-label="Sign out"
                 >
                   <LogOut className="h-5 w-5" />
                 </button>
@@ -154,9 +169,9 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                   <Logo size="lg" className="cursor-pointer" />
                 </Link>
               </div>
-              <nav className="mt-5 flex-1 px-2 space-y-1">
+              <nav className="mt-5 flex-1 px-2 space-y-1" aria-label="Main">
                 {visibleNavigation.map((item) => {
-                  const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+                  const isActive = isNavActive(item.href)
                   return (
                     <Link
                       key={item.name}
@@ -184,7 +199,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                   <button
                     onClick={handleSignOut}
                     className="text-gray-400 hover:text-gray-600 p-1 rounded transition-colors"
-                    title="Sign out"
+                    aria-label="Sign out"
                   >
                     <LogOut className="h-5 w-5" />
                   </button>
@@ -201,8 +216,11 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         <div className="md:hidden bg-white border-b border-gray-200 px-4 py-3">
           <div className="flex items-center justify-between">
             <button
+              type="button"
               className="h-10 w-10 inline-flex items-center justify-center rounded-md text-gray-500 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
               onClick={() => setSidebarOpen(true)}
+              aria-label="Open menu"
+              aria-expanded={sidebarOpen}
             >
               <Menu className="h-6 w-6" />
             </button>
@@ -217,7 +235,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
               <button
                 onClick={handleSignOut}
                 className="text-gray-400 hover:text-gray-600 p-1 rounded transition-colors"
-                title="Sign out"
+                aria-label="Sign out"
               >
                 <LogOut className="h-5 w-5" />
               </button>

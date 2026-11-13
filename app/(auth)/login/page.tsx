@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
+import { safeInternalPath } from '@/lib/security'
 
 // Loading fallback component
 function LoadingFallback() {
@@ -27,25 +28,15 @@ function LoginContent() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [showRedirectScreen, setShowRedirectScreen] = useState(false)
   
   const router = useRouter()
   const searchParams = useSearchParams()
-  const redirectTo = searchParams.get('redirectTo') || '/dashboard'
-  const { signIn, loading, user, supabaseUser } = useAuth()
+  const redirectTo = safeInternalPath(searchParams.get('redirectTo'), '/dashboard')
+  const notice = searchParams.get('message')
+  const linkError = searchParams.get('error')
+  const { signIn, loading, user } = useAuth()
+  const signedIn = !loading && !!user
 
-  // ALWAYS call all hooks in the same order - no conditional hooks!
-  
-  // Hook 1: Handle showing redirect screen
-  useEffect(() => {
-    if (!loading && user && supabaseUser) {
-      setShowRedirectScreen(true)
-    } else {
-      setShowRedirectScreen(false)
-    }
-  }, [loading, user, supabaseUser])
-
-  // Hook 2: Check for password reset fragment auth
   useEffect(() => {
     const hashParams = new URLSearchParams(window.location.hash.substring(1))
     const accessToken = hashParams.get('access_token')
@@ -54,28 +45,18 @@ function LoginContent() {
     if (accessToken && authType === 'recovery') {
       const resetUrl = `/reset-password${window.location.hash}`
       window.location.href = resetUrl
-      return
     }
   }, [])
 
-  // Hook 3: Perform actual redirect
   useEffect(() => {
-    if (showRedirectScreen && user && !isSubmitting) {
-      const targetUrl = user.tenant_id ? redirectTo : '/tenant-setup'
-      
-      const timer = setTimeout(() => {
-        window.location.href = targetUrl
-      }, 2000) // Give it more time to prevent conflicts
-      
-      return () => clearTimeout(timer)
-    }
-  }, [showRedirectScreen, user, redirectTo, router, isSubmitting])
+    if (!signedIn || !user || isSubmitting) return
+    const targetUrl = user.tenant_id ? redirectTo : '/tenant-setup'
+    router.replace(targetUrl as never)
+  }, [signedIn, user, redirectTo, router, isSubmitting])
 
-  // Manual redirect handler for the button
   const handleManualRedirect = () => {
     const targetUrl = user?.tenant_id ? redirectTo : '/tenant-setup'
-    // Use window.location.href for a more forceful redirect
-    window.location.href = targetUrl
+    router.replace(targetUrl as never)
   }
 
   const validateForm = () => {
@@ -97,10 +78,7 @@ function LoginContent() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    // If already showing redirect screen, don't submit
-    if (showRedirectScreen) {
-      return
-    }
+    if (signedIn) return
     
     if (!validateForm()) return
 
@@ -128,34 +106,28 @@ function LoginContent() {
 
   // ALWAYS render the same structure - just change the content
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center px-4">
-      <div className="max-w-md w-full space-y-8">
-        {/* Logo - Always rendered */}
+    <>
         <div className="text-center">
           <h2 className="text-2xl font-semibold text-gray-700">
-            {showRedirectScreen ? 'Redirecting...' : 'Welcome back'}
+            {signedIn ? 'Redirecting...' : 'Welcome back'}
           </h2>
           <p className="mt-2 text-gray-600">
-            {showRedirectScreen ? 'You are already signed in' : 'Sign in to your account'}
+            {signedIn ? 'You are already signed in' : 'Sign in to your account'}
           </p>
         </div>
 
-        {/* Debug Info - Always rendered in development */}
-        {process.env.NODE_ENV === 'development' && (
-          <div className="bg-gray-100 p-3 rounded-lg text-xs">
-            <p><strong>Debug Info:</strong></p>
-            <p>Auth Loading: {loading ? 'Yes' : 'No'}</p>
-            <p>Submitting: {isSubmitting ? 'Yes' : 'No'}</p>
-            <p>Show Redirect: {showRedirectScreen ? 'Yes' : 'No'}</p>
-            <p>Has User: {user ? 'Yes' : 'No'}</p>
-            <p>Has Supabase User: {supabaseUser ? 'Yes' : 'No'}</p>
-            {user && <p>Has Tenant: {user.tenant_id ? 'Yes' : 'No'}</p>}
-          </div>
-        )}
-
-        {/* Main Content - Always rendered but content changes */}
-        <div className="bg-white py-8 px-6 shadow-xl rounded-lg">
-          {showRedirectScreen ? (
+        <div className="mt-8 bg-white py-8 px-6 shadow-xl rounded-lg">
+          {notice && !signedIn && (
+            <div className="mb-4 bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-md text-sm" role="status">
+              {notice}
+            </div>
+          )}
+          {linkError && !signedIn && (
+            <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm" role="alert">
+              {linkError}
+            </div>
+          )}
+          {signedIn ? (
             // Redirect Screen Content
             <div className="text-center">
               <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
@@ -176,7 +148,7 @@ function LoginContent() {
             // Login Form Content
             <form onSubmit={handleSubmit} className="space-y-6">
               {error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md">
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md" role="alert">
                   {error}
                 </div>
               )}
@@ -229,6 +201,7 @@ function LoginContent() {
                     className="absolute inset-y-0 right-0 pr-3 flex items-center"
                     onClick={() => setShowPassword(!showPassword)}
                     disabled={showLoading}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
                   >
                     {showPassword ? (
                       <EyeOff className="w-5 h-5 text-gray-400" />
@@ -277,8 +250,7 @@ function LoginContent() {
             </form>
           )}
         </div>
-      </div>
-    </div>
+    </>
   )
 }
 

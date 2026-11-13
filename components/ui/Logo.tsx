@@ -19,6 +19,8 @@ export default function Logo({ size = 'md', className = '' }: LogoProps) {
       viewBox="0 0 190 50" 
       fill="none" 
       xmlns="http://www.w3.org/2000/svg"
+      role="img"
+      aria-label="ProTrack"
     >
       {/* ProTrack Text */}
       <text 

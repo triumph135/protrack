@@ -6,6 +6,8 @@ import { Building, Mail, Phone, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import AuthGuard from '@/components/auth/AuthGuard'
+import { ENTRY_PERMISSIONS, MASTER_PERMISSIONS } from '@/lib/permissions'
+import { isMissingRpc, isValidSubdomain } from '@/lib/security'
 
 export default function TenantSetupPage() {
   return (
@@ -43,18 +45,7 @@ function TenantSetupContent() {
               name: supabaseUser.user_metadata?.name || supabaseUser.email?.split('@')[0] || 'User',
               role: 'entry',
               tenant_id: null,
-              permissions: {
-                material: 'read',
-                labor: 'read',
-                equipment: 'read',
-                subcontractor: 'read',
-                others: 'read',
-                capLeases: 'read',
-                consumable: 'read',
-                invoices: 'read',
-                projects: 'read',
-                users: 'none'
-              }
+              permissions: ENTRY_PERMISSIONS
             })
 
           if (insertError) {
@@ -77,7 +68,7 @@ function TenantSetupContent() {
   }
 
   const checkSubdomainAvailable = async (subdomain: string) => {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('tenants')
       .select('id')
       .eq('subdomain', subdomain)
@@ -104,55 +95,61 @@ function TenantSetupContent() {
     setLoading(true)
 
     try {
-      // Validate subdomain format
-      if (!validateSubdomain(tenantData.subdomain)) {
+      if (user?.tenant_id) {
+        throw new Error('This account already belongs to an organization')
+      }
+
+      const subdomain = tenantData.subdomain.toLowerCase()
+      if (!validateSubdomain(subdomain) || !isValidSubdomain(subdomain)) {
         throw new Error('Subdomain must be 3-50 characters, alphanumeric and hyphens only')
       }
 
-      // Check if subdomain is available
-      const available = await checkSubdomainAvailable(tenantData.subdomain)
-      if (!available) {
-        throw new Error('This subdomain is already taken')
+      const { error: rpcError } = await supabase.rpc('create_workspace', {
+        p_name: tenantData.name.trim(),
+        p_subdomain: subdomain,
+        p_email: tenantData.email.trim(),
+        p_phone: tenantData.phone || null,
+        p_plan: tenantData.plan,
+      })
+
+      if (rpcError && !isMissingRpc(rpcError)) {
+        throw new Error(rpcError.message)
       }
 
-      // Create tenant
-      const { data: newTenant, error: tenantError } = await supabase
-        .from('tenants')
-        .insert({
-          ...tenantData,
-          status: 'active'
-        })
-        .select()
-        .single()
+      if (isMissingRpc(rpcError)) {
+        const available = await checkSubdomainAvailable(subdomain)
+        if (!available) {
+          throw new Error('This subdomain is already taken')
+        }
 
-      if (tenantError) throw tenantError
+        const { data: newTenant, error: tenantError } = await supabase
+          .from('tenants')
+          .insert({
+            ...tenantData,
+            subdomain,
+            status: 'active'
+          })
+          .select()
+          .single()
 
-      // Update user with tenant_id and set as master
-      const userId = user?.id || supabaseUser?.id
-      if (userId) {
+        if (tenantError) throw tenantError
+
+        const userId = user?.id || supabaseUser?.id
+        if (!userId) {
+          throw new Error('Unable to identify user for tenant setup')
+        }
+
         const { error: updateError } = await supabase
           .from('users')
           .update({
             tenant_id: newTenant.id,
             role: 'master',
-            permissions: {
-              material: 'write',
-              labor: 'write',
-              equipment: 'write',
-              subcontractor: 'write',
-              others: 'write',
-              capLeases: 'write',
-              consumable: 'write',
-              invoices: 'write',
-              projects: 'write',
-              users: 'write'
-            }
+            permissions: MASTER_PERMISSIONS
           })
           .eq('id', userId)
+          .is('tenant_id', null)
 
         if (updateError) throw updateError
-      } else {
-        throw new Error('Unable to identify user for tenant setup')
       }
 
       // Refresh user data
@@ -165,6 +162,28 @@ function TenantSetupContent() {
     } finally {
       setLoading(false)
     }
+  }
+
+  if (user?.tenant_id) {
+    return (
+      <>
+        <h2 className="text-3xl font-extrabold text-gray-900 text-center">
+          Your workspace is ready
+        </h2>
+        <p className="mt-2 text-center text-gray-600">
+          This account already belongs to an organization.
+        </p>
+        <div className="mt-8">
+          <button
+            type="button"
+            onClick={() => router.push('/dashboard')}
+            className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
+          >
+            Go to dashboard
+          </button>
+        </div>
+      </>
+    )
   }
 
   return (
