@@ -6,6 +6,7 @@ import { Building, User, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import Logo from '@/components/ui/Logo'
+import { isMissingRpc, normalizeEmail } from '@/lib/security'
 
 interface InvitationDetails {
   id: string
@@ -62,26 +63,15 @@ function JoinTenantContent() {
       setLoading(true)
       setError('')
 
-      // Get invitation details with tenant info
-      const { data, error: fetchError } = await supabase
-        .from('user_invitations')
-        .select(`
-          *,
-          tenants(name),
-          invited_by:users!user_invitations_invited_by_fkey(name)
-        `)
-        .eq('invitation_token', invitationToken)
-        .eq('status', 'pending')
-        .single()
+      const response = await fetch(`/api/get-invitation?token=${encodeURIComponent(invitationToken)}`)
+      const result = await response.json()
 
-      if (fetchError) {
-        if (fetchError.code === 'PGRST116') {
-          setError('This invitation is invalid or has already been used.')
-        } else {
-          throw fetchError
-        }
+      if (!response.ok) {
+        setError(result.error || 'This invitation is invalid or has already been used.')
         return
       }
+
+      const data = result.invitation
 
       // Check if invitation is expired
       if (new Date(data.expires_at) < new Date()) {
@@ -113,9 +103,14 @@ function JoinTenantContent() {
       return
     }
 
-    // Verify the invitation is for the logged-in user
-    if (invitation.email !== user.email && invitation.email !== supabaseUser.email) {
+    const signedInEmail = normalizeEmail(user.email || supabaseUser.email || '')
+    if (normalizeEmail(invitation.email) !== signedInEmail) {
       setError('This invitation is for a different email address. Please log in with the correct account.')
+      return
+    }
+
+    if (user.tenant_id && user.tenant_id !== invitation.tenant_id) {
+      setError('This account already belongs to another organization. Each login can belong to one organization.')
       return
     }
 
@@ -123,43 +118,41 @@ function JoinTenantContent() {
       setJoining(true)
       setError('')
 
-      // Check if user already exists in this tenant
-      const { data: existingUser } = await supabase
-        .from('users')
-        .select('id')
-        .eq('email', invitation.email)
-        .eq('tenant_id', invitation.tenant_id)
-        .single()
+      const { error: rpcError } = await supabase.rpc('accept_tenant_invitation', {
+        p_token: token || '',
+      })
 
-      if (existingUser) {
-        setError('You are already a member of this organization.')
-        return
+      if (rpcError && !isMissingRpc(rpcError)) {
+        throw new Error(rpcError.message)
       }
 
-      // Create user record in the new tenant
-      const { error: insertError } = await supabase
-        .from('users')
-        .insert({
-          id: user.id, // Use existing user ID
-          tenant_id: invitation.tenant_id,
-          name: user.name,
-          email: invitation.email,
-          role: invitation.role,
-          permissions: invitation.permissions,
-          is_active: true
-        })
+      if (isMissingRpc(rpcError)) {
+        if (user.tenant_id === invitation.tenant_id) {
+          setError('You are already a member of this organization.')
+          return
+        }
 
-      if (insertError) throw insertError
+        const { error: updateError } = await supabase
+          .from('users')
+          .update({
+            tenant_id: invitation.tenant_id,
+            role: invitation.role,
+            permissions: invitation.permissions,
+            is_active: true,
+          })
+          .eq('id', user.id)
+          .is('tenant_id', null)
 
-      // Update invitation status
-      const { error: updateError } = await supabase
-        .from('user_invitations')
-        .update({ status: 'accepted' })
-        .eq('id', invitation.id)
+        if (updateError) throw updateError
 
-      if (updateError) {
-        console.warn('Failed to update invitation status:', updateError)
-        // Don't fail the whole process for this
+        const { error: invitationError } = await supabase
+          .from('user_invitations')
+          .update({ status: 'accepted' })
+          .eq('id', invitation.id)
+
+        if (invitationError) {
+          console.warn('Failed to update invitation status:', invitationError)
+        }
       }
 
       // Refresh user data to get new tenant access
@@ -317,7 +310,7 @@ function JoinTenantContent() {
           )}
 
           {/* Email Mismatch Warning */}
-          {invitation && user && invitation.email !== user.email && (
+          {invitation && user && normalizeEmail(invitation.email) !== normalizeEmail(user.email) && (
             <div className="mb-4 bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-3 rounded-md text-sm">
               <strong>Warning:</strong> This invitation is for {invitation.email}, but you&apos;re logged in as {user.email}.
               Please log in with the correct account to accept this invitation.
@@ -327,7 +320,7 @@ function JoinTenantContent() {
           {/* Join Button */}
           <button
             onClick={handleJoinTenant}
-            disabled={joining || !!(invitation && user && invitation.email !== user.email)}
+            disabled={joining || !!(invitation && user && normalizeEmail(invitation.email) !== normalizeEmail(user.email))}
             className="w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {joining && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}

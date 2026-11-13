@@ -1,21 +1,16 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    typedRoutes: true,
-  },
+  typedRoutes: true,
   images: {
-    domains: ['https://ugddjyrvbmwpafgasjzp.supabase.co'], 
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'cqocddiracijeccswqzz.supabase.co',
+        pathname: '/storage/v1/object/**',
+      },
+    ],
   },
-  // Enable strict mode for development
   reactStrictMode: true,
-  
-  // Disable ESLint and TypeScript checking during build (for quick deployment)
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-  typescript: {
-    ignoreBuildErrors: true,
-  },
   
   // Production optimizations
   output: 'standalone',
@@ -37,6 +32,14 @@ const nextConfig = {
           {
             key: 'Referrer-Policy',
             value: 'strict-origin-when-cross-origin',
+          },
+          {
+            key: 'Permissions-Policy',
+            value: 'camera=(), microphone=(), geolocation=()',
+          },
+          {
+            key: 'X-DNS-Prefetch-Control',
+            value: 'on',
           },
         ],
       },

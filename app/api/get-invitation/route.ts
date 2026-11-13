@@ -1,67 +1,49 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-import type { Database } from '@/types/database.types'
-
-const supabaseAdmin = createClient<Database>(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    }
-  }
-)
+import { createAdminClient } from '@/lib/supabase-admin'
+import { isExpired, isValidInvitationToken } from '@/lib/security'
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const token = searchParams.get('token')
+    const token = request.nextUrl.searchParams.get('token')
 
-    if (!token) {
-      return NextResponse.json(
-        { error: 'Token is required' },
-        { status: 400 }
-      )
+    if (!isValidInvitationToken(token)) {
+      return NextResponse.json({ error: 'A valid invitation token is required' }, { status: 400 })
     }
 
-    // Get invitation details using admin client (bypasses RLS)
-    const { data, error } = await supabaseAdmin
+    const admin = createAdminClient()
+    const { data, error } = await admin
       .from('user_invitations')
       .select(`
-        *,
+        id,
+        email,
+        role,
+        tenant_id,
+        permissions,
+        expires_at,
+        status,
         tenants(name),
         invited_by:users!user_invitations_invited_by_fkey(name)
       `)
       .eq('invitation_token', token)
       .eq('status', 'pending')
-      .single()
+      .maybeSingle()
 
     if (error) {
-      if (error.code === 'PGRST116') {
-        return NextResponse.json(
-          { error: 'Invitation not found or already used' },
-          { status: 404 }
-        )
-      }
-      throw error
+      console.error('Get invitation error:', error)
+      return NextResponse.json({ error: 'Failed to load invitation' }, { status: 500 })
     }
 
-    // Check if expired
-    if (new Date(data.expires_at) < new Date()) {
-      return NextResponse.json(
-        { error: 'Invitation has expired' },
-        { status: 400 }
-      )
+    if (!data) {
+      return NextResponse.json({ error: 'Invitation not found or already used' }, { status: 404 })
+    }
+
+    if (isExpired(data.expires_at)) {
+      return NextResponse.json({ error: 'Invitation has expired' }, { status: 400 })
     }
 
     return NextResponse.json({ invitation: data })
-
-  } catch (error: any) {
+  } catch (error) {
     console.error('Get invitation error:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

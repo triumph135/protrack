@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Mail, Lock, Eye, EyeOff, User, Loader2 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
+import { MIN_PASSWORD_LENGTH } from '@/lib/security'
 
 export default function RegisterPage() {
   const [name, setName] = useState('')
@@ -13,6 +14,7 @@ export default function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const [loading, setLoading] = useState(false)
   
   const router = useRouter()
@@ -35,8 +37,8 @@ export default function RegisterPage() {
       setError('Password is required')
       return false
     }
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters')
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`)
       return false
     }
     if (password !== confirmPassword) {
@@ -49,29 +51,31 @@ export default function RegisterPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    setNotice('')
   
     if (!validateForm()) return
   
     setLoading(true)
     try {
-      const { error } = await signUp(email, password, { name })
+      const { error, message } = await signUp(email, password, { name })
       
       if (error) {
         console.error('Signup error:', error)
-        if (error.message.includes('already registered')) {
+        if (error.message.toLowerCase().includes('already registered') || error.message.toLowerCase().includes('already exists')) {
           setError('An account with this email already exists. Please log in.')
         } else {
           setError(error.message)
         }
-        setLoading(false)
+      } else if (message) {
+        setNotice(message)
       } else {
-        // Redirect to tenant setup immediately after successful signup
         router.push('/tenant-setup')
       }
       
     } catch (err) {
       console.error('Unexpected error:', err)
       setError('An unexpected error occurred')
+    } finally {
       setLoading(false)
     }
   }
@@ -88,8 +92,13 @@ export default function RegisterPage() {
       <div className="mt-8 bg-white py-8 px-6 shadow-xl rounded-lg">
         <form onSubmit={handleSubmit} className="space-y-6">
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm">
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm" role="alert">
               {error}
+            </div>
+          )}
+          {notice && (
+            <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-md text-sm" role="status">
+              {notice}
             </div>
           )}
 
@@ -144,7 +153,8 @@ export default function RegisterPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="appearance-none relative block w-full px-3 py-3 pl-10 pr-10 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder="Create a password (min 6 characters)"
+                placeholder={`Create a password (min ${MIN_PASSWORD_LENGTH} characters)`}
+                autoComplete="new-password"
                 disabled={loading}
               />
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -155,6 +165,7 @@ export default function RegisterPage() {
                 onClick={() => setShowPassword(!showPassword)}
                 className="absolute inset-y-0 right-0 pr-3 flex items-center"
                 disabled={loading}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
               >
                 {showPassword ? (
                   <EyeOff className="w-5 h-5 text-gray-400 hover:text-gray-600" />

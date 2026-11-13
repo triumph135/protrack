@@ -14,8 +14,8 @@ import type { User as UserType } from '@/types/app.types'
 interface UserCardProps {
   user: UserType
   currentUserId: string
-  onUpdateUser: (userId: string, updates: any) => Promise<void>
-  onDeactivateUser: (userId: string) => Promise<void>
+  onUpdateUser: (userId: string, updates: any) => Promise<unknown>
+  onDeactivateUser: (userId: string) => Promise<unknown>
 }
 
 function UserCard({ user, currentUserId, onUpdateUser, onDeactivateUser }: UserCardProps) {

@@ -29,7 +29,7 @@ function CostsContent() {
   const [selectedChangeOrderId, setSelectedChangeOrderId] = useState<string | null>(null)
   
   // Use the costs hook with the current project and change order selection
-  const { costs, loading, createCost, updateCost, deleteCost, loadCostsByCategory, refreshCosts } = useCosts(activeProject?.id, selectedChangeOrderId)
+  const { costs, loading, error: costsError, createCost, updateCost, deleteCost, loadCostsByCategory, refreshCosts } = useCosts(activeProject?.id, selectedChangeOrderId)
   const { changeOrders } = useChangeOrders(activeProject?.id)
   const [budget, setBudget] = useState<any>(null)
   const [budgetLoading, setBudgetLoading] = useState(false)
@@ -423,15 +423,21 @@ function CostsContent() {
       )}
 
       {/* Page Header */}
-      <div className="bg-white p-6 rounded-lg shadow-md">
-        <div className="flex items-center justify-between">
+      {costsError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md" role="alert">
+          Could not load costs. {costsError}
+        </div>
+      )}
+
+      <div className="bg-white p-4 sm:p-6 rounded-lg shadow-md">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">{getCategoryDisplayName(category)} Costs</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">{getCategoryDisplayName(category)} Costs</h1>
             <p className="text-gray-600 mt-1">
               {getCurrentChangeOrderName()} • {filteredCosts.length} entries • {formatCurrency(totalFilteredCost)}
             </p>
           </div>
-          <div className="flex space-x-3">
+          <div className="flex flex-wrap gap-3">
             {filteredCosts.length > 0 && (
               <button
                 onClick={exportData}

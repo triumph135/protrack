@@ -1,6 +1,9 @@
 import { createServerSupabaseClient } from './supabase-server'
 import { redirect } from 'next/navigation'
-import type { User, UserPermissions } from '@/types/app.types'
+import type { User } from '@/types/app.types'
+import { PUBLIC_USER_COLUMNS } from '@/lib/permissions'
+
+export { hasPermission } from '@/lib/permissions'
 
 export async function getSession() {
   const supabase = await createServerSupabaseClient()
@@ -17,19 +20,22 @@ export async function getSession() {
 }
 
 export async function getCurrentUser(): Promise<User | null> {
-  const session = await getSession()
-  
-  if (!session?.user) {
+  const supabase = await createServerSupabaseClient()
+
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser()
+
+  if (authError || !user) {
     return null
   }
-
-  const supabase = await createServerSupabaseClient()
   
   const { data: userData, error } = await supabase
     .from('users')
-    .select('*')
-    .eq('id', session.user.id)
-    .single()
+    .select(PUBLIC_USER_COLUMNS)
+    .eq('id', user.id)
+    .maybeSingle()
 
   if (error || !userData) {
     console.error('Error fetching user data:', error)
@@ -57,20 +63,4 @@ export async function requireTenant() {
   }
   
   return user
-}
-
-export function hasPermission(
-  userPermissions: UserPermissions,
-  area: keyof UserPermissions,
-  level: 'read' | 'write' = 'read'
-): boolean {
-  const permission = userPermissions[area]
-  
-  if (!permission || permission === 'none') return false
-  
-  if (level === 'read') {
-    return permission === 'read' || permission === 'write'
-  }
-  
-  return permission === 'write'
 }

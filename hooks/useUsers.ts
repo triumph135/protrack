@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
 import type { User, UserPermissions } from '@/types/app.types'
+import { PUBLIC_USER_COLUMNS } from '@/lib/permissions'
 
 interface UserInvitation {
   id: string
@@ -46,7 +47,7 @@ export function useUsers() {
 
       const { data, error: fetchError } = await supabase
         .from('users')
-        .select('*')
+        .select(PUBLIC_USER_COLUMNS)
         .eq('tenant_id', tenant.id)
         .order('created_at', { ascending: true })
 
@@ -102,7 +103,7 @@ export function useUsers() {
         throw new Error('Failed to verify user eligibility')
       }
 
-      const { userExistsInTenant, pendingInvitation, authUserExists, canInvite } = await checkResponse.json()
+      const { userExistsInTenant, pendingInvitation, canInvite } = await checkResponse.json()
 
       if (userExistsInTenant) {
         throw new Error('A user with this email already exists in your organization')
@@ -129,49 +130,26 @@ export function useUsers() {
 
       if (inviteError) throw inviteError
 
-      // Handle email sending based on whether user exists in auth
+      // The server decides whether this is a new account or an existing one
+      // and builds the redirect itself. A failed email does not roll back the
+      // invitation, so it can be resent.
       try {
-        if (authUserExists) {
-          // User exists in auth but not in this tenant - send a custom email
-          const response = await fetch('/api/invite-existing-user', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              email: userData.email,
-              tenantName: tenant.name,
-              invitationToken: invitation.invitation_token,
-              redirectUrl: `${window.location.origin}/auth/join-tenant?token=${invitation.invitation_token}`
-            })
-          })
+        const response = await fetch('/api/invite-user', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            invitationToken: invitation.invitation_token,
+          }),
+        })
 
-          if (!response.ok) {
-            const errorData = await response.json()
-            console.warn('Failed to send custom invitation email:', errorData)
-          }
-        } else {
-          // New user - send standard invitation
-          const response = await fetch('/api/invite-user', {
-            method: 'PUT',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              email: userData.email,
-              redirectUrl: `${window.location.origin}/accept-invitation?token=${invitation.invitation_token}`
-            })
-          })
-
-          if (!response.ok) {
-            const errorData = await response.json()
-            console.warn('Email invitation failed:', errorData)
-            // Don't throw here, as the invitation record exists and could be resent
-          }
+        if (!response.ok) {
+          const errorData = await response.json()
+          console.warn('Email invitation failed:', errorData)
         }
       } catch (emailError) {
         console.warn('Email invitation failed:', emailError)
-        // Don't throw here, as the invitation record exists and could be resent
       }
 
       setInvitations(prev => [invitation, ...prev])
@@ -197,7 +175,7 @@ export function useUsers() {
         .update(updates)
         .eq('id', userId)
         .eq('tenant_id', tenant.id)
-        .select()
+        .select(PUBLIC_USER_COLUMNS)
         .single()
 
       if (error) throw error
@@ -226,7 +204,7 @@ export function useUsers() {
         .update({ is_active: false })
         .eq('id', userId)
         .eq('tenant_id', tenant.id)
-        .select()
+        .select(PUBLIC_USER_COLUMNS)
         .single()
 
       if (error) throw error
@@ -249,62 +227,21 @@ const resendInvitation = async (invitationId: string) => {
   
       const invitation = invitations.find(inv => inv.id === invitationId)
       if (!invitation) throw new Error('Invitation not found')
-  
-      // Check if user exists in auth to determine email type
-      const checkResponse = await fetch('/api/check-user-exists', {
+      if (invitation.tenant_id !== tenant?.id) throw new Error('Invitation not found')
+
+      const response = await fetch('/api/invite-user', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          email: invitation.email,
-          tenantId: invitation.tenant_id
-        })
+          invitationToken: invitation.invitation_token,
+        }),
       })
-  
-      if (!checkResponse.ok) {
-        throw new Error('Failed to verify user status')
-      }
-  
-      const { authUserExists } = await checkResponse.json()
-  
-      // Send appropriate email type based on user existence
-      if (authUserExists) {
-        // Existing user - send join tenant email
-        const response = await fetch('/api/invite-existing-user', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            email: invitation.email,
-            tenantName: tenant?.name || 'Unknown Organization',
-            invitationToken: invitation.invitation_token,
-            redirectUrl: `${window.location.origin}/auth/join-tenant?token=${invitation.invitation_token}`
-          })
-        })
-  
-        if (!response.ok) {
-          const errorData = await response.json()
-          throw new Error(errorData.error || 'Failed to resend invitation')
-        }
-      } else {
-        // New user - send standard invitation
-        const response = await fetch('/api/invite-user', {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            email: invitation.email,
-            redirectUrl: `${window.location.origin}/accept-invitation?token=${invitation.invitation_token}`
-          })
-        })
-  
-        if (!response.ok) {
-          const errorData = await response.json()
-          throw new Error(errorData.error || 'Failed to resend invitation')
-        }
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to resend invitation')
       }
   
       // Update the invitation timestamp
@@ -315,6 +252,7 @@ const resendInvitation = async (invitationId: string) => {
           updated_at: new Date().toISOString()
         })
         .eq('id', invitationId)
+        .eq('tenant_id', tenant?.id)
   
       if (updateError) throw updateError
   
@@ -337,6 +275,7 @@ const resendInvitation = async (invitationId: string) => {
         .from('user_invitations')
         .update({ status: 'expired' })
         .eq('id', invitationId)
+        .eq('tenant_id', tenant?.id)
 
       if (error) throw error
 

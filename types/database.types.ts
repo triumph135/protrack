@@ -414,6 +414,47 @@ export interface Database {
           mob_rate?: number | null
         }
       }
+      user_invitations: {
+        Row: {
+          id: string
+          tenant_id: string
+          email: string
+          role: string
+          permissions: Json | null
+          invited_by: string | null
+          invitation_token: string
+          status: string
+          expires_at: string
+          created_at: string
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          tenant_id: string
+          email: string
+          role: string
+          permissions?: Json | null
+          invited_by?: string | null
+          invitation_token?: string
+          status?: string
+          expires_at?: string
+          created_at?: string
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          tenant_id?: string
+          email?: string
+          role?: string
+          permissions?: Json | null
+          invited_by?: string | null
+          invitation_token?: string
+          status?: string
+          expires_at?: string
+          created_at?: string
+          updated_at?: string | null
+        }
+      }
       tenants: {
         Row: {
           id: string
@@ -504,7 +545,22 @@ export interface Database {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      create_workspace: {
+        Args: {
+          p_name: string
+          p_subdomain: string
+          p_email: string
+          p_phone?: string | null
+          p_plan?: string | null
+        }
+        Returns: Json
+      }
+      accept_tenant_invitation: {
+        Args: {
+          p_token: string
+        }
+        Returns: Json
+      }
     }
     Enums: {
       [_ in never]: never
