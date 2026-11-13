@@ -49,10 +49,10 @@ function LoginContent() {
   }, [])
 
   useEffect(() => {
-    if (!signedIn || !user || isSubmitting) return
+    if (!signedIn || !user) return
     const targetUrl = user.tenant_id ? redirectTo : '/tenant-setup'
     router.replace(targetUrl as never)
-  }, [signedIn, user, redirectTo, router, isSubmitting])
+  }, [signedIn, user, redirectTo, router])
 
   const handleManualRedirect = () => {
     const targetUrl = user?.tenant_id ? redirectTo : '/tenant-setup'
@@ -87,17 +87,15 @@ function LoginContent() {
 
     try {
       const result = await signIn(email, password)
-      
+
       if (result.error) {
         console.error('Sign in error:', result.error)
         setError(result.error.message)
-        setIsSubmitting(false)
-      } else {
-        // Don't set isSubmitting to false - let the redirect handle it
       }
     } catch (err: any) {
       console.error('Unexpected sign in error:', err)
       setError(err.message || 'An unexpected error occurred')
+    } finally {
       setIsSubmitting(false)
     }
   }

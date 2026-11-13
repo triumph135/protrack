@@ -5,10 +5,12 @@ import { hasPermission, userCan } from '../lib/permissions.ts'
 import {
   isAlreadyRegisteredMessage,
   isExpired,
+  isMissingColumnError,
   isMissingRpc,
   isValidInvitationToken,
   isValidSubdomain,
   mayClaimInvitedAuthUser,
+  presentAuthError,
   safeInternalPath,
 } from '../lib/security.ts'
 
@@ -74,6 +76,23 @@ describe('tenant and auth guards', () => {
     assert.equal(safeInternalPath('/%2F%2Fevil.example'), '/dashboard')
     assert.equal(safeInternalPath('/\\evil'), '/dashboard')
     assert.equal(safeInternalPath(null, '/login'), '/login')
+  })
+
+  it('recognizes a missing-column error from PostgREST', () => {
+    assert.equal(isMissingColumnError({ code: '42703', message: 'column users.last_login does not exist' }), true)
+    assert.equal(isMissingColumnError({ code: 'PGRST204', message: 'Could not find the column' }), true)
+    assert.equal(isMissingColumnError({ code: '42501', message: 'permission denied' }), false)
+    assert.equal(isMissingColumnError(null), false)
+  })
+
+  it('names the Supabase host when an auth request cannot be made', () => {
+    const url = 'https://exampleproject.supabase.co'
+    assert.match(presentAuthError('Failed to fetch', url), /exampleproject\.supabase\.co/)
+    assert.match(presentAuthError('Failed to fetch', url), /NEXT_PUBLIC_SUPABASE_URL/)
+    assert.match(presentAuthError('Invalid API key', url), /anon key/)
+    assert.match(presentAuthError('Invalid login credentials', url), /Invalid login credentials/)
+    assert.match(presentAuthError('Invalid login credentials', url), /exampleproject\.supabase\.co/)
+    assert.equal(presentAuthError(undefined, 'not a url'), 'Something went wrong. Please try again.')
   })
 
   it('rejects expired or malformed invitations', () => {

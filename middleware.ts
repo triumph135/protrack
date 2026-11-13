@@ -30,7 +30,13 @@ export async function middleware(request: NextRequest) {
   })
 
   // getUser() validates the JWT with Supabase Auth and refreshes it when needed.
-  await supabase.auth.getUser()
+  // A network failure here must not take down the page; the browser client
+  // still owns the password sign-in request.
+  try {
+    await supabase.auth.getUser()
+  } catch (error) {
+    console.error('Auth session refresh failed:', error)
+  }
 
   return supabaseResponse
 }

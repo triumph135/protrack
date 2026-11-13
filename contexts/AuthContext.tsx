@@ -6,13 +6,18 @@ import { createClient } from '@/lib/supabase'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
 import type { User } from '@/types/app.types'
 import { ENTRY_PERMISSIONS, PUBLIC_USER_COLUMNS } from '@/lib/permissions'
+import { isMissingColumnError, presentAuthError } from '@/lib/security'
 
 type AuthContextType = {
   supabaseUser: SupabaseUser | null
   user: User | null
   loading: boolean
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>
-  signUp: (email: string, password: string, userData: { name: string }) => Promise<{ error: Error | null }>
+  signUp: (
+    email: string,
+    password: string,
+    userData: { name: string }
+  ) => Promise<{ error: Error | null; message?: string }>
   signOut: () => Promise<void>
   refreshUser: () => Promise<void>
 }
@@ -53,30 +58,78 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const supabase = createClient()
 
-  const fetchUserData = async (userId: string): Promise<User | null> => {
-    try {
+  const loadProfile = async (
+    userId: string,
+    fallbackEmail?: string | null
+  ): Promise<{ user: User | null; error: string | null }> => {
+    const columnLists = [PUBLIC_USER_COLUMNS, 'id, tenant_id, name, email, role, permissions']
+
+    const query = async (columns: string, field: 'id' | 'email', value: string) => {
       const { data, error } = await supabase
         .from('users')
-        .select(PUBLIC_USER_COLUMNS)
-        .eq('id', userId)
+        .select(columns)
+        .eq(field, value)
         .maybeSingle()
-  
-      if (error) {
-        console.error('Error fetching user data:', error)
-        return null
+      return { user: (data as User | null) ?? null, error }
+    }
+
+    try {
+      let idResult: { user: User | null; error: { code?: string; message?: string } | null } = {
+        user: null,
+        error: null,
       }
-  
-      if (data) {
-        const userData = data as User
-        setUser(userData)
-        return userData
+      for (const columns of columnLists) {
+        idResult = await query(columns, 'id', userId)
+        if (!idResult.error) break
+        if (!isMissingColumnError(idResult.error)) break
       }
-      
-      return null
+
+      if (idResult.error) {
+        console.error('Error fetching user data:', idResult.error)
+        return { user: null, error: `Could not load the account profile: ${idResult.error.message}` }
+      }
+      if (idResult.user) {
+        setUser(idResult.user)
+        return { user: idResult.user, error: null }
+      }
+
+      // Legacy profiles were sometimes created before the auth user id existed.
+      // Match only the email on the signed-in account, never an address typed
+      // into the form, and only when that email belongs to exactly one row.
+      const email = fallbackEmail?.trim()
+      if (!email) return { user: null, error: null }
+
+      let emailResult: { user: User | null; error: { code?: string; message?: string } | null } = {
+        user: null,
+        error: null,
+      }
+      for (const columns of columnLists) {
+        emailResult = await query(columns, 'email', email)
+        if (!emailResult.error) break
+        if (!isMissingColumnError(emailResult.error)) break
+      }
+
+      if (emailResult.error) {
+        console.error('Error fetching user by email:', emailResult.error)
+        return { user: null, error: `Could not load the account profile: ${emailResult.error.message}` }
+      }
+
+      const match = emailResult.user
+      if (!match || match.email?.trim().toLowerCase() !== email.toLowerCase()) {
+        return { user: null, error: null }
+      }
+
+      setUser(match)
+      return { user: match, error: null }
     } catch (error) {
       console.error('fetchUserData error:', error)
-      return null
+      return { user: null, error: error instanceof Error ? error.message : 'Could not load the account profile.' }
     }
+  }
+
+  const fetchUserData = async (userId: string, fallbackEmail?: string | null): Promise<User | null> => {
+    const result = await loadProfile(userId, fallbackEmail)
+    return result.user
   }
 
   useEffect(() => {
@@ -107,7 +160,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     
         if (session?.user) {
           setSupabaseUser(session.user)
-          await fetchUserData(session.user.id)
+          await fetchUserData(session.user.id, session.user.email)
         } else {
           setSupabaseUser(null)
           setUser(null)
@@ -193,7 +246,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             
             // Add timeout protection to prevent infinite hanging
             const fetchWithTimeout = Promise.race([
-              fetchUserData(session.user.id),
+              fetchUserData(session.user.id, session.user.email),
               new Promise((_, reject) => 
                 setTimeout(() => reject(new Error('fetchUserData timeout')), 15000)
               )
@@ -223,71 +276,100 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []) // Empty dependency array - only run once
 
+  const authError = (error: { message?: string } | null) =>
+    new Error(presentAuthError(error?.message, process.env.NEXT_PUBLIC_SUPABASE_URL))
+
   const signIn = async (email: string, password: string) => {
     try {
-      setLoading(true)
-      
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
 
       if (error) {
         console.error('Sign in error:', error)
-        setLoading(false)
-        return { error }
+        return { error: authError(error) }
       }
 
-      // Don't set loading to false here - let the auth state change handle it
+      const authUser = data.user
+      if (!authUser) {
+        return { error: new Error('Sign-in did not return an account.') }
+      }
+
+      const profile = await loadProfile(authUser.id, authUser.email)
+      if (profile.error || !profile.user) {
+        await supabase.auth.signOut()
+        return {
+          error: new Error(
+            profile.error ||
+              `Signed in, but no ProTrack profile is linked to ${authUser.email || 'this account'}.`
+          ),
+        }
+      }
+
       return { error: null }
     } catch (error) {
       console.error('Sign in failed:', error)
-      setLoading(false)
-      return { error: error as Error }
+      return { error: authError(error as Error) }
     }
   }
 
   const signUp = async (email: string, password: string, userData: { name: string }) => {
     try {
-      setLoading(true)
-      
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+          data: { name: userData.name },
+        },
       })
-  
+
       if (error) {
         console.error('Signup error:', error)
-        setLoading(false)
-        return { error }
+        return { error: authError(error) }
       }
-  
-      if (data.user) {
-        const { error: profileError } = await supabase
-          .from('users')
-          .insert({
-            id: data.user.id,
-            email: email,
-            name: userData.name,
-            role: 'entry',
-            tenant_id: null,
-            permissions: ENTRY_PERMISSIONS
-          })
-  
-        if (profileError) {
-          console.error('Profile creation error:', profileError)
-          await supabase.auth.signOut()
-          setLoading(false)
-          return { error: new Error(`Failed to create profile: ${profileError.message}`) }
+
+      if (!data.user) {
+        return { error: new Error('Sign-up did not return an account.') }
+      }
+
+      const { error: profileError } = await supabase
+        .from('users')
+        .insert({
+          id: data.user.id,
+          email: email,
+          name: userData.name,
+          role: 'entry',
+          tenant_id: null,
+          permissions: ENTRY_PERMISSIONS
+        })
+
+      // A second attempt can hit the row created by the first.
+      if (profileError && profileError.code !== '23505') {
+        console.error('Profile creation error:', profileError)
+        await supabase.auth.signOut()
+        return { error: new Error(`Failed to create profile: ${profileError.message}`) }
+      }
+
+      if (!data.session) {
+        return {
+          error: null,
+          message:
+            'Account created. Check your email for a confirmation link, then sign in.',
         }
       }
-  
-      setLoading(false)
+
+      const profile = await loadProfile(data.user.id, data.user.email || email)
+      if (profile.error || !profile.user) {
+        return {
+          error: new Error(profile.error || 'Account created, but the profile could not be loaded.'),
+        }
+      }
+
       return { error: null }
     } catch (error) {
       console.error('Signup failed:', error)
-      setLoading(false)
-      return { error: error as Error }
+      return { error: authError(error as Error) }
     }
   }
 
@@ -319,7 +401,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshUser = async () => {
     if (supabaseUser) {
-      await fetchUserData(supabaseUser.id)
+      await fetchUserData(supabaseUser.id, supabaseUser.email)
     }
   }
 
