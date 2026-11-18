@@ -30,13 +30,14 @@ export default function AuthLayout({
     </div>
   )
 
-  // These pages render their own full-page layout.
-  if (isAcceptInvitation || isJoinTenant || isResetPassword || isForgotPassword) {
+  // Old invite URLs redirect immediately and do not need the frame.
+  if (isAcceptInvitation || isJoinTenant) {
     return children
   }
 
-  // Tenant setup uses the shared auth frame but manages its own session rules.
-  if (isTenantSetup || isJoin) {
+  // These pages manage their own session. Reset keeps a recovery session, so
+  // it must not bounce a signed-in user back to the dashboard.
+  if (isTenantSetup || isJoin || isResetPassword || isForgotPassword) {
     return content
   }
 

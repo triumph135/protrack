@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/ui/feedback'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/format'
 
-const screens = ['Login', 'Overview', 'Projects', 'Costs', 'Invoices', 'Employees', 'Team', 'Settings'] as const
+const screens = ['Login', 'Forgot password', 'Overview', 'Projects', 'Costs', 'Invoices', 'Employees', 'Team', 'Settings'] as const
 
 export default function PreviewGallery({
   initialScreen = 'Overview',
@@ -34,7 +34,7 @@ export default function PreviewGallery({
         </Button>
       </div>}
       <div className={bare ? 'bg-background' : mobile ? 'mx-auto w-[390px] overflow-hidden rounded-lg border border-border bg-background shadow-none' : 'overflow-hidden rounded-lg border border-border bg-background'}>
-        {screen === 'Login' ? <LoginScreen /> : <AppFrame mobile={mobile} screen={screen} />}
+        {screen === 'Login' ? <LoginScreen /> : screen === 'Forgot password' ? <ForgotScreen /> : <AppFrame mobile={mobile} screen={screen} />}
       </div>
     </div>
   )
@@ -97,10 +97,10 @@ function Overview() {
 function Projects() {
   return (
     <div className="space-y-4">
-      <PageHeader title="Projects" description="2 jobs" action={<Button type="button">New project</Button>} />
-      <Table headers={['Job', 'Customer', 'Contract', 'Assigned to']} rows={[
-        ['JOB-A-001 Acme Test Job', 'Acme Customer', '$100,000.00', '2'],
-        ['JOB-A-002 Second job', 'Acme Customer', '$40,000.00', '0'],
+      <PageHeader title="Projects" description="Jobs, contract values, and change orders." action={<><Button variant="outline" type="button">Export CSV</Button><Button type="button">Add project</Button></>} />
+      <Table headers={['Job', 'Customer', 'Contract', 'Status']} rows={[
+        ['JOB-A-001 Acme Test Job', 'Acme Customer', '$112,000.00', 'Active · Current'],
+        ['JOB-A-002 Second job', 'Acme Customer', '$40,000.00', 'Active'],
       ]} />
     </div>
   )
@@ -118,8 +118,12 @@ function Costs() {
 function Invoices() {
   return (
     <div className="space-y-4">
-      <PageHeader title="Invoices" description="Billed against JOB-A-001" action={<Button type="button">New invoice</Button>} />
-      <Table headers={['Number', 'Date', 'Amount']} rows={[['INV-A-001', 'Jan 20, 2026', '$500.00'], ['INV-A-002', 'Feb 15, 2026', '$1,800.00']]} />
+      <PageHeader title="Invoices" description="JOB-A-001 · All change orders" action={<><Button variant="outline" type="button">Filters</Button><Button variant="outline" type="button">Export CSV</Button><Button type="button">Add invoice</Button></>} />
+      <p className="text-sm text-muted-foreground">2 invoices · $2,300.00 billed. The change order in the top bar filters this list.</p>
+      <Table headers={['Number', 'Amount', 'Billed', 'Change order', 'Files']} rows={[
+        ['INV-A-001', '$500.00', 'Jan 20, 2026', 'Base contract', '—'],
+        ['INV-A-002', '$1,800.00', 'Feb 15, 2026', 'Added welding', '1'],
+      ]} />
     </div>
   )
 }
@@ -127,8 +131,16 @@ function Invoices() {
 function Employees() {
   return (
     <div className="space-y-4">
-      <PageHeader title="Employees" description="Rates used on labor entries" action={<Button type="button">Add employee</Button>} />
-      <Table headers={['Name', 'ST', 'OT', 'DT']} rows={[['Alex Rivera', '$45.00', '$67.50', '$90.00'], ['Jordan Lee', '$40.00', '$60.00', '$80.00']]} />
+      <PageHeader title="Employees" description="Rates used when someone enters labor." action={<Button type="button">Add employee</Button>} />
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Stat label="Total" value="2" />
+        <Stat label="Company-wide" value="2" />
+        <Stat label="This project" value="0" />
+      </div>
+      <Table headers={['Name', 'ST', 'OT', 'DT', 'Mob', 'Scope']} rows={[
+        ['Alex Rivera', '$45.00', '$67.50', '$90.00', '—', 'Company-wide'],
+        ['Jordan Lee', '$40.00', '$60.00', '$80.00', '$25.00', 'Company-wide'],
+      ]} />
     </div>
   )
 }
@@ -152,6 +164,26 @@ function Settings() {
       <PageHeader title="Settings" description="Acme Test" />
       <p className="text-sm text-muted-foreground">7 of 20 used. Hidden categories do not count.</p>
       <Table headers={['Category', 'Type']} rows={[['Material', 'standard'], ['Labor', 'labor'], ['Equipment', 'named'], ['Subcontractor', 'named']]} />
+    </div>
+  )
+}
+
+function ForgotScreen() {
+  return (
+    <div className="flex min-h-[640px] items-center justify-center bg-background p-6">
+      <div className="w-full max-w-sm space-y-6">
+        <div className="flex justify-center"><Logo size="lg" /></div>
+        <div className="rounded-lg border border-border bg-card p-6">
+          <h1 className="text-xl font-semibold">Reset your password</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Enter your email and we will send a reset link.</p>
+          <div className="mt-6 space-y-4">
+            <label className="text-sm font-medium" htmlFor="preview-reset-email">Email</label>
+            <input id="preview-reset-email" className="h-11 w-full rounded-lg border border-input px-3" defaultValue="master-a@example.test" />
+            <Button className="w-full" type="button">Send reset link</Button>
+            <p className="text-center text-sm text-primary">Back to sign in</p>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
