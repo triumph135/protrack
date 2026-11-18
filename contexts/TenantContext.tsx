@@ -12,6 +12,7 @@ interface Tenant {
   phone: string | null
   plan: string
   status: string
+  settings?: Record<string, unknown> | null
 }
 
 interface TenantContextType {

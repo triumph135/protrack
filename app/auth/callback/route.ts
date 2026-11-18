@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
   if (invitationType === 'tenant_invitation' && typeof invitationToken === 'string') {
     return redirectWithCookies(
       request,
-      `/join-tenant?token=${encodeURIComponent(invitationToken)}`,
+      `/join?token=${encodeURIComponent(invitationToken)}`,
       pendingCookies
     )
   }

@@ -1,8 +1,10 @@
 -- Proves the RLS migration against the synthetic ProTrack-Prod snapshot.
 -- Run with: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/rls_isolation.sql
 -- The script rolls back its own writes. A failed check raises and exits non-zero.
--- Applying the two migration files twice (requirement d) is a separate psql
--- step: this file runs inside one transaction and cannot commit those files.
+-- Applying the migration files twice is a separate psql step: this file runs
+-- inside one transaction and cannot commit those files. The migrations are
+-- `20261113201043_enable_rls.sql` and `20261117235751_storage_rls.sql`, plus
+-- the Phase 2 files when those are under test.
 --
 -- Expected data (from the snapshot seed):
 --   acme  aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1

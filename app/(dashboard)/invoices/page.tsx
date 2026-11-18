@@ -1,17 +1,25 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Plus, Edit, Trash2, FileText, DollarSign, Calendar, Filter, Download, Search, Paperclip, Copy } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Copy, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
 import { useProjects } from '@/contexts/ProjectContext'
+import { useWorkspace } from '@/contexts/WorkspaceContext'
 import { useInvoices } from '@/hooks/useInvoices'
 import { useChangeOrders } from '@/hooks/useChangeOrders'
 import InvoiceForm from '@/components/InvoiceForm'
-import ProjectChangeOrderSelector from '@/components/ProjectChangeOrderSelector'
 import type { CustomerInvoice } from '@/types/app.types'
 import { formatLocalDateForDisplay } from '@/lib/dateUtils'
 import { fileUploadService } from '@/lib/fileUploadService'
+import { confirmAction } from '@/components/ui/confirm-dialog'
+import { toast } from 'sonner'
+import { userCan } from '@/lib/permissions'
+import { formatCurrency } from '@/lib/format'
+import { ExportMenu, type ExportSpec } from '@/components/export/ExportMenu'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Badge, EmptyState, PageHeader, Skeleton } from '@/components/ui/feedback'
 
 interface InvoiceFilters {
   startDate: string
@@ -25,9 +33,8 @@ export default function InvoicesPage() {
   const { user } = useAuth()
   const { tenant } = useTenant()
   const { activeProject } = useProjects()
-  
-  // Invoice management state
-  const [selectedChangeOrder, setSelectedChangeOrder] = useState<string>('all')
+  const { changeOrderId } = useWorkspace()
+  const selectedChangeOrder = changeOrderId ?? 'all'
   const [showForm, setShowForm] = useState(false)
   const [editingInvoice, setEditingInvoice] = useState<CustomerInvoice | null>(null)
   const [isDuplicateMode, setIsDuplicateMode] = useState(false)
@@ -37,563 +44,246 @@ export default function InvoicesPage() {
     endDate: '',
     invoiceNumber: '',
     minAmount: '',
-    maxAmount: ''
+    maxAmount: '',
   })
   const [attachmentCounts, setAttachmentCounts] = useState<Record<string, number>>({})
 
-  // Data hooks - Convert change order selection for the hook
-  const changeOrderForHook = selectedChangeOrder === 'all' ? undefined : 
-                            selectedChangeOrder === 'base' ? null : selectedChangeOrder
+  const changeOrderForHook = selectedChangeOrder === 'all' ? undefined
+    : selectedChangeOrder === 'base' ? null : selectedChangeOrder
 
-  // Convert state for ProjectChangeOrderSelector component
-  const changeOrderForSelector = selectedChangeOrder === 'all' ? null : selectedChangeOrder
-  
-  // Stable callback to prevent useEffect loops in ProjectChangeOrderSelector
-  const handleChangeOrderChange = useCallback((changeOrderId: string | null) => {
-    setSelectedChangeOrder(changeOrderId || 'all')
-  }, [])
-
-  // Data hooks
-  const { 
-    invoices, 
-    loading, 
-    error, 
-    createInvoice, 
-    updateInvoice, 
-    deleteInvoice, 
-    getTotalBilled,
-    loadInvoices 
-  } = useInvoices(activeProject?.id, changeOrderForHook)
-  
+  const { invoices, loading, error, createInvoice, updateInvoice, deleteInvoice, loadInvoices } = useInvoices(activeProject?.id, changeOrderForHook)
   const { changeOrders } = useChangeOrders(activeProject?.id)
+  const canRead = userCan(user, 'invoices', 'read')
+  const canWrite = userCan(user, 'invoices', 'write')
 
-  // Permission checking
-  const hasPermission = (area: string, level: 'read' | 'write' = 'read') => {
-    if (!user) return false
-    if (user.role === 'master') return true
-    
-    const userPermission = user.permissions[area as keyof typeof user.permissions]
-    if (!userPermission || userPermission === 'none') return false
-    
-    if (level === 'read') return ['read', 'write'].includes(userPermission)
-    if (level === 'write') return userPermission === 'write'
-    
-    return false
+  const closeForm = () => {
+    setShowForm(false)
+    setEditingInvoice(null)
+    setIsDuplicateMode(false)
   }
 
-  const canRead = hasPermission('invoices', 'read')
-  const canWrite = hasPermission('invoices', 'write')
-
-  // Handle form submission
   const handleSave = async (invoiceData: Omit<CustomerInvoice, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>) => {
     try {
       if (editingInvoice && !isDuplicateMode) {
         await updateInvoice(editingInvoice.id, invoiceData)
       } else {
-        // Ensure id is not included when creating a new entry (especially for duplicates)
-        const { id, ...dataToCreate } = invoiceData as any
-        await createInvoice(dataToCreate)
+        await createInvoice(invoiceData)
       }
-      
-      setShowForm(false)
-      setEditingInvoice(null)
-      setIsDuplicateMode(false)
-    } catch (error) {
-      console.error('Error saving invoice:', error)
-      alert('Error saving invoice. Please try again.')
+      closeForm()
+      toast.success(editingInvoice && !isDuplicateMode ? 'Invoice updated' : 'Invoice saved')
+    } catch (saveError) {
+      console.error('Error saving invoice:', saveError)
+      toast.error('Error saving invoice. Please try again.')
     }
   }
 
-  // Handle delete
   const handleDelete = async (invoiceId: string) => {
-    if (!window.confirm('Are you sure you want to delete this invoice?')) return
-    
+    const confirmed = await confirmAction({
+      title: 'Delete this invoice?',
+      description: 'The invoice will be removed from this project.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!confirmed) return
     try {
       await deleteInvoice(invoiceId)
-    } catch (error) {
-      console.error('Error deleting invoice:', error)
-      alert('Error deleting invoice. Please try again.')
+      toast.success('Invoice deleted')
+    } catch (deleteError) {
+      console.error('Error deleting invoice:', deleteError)
+      toast.error('Error deleting invoice. Please try again.')
     }
   }
 
-  // Handle edit
-  const handleEdit = (invoice: CustomerInvoice) => {
-    setEditingInvoice(invoice)
-    setIsDuplicateMode(false)
-    setShowForm(true)
+  const scopeName = () => {
+    if (selectedChangeOrder === 'all') return 'All change orders'
+    if (selectedChangeOrder === 'base') return 'Base contract'
+    return changeOrders.find((order) => order.id === selectedChangeOrder)?.name || 'Change order'
   }
 
-  // Handle duplicate
-  const handleDuplicate = (invoice: CustomerInvoice) => {
-    setEditingInvoice(invoice)
-    setIsDuplicateMode(true)
-    setShowForm(true)
-  }
+  const filteredInvoices = useMemo(() => invoices.filter((invoice) => {
+    if (filters.startDate && invoice.date_billed < filters.startDate) return false
+    if (filters.endDate && invoice.date_billed > filters.endDate) return false
+    if (filters.invoiceNumber && !invoice.invoice_number.toLowerCase().includes(filters.invoiceNumber.toLowerCase())) return false
+    if (filters.minAmount && invoice.amount < parseFloat(filters.minAmount)) return false
+    if (filters.maxAmount && invoice.amount > parseFloat(filters.maxAmount)) return false
+    return true
+  }), [invoices, filters])
 
-  const getCurrentChangeOrderName = () => {
-    if (!changeOrderForSelector) return 'All Change Orders'
-    if (changeOrderForSelector === 'base') return 'Base Contract'
-    
-    const changeOrder = changeOrders.find(co => co.id === changeOrderForSelector)
-    return changeOrder ? changeOrder.name : 'Unknown Change Order'
-  }
+  const invoiceIdsString = useMemo(() => filteredInvoices.map((invoice) => invoice.id).sort().join(','), [filteredInvoices])
+  const invoiceIds = useMemo(() => (invoiceIdsString ? invoiceIdsString.split(',') : []), [invoiceIdsString])
 
-  // Export data
-  const exportData = () => {
-    if (filteredInvoices.length === 0) {
-      alert('No data to export')
-      return
-    }
-
-    const headers = ['Date Billed', 'Invoice Number', 'Amount', 'In System', 'Change Order']
-
-    const csvContent = [
-      headers.join(','),
-      ...filteredInvoices.map(invoice => {
-        const changeOrderName = invoice.change_order_id 
-          ? changeOrders.find(co => co.id === invoice.change_order_id)?.name || 'Base Contract'
-          : 'Base Contract'
-
-        return [
-          invoice.date_billed,
-          invoice.invoice_number || '',
-          invoice.amount || 0,
-          invoice.in_system ? 'Yes' : 'No',
-          changeOrderName
-        ].join(',')
-      })
-    ].join('\n')
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `${activeProject?.jobNumber}_invoices_${getCurrentChangeOrderName()}_${new Date().toLocaleDateString().replace(/\//g, '-')}.csv`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(url)
-  }
-
-  // Apply filters to invoices with memoization to prevent infinite loops
-  const filteredInvoices = useMemo(() => {
-    return invoices.filter(invoice => {
-      if (filters.startDate && invoice.date_billed < filters.startDate) return false
-      if (filters.endDate && invoice.date_billed > filters.endDate) return false
-      if (filters.invoiceNumber && !invoice.invoice_number.toLowerCase().includes(filters.invoiceNumber.toLowerCase())) return false
-      if (filters.minAmount && invoice.amount < parseFloat(filters.minAmount)) return false
-      if (filters.maxAmount && invoice.amount > parseFloat(filters.maxAmount)) return false
-      return true
-    })
-  }, [invoices, filters.startDate, filters.endDate, filters.invoiceNumber, filters.minAmount, filters.maxAmount])
-
-  // Memoize the invoice IDs string to avoid unnecessary re-renders
-  const invoiceIdsString = useMemo(() => {
-    return filteredInvoices.map(invoice => invoice.id).sort().join(',')
-  }, [filteredInvoices])
-
-  // Memoize the actual invoice IDs array based on the string
-  const invoiceIds = useMemo(() => {
-    return invoiceIdsString ? invoiceIdsString.split(',') : []
-  }, [invoiceIdsString])
-
-  // Load attachment counts for invoices
   const loadAttachmentCounts = useCallback(async () => {
     if (!tenant?.id || !user?.id || !invoiceIds.length) return
-
     try {
       fileUploadService.setContext(tenant.id, user.id)
       const counts: Record<string, number> = {}
-      
-      // Load attachment counts for each invoice
-      await Promise.all(
-        invoiceIds.map(async (invoiceId) => {
-          try {
-            const attachments = await fileUploadService.getAttachments('customer_invoice', invoiceId)
-            counts[invoiceId] = attachments.length
-          } catch (error) {
-            console.error(`Error loading attachments for invoice ${invoiceId}:`, error)
-            counts[invoiceId] = 0
-          }
-        })
-      )
-      
+      await Promise.all(invoiceIds.map(async (invoiceId) => {
+        try {
+          const attachments = await fileUploadService.getAttachments('customer_invoice', invoiceId)
+          counts[invoiceId] = attachments.length
+        } catch (countError) {
+          console.error(`Error loading attachments for invoice ${invoiceId}:`, countError)
+          counts[invoiceId] = 0
+        }
+      }))
       setAttachmentCounts(counts)
-    } catch (error) {
-      console.error('Error loading attachment counts:', error)
+    } catch (countError) {
+      console.error('Error loading attachment counts:', countError)
     }
-  }, [tenant?.id, user?.id, invoiceIdsString])
+  }, [tenant?.id, user?.id, invoiceIds])
 
-  // Calculate filtered total
-  const filteredTotal = filteredInvoices.reduce((sum, inv) => sum + inv.amount, 0)
-
-  // Clear filters
-  const clearFilters = () => {
-    setFilters({
-      startDate: '',
-      endDate: '',
-      invoiceNumber: '',
-      minAmount: '',
-      maxAmount: ''
-    })
+  const filteredTotal = filteredInvoices.reduce((sum, invoice) => sum + invoice.amount, 0)
+  const collectedTotal = filteredInvoices.reduce((sum, invoice) => sum + Number(invoice.amount_collected || 0), 0)
+  const invoiceRows = filteredInvoices.map((invoice) => {
+    const changeOrderName = invoice.change_order_id
+      ? changeOrders.find((order) => order.id === invoice.change_order_id)?.name || 'Deleted change order'
+      : 'Base contract'
+    return {
+      number: invoice.invoice_number || '',
+      amount: Number(invoice.amount || 0),
+      collected: Number(invoice.amount_collected || 0),
+      billed: invoice.date_billed,
+      changeOrder: changeOrderName,
+      processed: Boolean(invoice.in_system),
+      files: attachmentCounts[invoice.id] || 0,
+    }
+  })
+  const exportSpec: ExportSpec = {
+    filename: `${activeProject?.jobNumber || 'invoices'}-invoices`,
+    title: 'Invoices',
+    company: tenant?.name || 'Company',
+    project: activeProject ? `${activeProject.jobNumber} — ${activeProject.jobName}` : undefined,
+    filters: [
+      filters.startDate || filters.endDate ? `Billed ${filters.startDate || 'start'} to ${filters.endDate || 'end'}` : 'Billed: all dates',
+      filters.invoiceNumber ? `Number contains ${filters.invoiceNumber}` : 'Number: all',
+      filters.minAmount || filters.maxAmount ? `Amount ${filters.minAmount || '0'} to ${filters.maxAmount || 'any'}` : 'Amount: all',
+      `Change order: ${scopeName()}`,
+    ],
+    columns: ['Number', 'Amount', 'Collected', 'Billed', 'Change order', 'Processed', 'Files'],
+    csvRows: invoiceRows.map((row) => [row.number, row.amount, row.collected, row.billed, row.changeOrder, row.processed, row.files]),
+    pdfRows: invoiceRows.map((row) => [row.number, formatCurrency(row.amount), formatCurrency(row.collected), row.billed, row.changeOrder, row.processed ? 'Yes' : 'No', String(row.files)]),
+    totals: [
+      { label: 'Billed', value: formatCurrency(filteredTotal) },
+      { label: 'Collected', value: formatCurrency(collectedTotal) },
+    ],
+    visual: {
+      kpis: [
+        { label: 'Invoices', value: String(filteredInvoices.length) },
+        { label: 'Billed', value: formatCurrency(filteredTotal) },
+        { label: 'Collected', value: formatCurrency(collectedTotal), detail: `${formatCurrency(filteredTotal - collectedTotal)} outstanding` },
+      ],
+    },
   }
 
-  // Handle filter change
-  const handleFilterChange = (field: keyof InvoiceFilters, value: string) => {
-    setFilters(prev => ({ ...prev, [field]: value }))
-  }
-
-  // Reload invoices when change order selection changes
   useEffect(() => {
-    if (activeProject?.id) {
-      loadInvoices(activeProject.id, changeOrderForHook)
-    }
+    if (activeProject?.id) loadInvoices(activeProject.id, changeOrderForHook)
   }, [selectedChangeOrder, activeProject?.id, changeOrderForHook])
 
-  // Load attachment counts when invoice IDs change
   useEffect(() => {
-    if (invoiceIds.length > 0) {
-      loadAttachmentCounts()
-    }
-    // Clear attachment counts when no invoices
-    else {
-      setAttachmentCounts({})
-    }
+    if (invoiceIds.length > 0) loadAttachmentCounts()
+    else setAttachmentCounts({})
   }, [loadAttachmentCounts, invoiceIds.length])
 
   if (!canRead) {
-    return (
-             <div className="space-y-6">
-         {/* Project/Change Order Selector */}
-         <ProjectChangeOrderSelector 
-           selectedChangeOrderId={changeOrderForSelector}
-           onChangeOrderChange={handleChangeOrderChange}
-           showChangeOrderSelector={true}
-         />
-
-         <div className="bg-white p-6 rounded-lg shadow-md text-center">
-          <p className="text-gray-500">You don&apos;t have permission to view invoices.</p>
-        </div>
-      </div>
-    )
+    return <EmptyState title="No access" body="You don't have permission to view invoices." />
   }
 
   if (!activeProject) {
-    return (
-             <div className="space-y-6">
-         {/* Project/Change Order Selector - still show even with no project */}
-         <ProjectChangeOrderSelector 
-           selectedChangeOrderId={changeOrderForSelector}
-           onChangeOrderChange={handleChangeOrderChange}
-           showChangeOrderSelector={true}
-         />
-
-         <div className="bg-white p-6 rounded-lg shadow-md text-center">
-          <FileText className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No Project Selected</h3>
-          <p className="text-gray-500">Please select a project to manage invoices.</p>
-        </div>
-      </div>
-    )
+    return <EmptyState title="Choose a project" body="Pick a project in the top bar to see its invoices." />
   }
 
   return (
-    <div className="space-y-6">
-             {/* Project/Change Order Selector */}
-       <ProjectChangeOrderSelector 
-         selectedChangeOrderId={changeOrderForSelector}
-         onChangeOrderChange={handleChangeOrderChange}
-         showChangeOrderSelector={true}
-       />
+    <div className="space-y-4">
+      <PageHeader
+        title="Invoices"
+        description={`${activeProject.jobNumber} · ${scopeName()}`}
+        action={
+          <>
+            <Button type="button" variant="outline" onClick={() => setShowFilters((open) => !open)}>Filters</Button>
+            <ExportMenu spec={filteredInvoices.length > 0 ? exportSpec : null} />
+            {canWrite ? <Button type="button" onClick={() => { setEditingInvoice(null); setIsDuplicateMode(false); setShowForm(true) }}><Plus className="h-4 w-4" /> Add invoice</Button> : null}
+          </>
+        }
+      />
 
-      {/* Header */}
-      <div className="bg-white overflow-hidden shadow rounded-lg">
-        <div className="p-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <FileText className="h-8 w-8 text-purple-500 mr-3" />
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">Customer Invoices</h1>
-                <p className="text-gray-600">Manage billing and invoicing</p>
-              </div>
-            </div>
-          </div>
+      <p className="text-sm text-muted-foreground">
+        {filteredInvoices.length} invoice{filteredInvoices.length === 1 ? '' : 's'} · <span className="tabular font-medium text-foreground">{formatCurrency(filteredTotal)}</span> billed · <span className="tabular font-medium text-foreground">{formatCurrency(collectedTotal)}</span> collected. The change order in the top bar filters this list.
+      </p>
+
+      {showFilters ? (
+        <div className="grid gap-3 rounded-lg border border-border bg-card p-4 sm:grid-cols-2 lg:grid-cols-5">
+          <Input type="date" aria-label="Start date" value={filters.startDate} onChange={(event) => setFilters((prev) => ({ ...prev, startDate: event.target.value }))} />
+          <Input type="date" aria-label="End date" value={filters.endDate} onChange={(event) => setFilters((prev) => ({ ...prev, endDate: event.target.value }))} />
+          <Input placeholder="Invoice number" aria-label="Invoice number" value={filters.invoiceNumber} onChange={(event) => setFilters((prev) => ({ ...prev, invoiceNumber: event.target.value }))} />
+          <Input inputMode="decimal" placeholder="Min amount" aria-label="Minimum amount" value={filters.minAmount} onChange={(event) => setFilters((prev) => ({ ...prev, minAmount: event.target.value }))} />
+          <Input inputMode="decimal" placeholder="Max amount" aria-label="Maximum amount" value={filters.maxAmount} onChange={(event) => setFilters((prev) => ({ ...prev, maxAmount: event.target.value }))} />
+          <Button type="button" variant="ghost" onClick={() => setFilters({ startDate: '', endDate: '', invoiceNumber: '', minAmount: '', maxAmount: '' })}>Clear filters</Button>
         </div>
-      </div>
+      ) : null}
 
-      {/* Form */}
-      {showForm && canWrite && (
+      {loading ? <Skeleton className="h-40" /> : error ? (
+        <EmptyState title="Could not load invoices" body={error} />
+      ) : filteredInvoices.length === 0 ? (
+        <EmptyState
+          title={invoices.length === 0 ? 'No invoices yet' : 'No invoices match'}
+          body={invoices.length === 0 ? 'Add the first invoice for this project.' : 'Clear a filter to see more invoices.'}
+          action={canWrite && invoices.length === 0 ? <Button type="button" onClick={() => setShowForm(true)}>Add invoice</Button> : null}
+        />
+      ) : (
+        <div className="overflow-hidden rounded-lg border border-border bg-card">
+          <table className="responsive-cards w-full text-sm">
+            <thead className="border-b border-border text-left text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 font-medium">Number</th>
+                <th className="px-3 py-2 text-right font-medium">Amount</th>
+                <th className="px-3 py-2 text-right font-medium">Collected</th>
+                <th className="px-3 py-2 font-medium">Billed</th>
+                <th className="px-3 py-2 font-medium">Change order</th>
+                <th className="px-3 py-2 font-medium">Files</th>
+                {canWrite ? <th className="px-3 py-2" /> : null}
+              </tr>
+            </thead>
+            <tbody>
+              {filteredInvoices.map((invoice) => {
+                const related = invoice.change_order_id ? changeOrders.find((order) => order.id === invoice.change_order_id) : null
+                return (
+                  <tr key={invoice.id} className="border-b border-border last:border-0">
+                    <td className="px-3 py-2 font-medium" data-label="Number">
+                      {invoice.invoice_number}
+                      {invoice.in_system ? <Badge tone="success">Processed</Badge> : null}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular" data-label="Amount">{formatCurrency(invoice.amount)}</td>
+                    <td className="px-3 py-2 text-right tabular" data-label="Collected">{formatCurrency(invoice.amount_collected || 0)}</td>
+                    <td className="px-3 py-2" data-label="Billed">{formatLocalDateForDisplay(invoice.date_billed)}</td>
+                    <td className="px-3 py-2" data-label="Change order">
+                      {invoice.change_order_id ? (related ? related.name : 'Deleted change order') : 'Base contract'}
+                    </td>
+                    <td className="px-3 py-2 tabular" data-label="Files">{attachmentCounts[invoice.id] || '—'}</td>
+                    {canWrite ? (
+                      <td className="px-3 py-2 text-right" data-label="Actions">
+                        <Button variant="ghost" size="icon" type="button" aria-label={`Edit ${invoice.invoice_number}`} onClick={() => { setEditingInvoice(invoice); setIsDuplicateMode(false); setShowForm(true) }}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" type="button" aria-label={`Duplicate ${invoice.invoice_number}`} onClick={() => { setEditingInvoice(invoice); setIsDuplicateMode(true); setShowForm(true) }}><Copy className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" type="button" aria-label={`Delete ${invoice.invoice_number}`} onClick={() => handleDelete(invoice.id)}><Trash2 className="h-4 w-4" /></Button>
+                      </td>
+                    ) : null}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {canWrite ? (
         <InvoiceForm
+          open={showForm}
           onSave={handleSave}
-          onCancel={() => {
-            setShowForm(false)
-            setEditingInvoice(null)
-            setIsDuplicateMode(false)
-          }}
+          onCancel={closeForm}
           editItem={editingInvoice}
           loading={loading}
           duplicateMode={isDuplicateMode}
         />
-      )}
-
-      {/* Action Bar + Filters + Invoice List combined */}
-      <div className="bg-white rounded-lg shadow-md overflow-hidden">
-        {/* Action Bar */}
-        <div className="p-4 border-b border-gray-200">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <div className="flex items-center gap-4">
-              {filteredInvoices.length > 0 && (
-                <button
-                  onClick={exportData}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  Export
-                </button>
-              )}
-              
-              {canWrite && (
-                <button
-                  onClick={() => {
-                    setEditingInvoice(null)
-                    setIsDuplicateMode(false)
-                    setShowForm(true)
-                  }}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Invoice
-                </button>
-              )}
-              
-              <button
-                onClick={() => setShowFilters(!showFilters)}
-                className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-              >
-                <Filter className="h-4 w-4 mr-2" />
-                Filters
-              </button>
-            </div>
-
-            {/* Summary */}
-            <div className="text-right">
-              <div className="flex items-center text-sm text-gray-500">
-                <DollarSign className="h-4 w-4 mr-1" />
-                Total Billed: 
-                <span className="ml-1 font-semibold text-green-600">
-                  ${filteredTotal.toLocaleString()}
-                </span>
-              </div>
-              <p className="text-xs text-gray-400">
-                {filteredInvoices.length} invoice{filteredInvoices.length !== 1 ? 's' : ''}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Filters */}
-        {showFilters && (
-          <div className="bg-gray-50 p-4 border-b border-gray-200">
-            <h4 className="text-sm font-medium text-gray-900 mb-3">Filter Invoices</h4>
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Start Date</label>
-                <input
-                  type="date"
-                  value={filters.startDate}
-                  onChange={(e) => handleFilterChange('startDate', e.target.value)}
-                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">End Date</label>
-                <input
-                  type="date"
-                  value={filters.endDate}
-                  onChange={(e) => handleFilterChange('endDate', e.target.value)}
-                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Invoice Number</label>
-                <input
-                  type="text"
-                  value={filters.invoiceNumber}
-                  onChange={(e) => handleFilterChange('invoiceNumber', e.target.value)}
-                  placeholder="Search..."
-                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Min Amount</label>
-                <input
-                  type="number"
-                  value={filters.minAmount}
-                  onChange={(e) => handleFilterChange('minAmount', e.target.value)}
-                  placeholder="0"
-                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Max Amount</label>
-                <input
-                  type="number"
-                  value={filters.maxAmount}
-                  onChange={(e) => handleFilterChange('maxAmount', e.target.value)}
-                  placeholder="1000000"
-                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-            </div>
-            <div className="mt-3">
-              <button
-                onClick={clearFilters}
-                className="text-sm text-blue-600 hover:text-blue-800"
-              >
-                Clear all filters
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Invoice List */}
-        {loading ? (
-          <div className="p-8 text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading invoices...</p>
-          </div>
-        ) : error ? (
-          <div className="p-8 text-center text-red-600">
-            <p>Error loading invoices: {error}</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Invoice Number
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Amount
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Date Billed
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Change Order
-                  </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <Paperclip className="w-4 h-4 mx-auto" />
-                  </th>
-                  {canWrite && (
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Actions
-                    </th>
-                  )}
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredInvoices.map((invoice) => {
-                  const relatedChangeOrder = invoice.change_order_id 
-                    ? changeOrders.find(co => co.id === invoice.change_order_id)
-                    : null
-
-                  return (
-                    <tr key={invoice.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {invoice.invoice_number}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        <span className="font-semibold text-green-600">
-                          ${invoice.amount.toLocaleString()}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {formatLocalDateForDisplay(invoice.date_billed)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {invoice.change_order_id ? (
-                          relatedChangeOrder ? (
-                            relatedChangeOrder.name
-                          ) : (
-                            <span className="text-red-500">Deleted Change Order</span>
-                          )
-                        ) : (
-                          'Base Contract'
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        {attachmentCounts[invoice.id] > 0 && (
-                          <div className="flex items-center justify-center">
-                            <Paperclip className="w-4 h-4 text-blue-600" />
-                            <span className="ml-1 text-xs text-gray-600">{attachmentCounts[invoice.id]}</span>
-                          </div>
-                        )}
-                      </td>
-                      {canWrite && (
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                          <div className="flex space-x-2">
-                            <button
-                              onClick={() => handleEdit(invoice)}
-                              className="text-blue-600 hover:text-blue-900"
-                              title="Edit invoice"
-                            >
-                              <Edit className="h-4 w-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDuplicate(invoice)}
-                              className="text-green-600 hover:text-green-900"
-                              title="Duplicate invoice"
-                            >
-                              <Copy className="h-4 w-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDelete(invoice.id)}
-                              className="text-red-600 hover:text-red-900"
-                              title="Delete invoice"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Empty State */}
-        {!loading && !error && filteredInvoices.length === 0 && (
-          <div className="text-center py-12">
-            <FileText className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              {invoices.length === 0 ? 'No invoices found' : 'No invoices match the current filters'}
-            </h3>
-            <p className="text-gray-500 mb-4">
-              {invoices.length === 0 
-                ? 'Get started by creating your first invoice.'
-                : 'Try adjusting your filters to see more results.'
-              }
-            </p>
-            {canWrite && invoices.length === 0 && (
-              <button
-                onClick={() => {
-                  setEditingInvoice(null)
-                  setShowForm(true)
-                }}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Create First Invoice
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+      ) : null}
     </div>
   )
 }

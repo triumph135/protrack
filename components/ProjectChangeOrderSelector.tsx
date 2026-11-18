@@ -64,7 +64,8 @@ export default function ProjectChangeOrderSelector({
     const userPermission = user.permissions[area as keyof typeof user.permissions]
     if (!userPermission || userPermission === 'none') return false
     
-    if (level === 'read') return ['read', 'write'].includes(userPermission)
+    if (typeof userPermission !== 'string') return false
+    if (level === 'read') return userPermission === 'read' || userPermission === 'write'
     if (level === 'write') return userPermission === 'write'
     
     return false
@@ -108,11 +109,11 @@ export default function ProjectChangeOrderSelector({
 
   if (projectsLoading) {
     return (
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
+      <div className="bg-card border-b border-border px-6 py-4">
         <div className="flex items-center space-x-4">
           <div className="animate-pulse flex space-x-4 w-full">
-            <div className="h-10 bg-gray-200 rounded w-64"></div>
-            {showChangeOrderSelector && <div className="h-10 bg-gray-200 rounded w-48"></div>}
+            <div className="h-10 bg-muted rounded w-64"></div>
+            {showChangeOrderSelector && <div className="h-10 bg-muted rounded w-48"></div>}
           </div>
         </div>
       </div>
@@ -121,9 +122,9 @@ export default function ProjectChangeOrderSelector({
 
   if (!activeProject) {
     return (
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
+      <div className="bg-card border-b border-border px-6 py-4">
         <div className="flex items-center space-x-4">
-          <div className="flex items-center text-gray-500">
+          <div className="flex items-center text-muted-foreground">
             <Building className="w-5 h-5 mr-2" />
             <span>No active project selected</span>
           </div>
@@ -133,19 +134,19 @@ export default function ProjectChangeOrderSelector({
   }
 
   return (
-    <div className="bg-white border-b border-gray-200 px-6 py-4">
+    <div className="bg-card border-b border-border px-6 py-4">
       <div className="flex items-center space-x-6">
         {/* Project Selector */}
         <div className="flex items-center space-x-3">
-          <Building className="w-5 h-5 text-gray-400" />
+          <Building className="w-5 h-5 text-muted-foreground" />
           <div className="flex items-center space-x-2">
-            <span className="text-sm font-medium text-gray-700">Project:</span>
+            <span className="text-sm font-medium text-foreground">Project:</span>
             {visibleProjects.length > 1 ? (
               <div className="relative">
                 <select
                   value={activeProject.id}
                   onChange={(e) => handleProjectChange(e.target.value)}
-                  className="appearance-none bg-white border border-gray-300 rounded-md px-3 py-2 pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  className="appearance-none bg-card border border-input rounded-md px-3 py-2 pr-8 focus:outline-none focus:ring-2 focus:ring-ring focus:border-ring text-sm"
                   disabled={!hasPermission('projects', 'read')}
                 >
                   {visibleProjects.map(project => (
@@ -155,10 +156,10 @@ export default function ProjectChangeOrderSelector({
                     </option>
                   ))}
                 </select>
-                <ChevronDown className="absolute right-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                <ChevronDown className="absolute right-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
               </div>
             ) : (
-              <span className="text-sm text-gray-900 font-medium">
+              <span className="text-sm text-foreground font-medium">
                 {activeProject.jobNumber} - {activeProject.jobName}
               </span>
             )}
@@ -168,14 +169,14 @@ export default function ProjectChangeOrderSelector({
         {/* Change Order Selector */}
         {showChangeOrderSelector && hasPermission('projects', 'read') && (
           <div className="flex items-center space-x-3">
-            <FileText className="w-5 h-5 text-gray-400" />
+            <FileText className="w-5 h-5 text-muted-foreground" />
             <div className="flex items-center space-x-2">
-              <span className="text-sm font-medium text-gray-700">
+              <span className="text-sm font-medium text-foreground">
                 {disableChangeOrderSelector ? 'View:' : 'Change Order:'}
               </span>
               <div className="relative">
                 {disableChangeOrderSelector ? (
-                  <span className="text-sm text-gray-900 font-medium bg-gray-100 px-3 py-2 rounded-md">
+                  <span className="text-sm text-foreground font-medium bg-muted px-3 py-2 rounded-md">
                     All Project Data
                   </span>
                 ) : (
@@ -185,7 +186,7 @@ export default function ProjectChangeOrderSelector({
                              currentChangeOrderId === 'base' ? 'base' : 
                              changeOrders.some(co => co.id === currentChangeOrderId) ? currentChangeOrderId : 'all'}
                       onChange={(e) => handleChangeOrderChange(e.target.value)}
-                      className="appearance-none bg-white border border-gray-300 rounded-md px-3 py-2 pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                      className="appearance-none bg-card border border-input rounded-md px-3 py-2 pr-8 focus:outline-none focus:ring-2 focus:ring-ring focus:border-ring text-sm"
                       disabled={changeOrdersLoading || disableChangeOrderSelector}
                     >
                       <option value="all">All Change Orders</option>
@@ -196,7 +197,7 @@ export default function ProjectChangeOrderSelector({
                         </option>
                       ))}
                     </select>
-                    <ChevronDown className="absolute right-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                    <ChevronDown className="absolute right-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                   </>
                 )}
               </div>
@@ -206,10 +207,10 @@ export default function ProjectChangeOrderSelector({
 
         {/* Current Selection Summary */}
         <div className="flex-1 text-right">
-          <div className="text-sm text-gray-600">
-            <span className="font-medium text-gray-900">{activeProject.customer}</span>
+          <div className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">{activeProject.customer}</span>
             {showChangeOrderSelector && !disableChangeOrderSelector && currentChangeOrderId && (
-              <span className="ml-2 text-gray-500">
+              <span className="ml-2 text-muted-foreground">
                 • {getChangeOrderDisplayName(currentChangeOrderId)}
               </span>
             )}

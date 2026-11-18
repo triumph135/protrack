@@ -1,14 +1,25 @@
 'use client'
 
-import { useState } from 'react'
-import { Plus, Edit, Trash2, Building, Users, DollarSign, Calendar, Search, Eye, FileText, ChevronDown, ChevronRight, Download } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
 import { useProjects } from '@/contexts/ProjectContext'
 import { useChangeOrders } from '@/hooks/useChangeOrders'
 import { createClient } from '@/lib/supabase'
 import ProjectModal from '@/components/ProjectModal'
-import type { Project, ChangeOrder } from '@/types/app.types'
+import { confirmAction } from '@/components/ui/confirm-dialog'
+import { toast } from 'sonner'
+import type { ChangeOrder, Project } from '@/types/app.types'
+import { userCan } from '@/lib/permissions'
+import { formatCurrency } from '@/lib/format'
+import { ExportMenu, type ExportSpec } from '@/components/export/ExportMenu'
+import { Button } from '@/components/ui/button'
+import { Field, Input } from '@/components/ui/input'
+import { Badge, EmptyState, PageHeader, Skeleton } from '@/components/ui/feedback'
+import { Sheet } from '@/components/ui/sheet'
+
+const emptyChangeOrder = { name: '', description: '', additional_contract_value: 0 }
 
 export default function ProjectsPage() {
   const { user } = useAuth()
@@ -19,628 +30,343 @@ export default function ProjectsPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
+  const [orders, setOrders] = useState<ChangeOrder[]>([])
   const supabase = createClient()
-  
-  // Change Order Management State
-  const [showChangeOrderForm, setShowChangeOrderForm] = useState<string | null>(null)
-  const [editingChangeOrder, setEditingChangeOrder] = useState<ChangeOrder | null>(null)
-  const [changeOrderForm, setChangeOrderForm] = useState<{
-    name: string
-    description: string
-    additional_contract_value: number
-  }>({
-    name: '',
-    description: '',
-    additional_contract_value: 0
-  })
+  const canWrite = userCan(user, 'projects', 'write')
 
-  const hasPermission = (area: string, level: 'read' | 'write' = 'read') => {
-    if (!user) return false
-    if (user.role === 'master') return true
-    
-    const userPermission = user.permissions[area as keyof typeof user.permissions]
-    if (!userPermission || userPermission === 'none') return false
-    
-    if (level === 'read') return ['read', 'write'].includes(userPermission)
-    if (level === 'write') return userPermission === 'write'
-    
-    return false
-  }
-
-  const filteredProjects = projects.filter(project => {
-    const matchesSearch = 
-      project.jobNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      project.jobName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      project.customer.toLowerCase().includes(searchTerm.toLowerCase())
-    
+  const filteredProjects = projects.filter((project) => {
+    const haystack = `${project.jobNumber} ${project.jobName} ${project.customer}`.toLowerCase()
+    const matchesSearch = haystack.includes(searchTerm.toLowerCase())
     const matchesStatus = statusFilter === 'all' || project.status === statusFilter
-    
     return matchesSearch && matchesStatus
   })
 
-  const handleCreateProject = () => {
-    setEditingProject(null)
-    setShowModal(true)
-  }
-
-  const handleEditProject = (project: Project) => {
-    setEditingProject(project)
-    setShowModal(true)
-  }
-
   const handleDeleteProject = async (project: Project) => {
-    if (!window.confirm(`Are you sure you want to delete "${project.jobName}"? This will also delete all associated data.`)) {
-      return
-    }
-
+    const confirmed = await confirmAction({
+      title: `Delete ${project.jobName}?`,
+      description: 'This also deletes the costs, invoices, and change orders on the project.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!confirmed) return
     try {
       await deleteProject(project.id)
+      toast.success('Project deleted')
     } catch (error) {
       console.error('Error deleting project:', error)
-      alert('Error deleting project. Please try again.')
+      toast.error('Error deleting project. Please try again.')
     }
   }
 
-  const toggleProjectExpansion = (projectId: string) => {
-    const newExpanded = new Set(expandedProjects)
-    if (newExpanded.has(projectId)) {
-      newExpanded.delete(projectId)
-    } else {
-      newExpanded.add(projectId)
-    }
-    setExpandedProjects(newExpanded)
-  }
-
-  const handleAddChangeOrder = (projectId: string) => {
-    setEditingChangeOrder(null)
-    setChangeOrderForm({
-      name: '',
-      description: '',
-      additional_contract_value: 0
+  useEffect(() => {
+    if (!tenant?.id) return
+    let cancelled = false
+    supabase.from('change_orders').select('*').eq('tenant_id', tenant.id).order('created_at', { ascending: false }).then(({ data }) => {
+      if (!cancelled) setOrders(data || [])
     })
-    setShowChangeOrderForm(projectId)
-  }
-
-  const handleEditChangeOrder = (changeOrder: ChangeOrder) => {
-    setEditingChangeOrder(changeOrder)
-    setChangeOrderForm({
-      name: changeOrder.name,
-      description: changeOrder.description || '',
-      additional_contract_value: changeOrder.additional_contract_value || 0
-    })
-    setShowChangeOrderForm(changeOrder.project_id)
-  }
-
-  const formatCurrency = (amount: number | undefined) => {
-    if (!amount) return '$0.00'
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(amount)
-  }
-
-
-
-  // Export projects data
-  const exportProjectsData = async () => {
-    if (filteredProjects.length === 0) {
-      alert('No projects to export')
-      return
+    return () => {
+      cancelled = true
     }
+    // createClient is stable enough for this refresh; expandedProjects.size refetches after a row is opened.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant?.id, expandedProjects.size])
 
-    // Fetch change orders data directly for export
-    let changeOrdersData: ChangeOrder[] = []
-    if (tenant?.id) {
-      try {
-        const { data, error } = await supabase
-          .from('change_orders')
-          .select('*')
-          .eq('tenant_id', tenant.id)
-          .order('created_at', { ascending: false })
-
-        if (error) throw error
-        changeOrdersData = data || []
-      } catch (error) {
-        console.error('Error loading change orders for export:', error)
-        changeOrdersData = []
+  const exportSpec = useMemo<ExportSpec>(() => {
+    const csvRows: Array<Array<string | number>> = []
+    const pdfRows: string[][] = []
+    let contractTotal = 0
+    for (const project of filteredProjects) {
+      const projectOrders = orders.filter((order) => order.project_id === project.id)
+      const contract = (project.totalContractValue || 0) + projectOrders.reduce((sum, order) => sum + Number(order.additional_contract_value || 0), 0)
+      contractTotal += contract
+      const status = project.status || 'Active'
+      csvRows.push([project.jobNumber, project.jobName, project.customer, status, contract, '', '', ''])
+      pdfRows.push([project.jobNumber, project.jobName, project.customer, status, formatCurrency(contract), '', '', ''])
+      if (!expandedProjects.has(project.id)) continue
+      for (const order of projectOrders) {
+        csvRows.push([project.jobNumber, project.jobName, project.customer, '', '', order.name, Number(order.additional_contract_value || 0), order.description || ''])
+        pdfRows.push([project.jobNumber, '', '', '', '', order.name, formatCurrency(order.additional_contract_value || 0), order.description || ''])
       }
     }
-
-    // Helper functions for change order calculations using the fetched data
-    const getChangeOrderCount = (projectId: string) => {
-      return changeOrdersData.filter(co => co.project_id === projectId).length
+    return {
+      filename: 'projects',
+      title: 'Projects',
+      company: tenant?.name || 'Company',
+      filters: [
+        searchTerm.trim() ? `Search: ${searchTerm.trim()}` : 'Search: none',
+        statusFilter === 'all' ? 'Status: all' : `Status: ${statusFilter}`,
+        'Change orders are included only for expanded jobs',
+      ],
+      columns: ['Job number', 'Job name', 'Customer', 'Status', 'Contract', 'Change order', 'Change order amount', 'Description'],
+      csvRows,
+      pdfRows,
+      totals: [{ label: 'Contract', value: formatCurrency(contractTotal) }],
     }
-
-    const getChangeOrderTotal = (projectId: string) => {
-      return changeOrdersData
-        .filter(co => co.project_id === projectId)
-        .reduce((total, co) => total + (co.additional_contract_value || 0), 0)
-    }
-
-    const projectsData = [
-      ['Project Summary', ''],
-      ['Export Date', new Date().toLocaleDateString()],
-      ['Total Projects', filteredProjects.length.toString()],
-      [''],
-      ['Projects', ''],
-      ['Job Number', 'Job Name', 'Customer', 'Status', 'Base Contract Value', 'Change Orders Count', 'Total CO Value', 'Total Contract Value'],
-      ...filteredProjects.map(project => {
-        const coCount = getChangeOrderCount(project.id)
-        const coTotal = getChangeOrderTotal(project.id)
-        const baseContract = project.totalContractValue || 0
-        const totalContract = baseContract + coTotal
-        
-        return [
-          project.jobNumber,
-          project.jobName,
-          project.customer,
-          project.status || 'Active',
-          baseContract.toLocaleString(),
-          coCount.toString(),
-          coTotal.toLocaleString(),
-          totalContract.toLocaleString()
-        ]
-      })
-    ]
-
-    const csvContent = projectsData.map(row => 
-      row.map(cell => `"${cell.toString().replace(/"/g, '""')}"`).join(',')
-    ).join('\n')
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `projects_summary_${new Date().toLocaleDateString().replace(/\//g, '-')}.csv`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(url)
-  }
-
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <div className="bg-white p-6 rounded-lg shadow-md text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading projects...</p>
-        </div>
-      </div>
-    )
-  }
+  }, [filteredProjects, orders, expandedProjects, tenant?.name, searchTerm, statusFilter])
 
   return (
-    <div className="space-y-6">
-      {/* Page Header */}
-      <div className="bg-white p-4 sm:p-6 rounded-lg shadow-md">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Projects</h1>
-            <p className="text-gray-600 mt-1">Manage your construction projects and change orders</p>
-          </div>
-          <div className="flex items-center gap-3">
-            {filteredProjects.length > 0 && (
-              <button
-                onClick={exportProjectsData}
-                className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 flex items-center gap-2 transition-colors w-fit"
-              >
-                <Download className="w-4 h-4" />
-                Export
-              </button>
-            )}
-            {hasPermission('projects', 'write') && (
-              <button
-                onClick={handleCreateProject}
-                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center gap-2 transition-colors w-fit"
-              >
-                <Plus className="w-4 h-4" />
-                Add Project
-              </button>
-            )}
-          </div>
-        </div>
+    <div className="space-y-4">
+      <PageHeader
+        title="Projects"
+        description="Jobs, contract values, and change orders."
+        action={
+          <>
+            <ExportMenu spec={filteredProjects.length > 0 ? exportSpec : null} />
+            {canWrite ? <Button type="button" onClick={() => { setEditingProject(null); setShowModal(true) }}><Plus className="h-4 w-4" /> Add project</Button> : null}
+          </>
+        }
+      />
+
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <Input className="flex-1" placeholder="Search job, name, or customer" aria-label="Search projects" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} />
+        <select className="h-11 rounded-lg border border-input bg-card px-3 text-sm sm:w-48" aria-label="Status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+          <option value="all">All statuses</option>
+          <option value="Active">Active</option>
+          <option value="Inactive">Inactive</option>
+          <option value="Completed">Completed</option>
+          <option value="On Hold">On Hold</option>
+        </select>
       </div>
 
-      {/* Filters */}
-      <div className="bg-white p-4 sm:p-6 rounded-lg shadow-md">
-        <div className="flex flex-col sm:flex-row gap-4">
-          {/* Search */}
-          <div className="flex-1">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <input
-                type="text"
-                placeholder="Search projects..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-          </div>
-
-          {/* Status Filter */}
-          <div className="sm:w-48">
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="all">All Status</option>
-              <option value="Active">Active</option>
-              <option value="Inactive">Inactive</option>
-              <option value="Completed">Completed</option>
-              <option value="On Hold">On Hold</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* Projects List */}
-      <div className="space-y-4">
-        {filteredProjects.length === 0 ? (
-          <div className="bg-white p-8 rounded-lg shadow-md text-center">
-            <Building className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              {projects.length === 0 ? 'No Projects' : 'No Projects Found'}
-            </h3>
-            <p className="text-gray-600 mb-4">
-              {projects.length === 0 
-                ? 'Get started by creating your first project.'
-                : 'Try adjusting your search or filter criteria.'
-              }
-            </p>
-            {hasPermission('projects', 'write') && projects.length === 0 && (
-              <button
-                onClick={handleCreateProject}
-                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center gap-2 mx-auto transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                Create First Project
-              </button>
-            )}
-          </div>
-        ) : (
-          filteredProjects.map((project) => (
-            <ProjectCard
-              key={project.id}
-              project={project}
-              isActive={activeProject?.id === project.id}
-              isExpanded={expandedProjects.has(project.id)}
-              onToggleExpansion={() => toggleProjectExpansion(project.id)}
-              onSetActive={() => setActiveProject(project)}
-              onEdit={() => handleEditProject(project)}
-              onDelete={() => handleDeleteProject(project)}
-              onAddChangeOrder={() => handleAddChangeOrder(project.id)}
-              onEditChangeOrder={handleEditChangeOrder}
-              showChangeOrderForm={showChangeOrderForm === project.id}
-              changeOrderForm={changeOrderForm}
-              setChangeOrderForm={setChangeOrderForm}
-              editingChangeOrder={editingChangeOrder}
-              onCloseChangeOrderForm={() => {
-                setShowChangeOrderForm(null)
-                setEditingChangeOrder(null)
-              }}
-              hasPermission={hasPermission}
-              formatCurrency={formatCurrency}
-            />
-          ))
-        )}
-      </div>
-
-      {/* Project Modal */}
-      {showModal && (
-        <ProjectModal
-          project={editingProject}
-          onSave={async (projectData) => {
-            try {
-              if (editingProject) {
-                await updateProject(editingProject.id, projectData)
-              } else {
-                await createProject(projectData)
-              }
-              setShowModal(false)
-              setEditingProject(null)
-            } catch (error) {
-              console.error('Error saving project:', error)
-              throw error
-            }
-          }}
-          onCancel={() => {
-            setShowModal(false)
-            setEditingProject(null)
-          }}
+      {loading ? <Skeleton className="h-40" /> : filteredProjects.length === 0 ? (
+        <EmptyState
+          title={projects.length === 0 ? 'No projects yet' : 'No projects match'}
+          body={projects.length === 0 ? 'Add the first job to start tracking costs and invoices.' : 'Try a different search or status.'}
+          action={canWrite && projects.length === 0 ? <Button type="button" onClick={() => setShowModal(true)}>Add project</Button> : null}
         />
+      ) : (
+        <div className="overflow-hidden rounded-lg border border-border bg-card">
+          <table className="responsive-cards w-full text-sm">
+            <thead className="border-b border-border text-left text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 font-medium">Job</th>
+                <th className="px-3 py-2 font-medium">Customer</th>
+                <th className="px-3 py-2 text-right font-medium">Contract</th>
+                <th className="px-3 py-2 font-medium">Status</th>
+                <th className="px-3 py-2" />
+              </tr>
+            </thead>
+            <tbody>
+              {filteredProjects.map((project) => (
+                <ProjectRows
+                  key={project.id}
+                  project={project}
+                  isActive={activeProject?.id === project.id}
+                  isExpanded={expandedProjects.has(project.id)}
+                  canWrite={canWrite}
+                  onToggle={() => {
+                    setExpandedProjects((current) => {
+                      const next = new Set(current)
+                      if (next.has(project.id)) next.delete(project.id)
+                      else next.add(project.id)
+                      return next
+                    })
+                  }}
+                  onSetActive={() => setActiveProject(project)}
+                  onEdit={() => { setEditingProject(project); setShowModal(true) }}
+                  onDelete={() => handleDeleteProject(project)}
+                  onExpand={() => setExpandedProjects((current) => new Set(current).add(project.id))}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
+
+      <ProjectModal
+        open={showModal}
+        project={editingProject}
+        onSave={async (projectData) => {
+          if (editingProject) await updateProject(editingProject.id, projectData)
+          else await createProject(projectData)
+          setShowModal(false)
+          setEditingProject(null)
+          toast.success(editingProject ? 'Project updated' : 'Project created')
+        }}
+        onCancel={() => { setShowModal(false); setEditingProject(null) }}
+      />
+
     </div>
   )
 }
 
-// Separate ProjectCard component for better organization
-interface ProjectCardProps {
-  project: Project
-  isActive: boolean
-  isExpanded: boolean
-  onToggleExpansion: () => void
-  onSetActive: () => void
-  onEdit: () => void
-  onDelete: () => void
-  onAddChangeOrder: () => void
-  onEditChangeOrder: (changeOrder: ChangeOrder) => void
-  showChangeOrderForm: boolean
-  changeOrderForm: {
-    name: string
-    description: string
-    additional_contract_value: number
-  }
-  setChangeOrderForm: (form: {
-    name: string
-    description: string
-    additional_contract_value: number
-  } | ((prev: {
-    name: string
-    description: string
-    additional_contract_value: number
-  }) => {
-    name: string
-    description: string
-    additional_contract_value: number
-  })) => void
-  editingChangeOrder: ChangeOrder | null
-  onCloseChangeOrderForm: () => void
-  hasPermission: (area: string, level?: 'read' | 'write') => boolean
-  formatCurrency: (amount: number | undefined) => string
+function statusTone(status: string | undefined): 'success' | 'neutral' | 'warning' {
+  if (status === 'Active') return 'success'
+  if (status === 'On Hold') return 'warning'
+  return 'neutral'
 }
 
-function ProjectCard({
+function ProjectRows({
   project,
   isActive,
   isExpanded,
-  onToggleExpansion,
+  canWrite,
+  onToggle,
   onSetActive,
   onEdit,
   onDelete,
-  onAddChangeOrder,
-  onEditChangeOrder,
-  showChangeOrderForm,
-  changeOrderForm,
-  setChangeOrderForm,
-  editingChangeOrder,
-  onCloseChangeOrderForm,
-  hasPermission,
-  formatCurrency
-}: ProjectCardProps) {
-  const { changeOrders, createChangeOrder, updateChangeOrder, deleteChangeOrder, loading: changeOrdersLoading } = useChangeOrders(project.id)
+  onExpand,
+}: {
+  project: Project
+  isActive: boolean
+  isExpanded: boolean
+  canWrite: boolean
+  onToggle: () => void
+  onSetActive: () => void
+  onEdit: () => void
+  onDelete: () => void
+  onExpand: () => void
+}) {
+  const { changeOrders, createChangeOrder, updateChangeOrder, deleteChangeOrder, loading } = useChangeOrders(project.id)
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const [editing, setEditing] = useState<ChangeOrder | null>(null)
+  const [form, setForm] = useState(emptyChangeOrder)
+  const [saving, setSaving] = useState(false)
+  const changeOrderTotal = changeOrders.reduce((sum, order) => sum + (order.additional_contract_value || 0), 0)
 
-  const handleSaveChangeOrder = async () => {
+  const handleDeleteChangeOrder = async (order: ChangeOrder) => {
+    const confirmed = await confirmAction({
+      title: 'Delete this change order?',
+      description: 'Costs and invoices tied to it stay on the project, without this change order.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!confirmed) return
     try {
-      if (editingChangeOrder) {
-        await updateChangeOrder(editingChangeOrder.id, changeOrderForm)
-      } else {
-        await createChangeOrder(changeOrderForm)
-      }
-      onCloseChangeOrderForm()
-    } catch (error) {
-      console.error('Error saving change order:', error)
-      alert('Error saving change order. Please try again.')
-    }
-  }
-
-  const handleDeleteChangeOrder = async (changeOrderId: string) => {
-    if (!window.confirm('Are you sure you want to delete this change order? This will affect related costs and invoices.')) {
-      return
-    }
-
-    try {
-      await deleteChangeOrder(changeOrderId)
+      await deleteChangeOrder(order.id)
+      toast.success('Change order deleted')
     } catch (error) {
       console.error('Error deleting change order:', error)
-      alert('Error deleting change order. Please try again.')
+      toast.error('Error deleting change order. Please try again.')
     }
   }
 
-  const totalChangeOrderValue = changeOrders.reduce((sum, co) => sum + (co.additional_contract_value || 0), 0)
-
   return (
-    <div className="bg-white rounded-lg shadow-md overflow-hidden">
-      {/* Project Header */}
-      <div className="p-6">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div className="flex items-start space-x-4 flex-1">
-            <button
-              onClick={onToggleExpansion}
-              className="text-gray-400 hover:text-gray-600 transition-colors mt-1"
-            >
-              {isExpanded ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
-            </button>
-            
-            <div className="flex-1 min-w-0">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-3 gap-2">
-                <h3 className="text-lg font-semibold text-gray-900 break-words">
-                  {project.jobNumber} - {project.jobName}
-                </h3>
-                {isActive && (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 w-fit">
-                    Active Project
-                  </span>
-                )}
-              </div>
-              <p className="text-gray-600 mt-1">{project.customer}</p>
-              <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-4 gap-1 sm:gap-0 mt-2 text-sm text-gray-500">
-                <span>Contract: {formatCurrency(project.totalContractValue)}</span>
-                <span>Change Orders: {formatCurrency(totalChangeOrderValue)}</span>
-                <span className="font-medium">Total: {formatCurrency((project.totalContractValue || 0) + totalChangeOrderValue)}</span>
-              </div>
+    <>
+      <tr className="border-b border-border">
+        <td className="px-3 py-2" data-label="Job">
+          <button type="button" className="inline-flex items-center gap-2 text-left font-medium" onClick={onToggle}>
+            {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            <span>{project.jobNumber}</span>
+          </button>
+          <p className="pl-6 text-muted-foreground">{project.jobName}</p>
+        </td>
+        <td className="px-3 py-2" data-label="Customer">{project.customer}</td>
+        <td className="px-3 py-2 text-right" data-label="Contract">
+          <p className="tabular">{formatCurrency((project.totalContractValue || 0) + changeOrderTotal)}</p>
+          <p className="text-xs text-muted-foreground tabular">Base {formatCurrency(project.totalContractValue)} · CO {formatCurrency(changeOrderTotal)}</p>
+        </td>
+        <td className="px-3 py-2" data-label="Status">
+          <Badge tone={statusTone(project.status)}>{project.status || 'Active'}</Badge>
+          {isActive ? <span className="ml-2"><Badge tone="success">Current</Badge></span> : null}
+        </td>
+        <td className="px-3 py-2 text-right" data-label="Actions">
+          {!isActive ? <Button type="button" variant="outline" size="sm" onClick={onSetActive}>Use</Button> : null}
+          {canWrite ? (
+            <>
+              <Button variant="ghost" size="icon" type="button" aria-label={`Edit ${project.jobNumber}`} onClick={onEdit}><Pencil className="h-4 w-4" /></Button>
+              <Button variant="ghost" size="icon" type="button" aria-label={`Delete ${project.jobNumber}`} onClick={onDelete}><Trash2 className="h-4 w-4" /></Button>
+            </>
+          ) : null}
+        </td>
+      </tr>
+      {isExpanded ? (
+        <tr className="border-b border-border bg-muted/40">
+          <td className="change-order-panel px-3 py-3" colSpan={5}>
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-sm font-medium">Change orders ({loading ? '…' : changeOrders.length})</p>
+              {canWrite ? <Button type="button" size="sm" variant="outline" onClick={() => { setEditing(null); setForm(emptyChangeOrder); setSheetOpen(true); onExpand() }}><Plus className="h-4 w-4" /> Add</Button> : null}
             </div>
-          </div>
+            {changeOrders.length === 0 && !loading ? (
+              <p className="text-sm text-muted-foreground">No change orders on this job.</p>
+            ) : (
+              <ul className="space-y-2">
+                {changeOrders.map((order) => (
+                  <li key={order.id} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2">
+                    <div>
+                      <p className="font-medium">{order.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        <span className="tabular">{formatCurrency(order.additional_contract_value || 0)}</span>
+                        {order.description ? ` · ${order.description}` : ''}
+                      </p>
+                    </div>
+                    {canWrite ? (
+                      <div>
+                        <Button variant="ghost" size="icon" type="button" aria-label={`Edit ${order.name}`} onClick={() => { setEditing(order); setForm({ name: order.name, description: order.description || '', additional_contract_value: order.additional_contract_value || 0 }); setSheetOpen(true) }}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" type="button" aria-label={`Delete ${order.name}`} onClick={() => handleDeleteChangeOrder(order)}><Trash2 className="h-4 w-4" /></Button>
+                      </div>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </td>
+        </tr>
+      ) : null}
+      <ChangeOrderSheet
+        open={sheetOpen}
+        editing={editing}
+        form={form}
+        setForm={setForm}
+        saving={saving}
+        onClose={() => setSheetOpen(false)}
+        onSave={async () => {
+          if (!form.name.trim()) {
+            toast.error('Name the change order')
+            return
+          }
+          try {
+            setSaving(true)
+            if (editing) await updateChangeOrder(editing.id, form)
+            else await createChangeOrder(form)
+            toast.success(editing ? 'Change order updated' : 'Change order added')
+            setSheetOpen(false)
+          } catch (error) {
+            console.error('Error saving change order:', error)
+            toast.error('Error saving change order. Please try again.')
+          } finally {
+            setSaving(false)
+          }
+        }}
+      />
+    </>
+  )
+}
 
-          {/* Mobile: Status and Actions - stacked vertically */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 lg:gap-2">
-            {/* Status Badge */}
-            <span className={`inline-flex px-3 py-1 text-sm font-medium rounded-full w-fit ${
-              project.status === 'Active' ? 'bg-green-100 text-green-800' :
-              project.status === 'Completed' ? 'bg-blue-100 text-blue-800' :
-              project.status === 'Inactive' ? 'bg-gray-100 text-gray-800' :
-              'bg-yellow-100 text-yellow-800'
-            }`}>
-              {project.status}
-            </span>
-
-            {/* Action Buttons */}
-            <div className="flex items-center space-x-2">
-              {!isActive && (
-                <button
-                  onClick={onSetActive}
-                  className="text-green-600 hover:text-green-900 p-2 rounded-md border border-green-200 hover:border-green-300 transition-colors"
-                  title="Set as active project"
-                >
-                  <Eye className="w-4 h-4" />
-                </button>
-              )}
-
-              {hasPermission('projects', 'write') && (
-                <>
-                  <button
-                    onClick={onEdit}
-                    className="text-blue-600 hover:text-blue-900 p-2 rounded-md border border-blue-200 hover:border-blue-300 transition-colors"
-                    title="Edit project"
-                  >
-                    <Edit className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={onDelete}
-                    className="text-red-600 hover:text-red-900 p-2 rounded-md border border-red-200 hover:border-red-300 transition-colors"
-                    title="Delete project"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
+function ChangeOrderSheet({
+  open,
+  editing,
+  form,
+  setForm,
+  saving,
+  onClose,
+  onSave,
+}: {
+  open: boolean
+  editing: ChangeOrder | null
+  form: typeof emptyChangeOrder
+  setForm: (form: typeof emptyChangeOrder) => void
+  saving: boolean
+  onClose: () => void
+  onSave: () => void
+}) {
+  return (
+    <Sheet open={open} onOpenChange={(next) => { if (!next) onClose() }} title={editing ? 'Edit change order' : 'Add change order'} description="Extra contract value is added to the job total.">
+      <div className="space-y-3">
+        <Field label="Name" htmlFor={`co-name-${editing?.id || 'new'}`}>
+          <Input id={`co-name-${editing?.id || 'new'}`} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="CO-001" />
+        </Field>
+        <Field label="Additional value" htmlFor={`co-value-${editing?.id || 'new'}`}>
+          <Input id={`co-value-${editing?.id || 'new'}`} className="tabular" inputMode="decimal" value={form.additional_contract_value} onChange={(event) => setForm({ ...form, additional_contract_value: parseFloat(event.target.value) || 0 })} />
+        </Field>
+        <Field label="Description" htmlFor={`co-description-${editing?.id || 'new'}`}>
+          <Input id={`co-description-${editing?.id || 'new'}`} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
+        </Field>
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+          <Button type="button" onClick={onSave} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
         </div>
       </div>
-
-      {/* Expanded Content - Change Orders */}
-      {isExpanded && (
-        <div className="border-t border-gray-200 bg-gray-50 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h4 className="text-md font-semibold text-gray-900 flex items-center gap-2">
-              <FileText className="w-4 h-4" />
-              Change Orders ({changeOrders.length})
-            </h4>
-            {hasPermission('projects', 'write') && (
-              <button
-                onClick={onAddChangeOrder}
-                className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 flex items-center gap-1"
-              >
-                <Plus className="w-3 h-3" />
-                Add Change Order
-              </button>
-            )}
-          </div>
-
-          {/* Change Order Form */}
-          {showChangeOrderForm && (
-            <div className="bg-white p-4 rounded-lg border mb-4">
-              <h5 className="font-medium text-gray-900 mb-3">
-                {editingChangeOrder ? 'Edit Change Order' : 'Add Change Order'}
-              </h5>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-                  <input
-                    type="text"
-                    value={changeOrderForm.name}
-                    onChange={(e) => setChangeOrderForm(prev => ({ ...prev, name: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="CO-001"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Additional Value</label>
-                  <input
-                    type="number"
-                    value={changeOrderForm.additional_contract_value}
-                    onChange={(e) => setChangeOrderForm(prev => ({ 
-                      ...prev, 
-                      additional_contract_value: parseFloat(e.target.value) || 0 
-                    }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    step="0.01"
-                    min="0"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                  <input
-                    type="text"
-                    value={changeOrderForm.description}
-                    onChange={(e) => setChangeOrderForm(prev => ({ ...prev, description: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Brief description"
-                  />
-                </div>
-              </div>
-              <div className="flex justify-end space-x-2 mt-3">
-                <button
-                  onClick={onCloseChangeOrderForm}
-                  className="px-3 py-1 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSaveChangeOrder}
-                  className="px-3 py-1 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded"
-                >
-                  Save
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Change Orders List */}
-          {changeOrdersLoading ? (
-            <div className="text-center py-4">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"></div>
-            </div>
-          ) : changeOrders.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <FileText className="mx-auto h-8 w-8 text-gray-400 mb-2" />
-              <p>No change orders for this project</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {changeOrders.map((changeOrder) => (
-                <div key={changeOrder.id} className="bg-white p-3 rounded border flex items-center justify-between">
-                  <div>
-                    <div className="font-medium text-gray-900">{changeOrder.name}</div>
-                    <div className="text-sm text-gray-600">
-                      {formatCurrency(changeOrder.additional_contract_value || 0)}
-                      {changeOrder.description && ` • ${changeOrder.description}`}
-                    </div>
-                  </div>
-                  {hasPermission('projects', 'write') && (
-                    <div className="flex space-x-1">
-                      <button
-                        onClick={() => onEditChangeOrder(changeOrder)}
-                        className="text-blue-600 hover:text-blue-900 p-1 rounded"
-                      >
-                        <Edit className="w-3 h-3" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteChangeOrder(changeOrder.id)}
-                        className="text-red-600 hover:text-red-900 p-1 rounded"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+    </Sheet>
   )
 }

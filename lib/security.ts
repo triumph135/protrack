@@ -74,6 +74,17 @@ export function isMissingRpc(error: { code?: string; message?: string } | null |
   return (error.message || '').toLowerCase().includes('could not find the function')
 }
 
+/** Postgres 42P01 / PostgREST schema-cache miss. The Phase 2 tables are not there yet. */
+export function isMissingRelation(error: { code?: string; message?: string } | null | undefined): boolean {
+  if (!error) return false
+  if (error.code === '42P01' || error.code === 'PGRST205') return true
+  const message = (error.message || '').toLowerCase()
+  return (
+    message.includes('does not exist') &&
+    (message.includes('relation') || message.includes('schema cache') || message.includes('could not find the table'))
+  )
+}
+
 /** PostgREST / Postgres error when a selected column is not in the live schema. */
 export function isMissingColumnError(error: { code?: string; message?: string } | null | undefined): boolean {
   if (!error) return false

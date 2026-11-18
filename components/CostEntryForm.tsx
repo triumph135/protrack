@@ -388,7 +388,7 @@ export default function CostEntryForm({
   // Don't render if no projects available
   if (availableProjects.length === 0) {
     return (
-      <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md">
+      <div className="bg-destructive/10 border border-destructive/30 text-destructive px-4 py-3 rounded-md">
         <p className="text-sm font-medium">No Projects Available</p>
         <p className="text-sm">Please create a project before adding costs.</p>
       </div>
@@ -396,14 +396,14 @@ export default function CostEntryForm({
   }
 
   return (
-    <div className="bg-white p-4 sm:p-6 rounded-lg shadow-md">
+    <div className="bg-card p-4 sm:p-6 rounded-lg shadow-md">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 sm:mb-6">
-        <h3 className="text-lg font-semibold text-gray-900">
+        <h3 className="text-lg font-semibold text-foreground">
           {duplicateMode ? `Duplicate ${getCategoryDisplayName()}` : editItem ? `Edit ${getCategoryDisplayName()}` : `Add ${getCategoryDisplayName()}`} Cost
         </h3>
         <button
           onClick={onCancel}
-          className="text-gray-400 hover:text-gray-600 transition-colors self-end sm:self-auto"
+          className="text-muted-foreground hover:text-muted-foreground transition-colors self-end sm:self-auto"
         >
           <X className="w-5 h-5" />
         </button>
@@ -411,14 +411,14 @@ export default function CostEntryForm({
 
       {/* Project Selector */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Project <span className="text-red-500">*</span>
+        <label className="block text-sm font-medium text-foreground mb-2">
+          Project <span className="text-destructive">*</span>
         </label>
         <select
           value={selectedProjectId}
           onChange={(e) => handleProjectChange(e.target.value)}
-          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 ${
-            errors.project_id ? 'border-red-300' : 'border-gray-300'
+          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-foreground ${
+            errors.project_id ? 'border-destructive' : 'border-input'
           }`}
           disabled={loading}
         >
@@ -430,7 +430,7 @@ export default function CostEntryForm({
           ))}
         </select>
         {errors.project_id && (
-          <p className="text-red-600 text-sm mt-1">{errors.project_id}</p>
+          <p className="text-destructive text-sm mt-1">{errors.project_id}</p>
         )}
       </div>
 
@@ -439,18 +439,18 @@ export default function CostEntryForm({
         <div className="grid grid-cols-1 gap-4">
           {getFormFields().map((field) => (
             <div key={field.name} className={field.name === 'description' ? '' : ''}>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                {field.label} {field.required && <span className="text-red-500">*</span>}
+              <label className="block text-sm font-medium text-foreground mb-1">
+                {field.label} {field.required && <span className="text-destructive">*</span>}
               </label>
               
               {field.type === 'select' && field.name === 'employee_id' ? (
                 <div className="relative">
-                  <Users className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <Users className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
                   <select
                     value={formData[field.name as keyof ProjectCost] as string || ''}
                     onChange={(e) => handleInputChange(field, e.target.value)}
-                    className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 ${
-                      errors[field.name] ? 'border-red-300' : 'border-gray-300'
+                    className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-foreground ${
+                      errors[field.name] ? 'border-destructive' : 'border-input'
                     }`}
                     disabled={employeesLoading}
                   >
@@ -461,20 +461,20 @@ export default function CostEntryForm({
                   </select>
                   {employeesLoading && (
                     <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
                     </div>
                   )}
                 </div>
               ) : field.type === 'checkbox' ? (
-                <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-lg">
+                <div className="p-4 bg-accent border-2 border-border rounded-lg">
                   <label className="flex items-center space-x-4 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={formData[field.name as keyof ProjectCost] as boolean || false}
                       onChange={(e) => handleInputChange(field, e.target.checked)}
-                      className="w-5 h-5 text-blue-600 bg-white border-2 border-gray-400 rounded focus:ring-blue-500 focus:ring-2 cursor-pointer checked:bg-blue-600 checked:border-blue-600 appearance-none relative checked:after:content-['✓'] checked:after:text-white checked:after:text-sm checked:after:font-bold checked:after:absolute checked:after:inset-0 checked:after:flex checked:after:items-center checked:after:justify-center"
+                      className="w-5 h-5 text-primary bg-card border-2 border-input rounded focus:ring-ring focus:ring-2 cursor-pointer checked:bg-primary checked:border-primary appearance-none relative checked:after:content-['✓'] checked:after:text-primary-foreground checked:after:text-sm checked:after:font-bold checked:after:absolute checked:after:inset-0 checked:after:flex checked:after:items-center checked:after:justify-center"
                     />
-                    <span className="text-sm font-medium text-gray-800 select-none">
+                    <span className="text-sm font-medium text-foreground select-none">
                       Mark as processed in system
                     </span>
                   </label>
@@ -483,21 +483,21 @@ export default function CostEntryForm({
                 <textarea
                   value={formData[field.name as keyof ProjectCost] as string || ''}
                   onChange={(e) => handleInputChange(field, e.target.value)}
-                  className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 ${
-                    errors[field.name] ? 'border-red-300' : 'border-gray-300'
+                  className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-foreground ${
+                    errors[field.name] ? 'border-destructive' : 'border-input'
                   }`}
                   rows={3}
                   placeholder={`Enter ${field.label.toLowerCase()}...`}
                 />
               ) : field.name === 'cost' ? (
                 <div className="relative">
-                  <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
                   <input
                     type={field.type}
                     value={formData[field.name as keyof ProjectCost] as string || ''}
                     onChange={(e) => handleInputChange(field, e.target.value)}
-                    className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 ${
-                      errors[field.name] ? 'border-red-300' : 'border-gray-300'
+                    className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-foreground ${
+                      errors[field.name] ? 'border-destructive' : 'border-input'
                     }`}
                     step={field.step}
                     min={field.min}
@@ -509,8 +509,8 @@ export default function CostEntryForm({
                   type={field.type}
                   value={formData[field.name as keyof ProjectCost] as string || ''}
                   onChange={(e) => handleInputChange(field, e.target.value)}
-                  className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 ${
-                    errors[field.name] ? 'border-red-300' : 'border-gray-300'
+                  className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-foreground ${
+                    errors[field.name] ? 'border-destructive' : 'border-input'
                   }`}
                   step={field.step}
                   min={field.min}
@@ -519,7 +519,7 @@ export default function CostEntryForm({
               )}
               
               {errors[field.name] && (
-                <p className="text-red-600 text-sm mt-1">{errors[field.name]}</p>
+                <p className="text-destructive text-sm mt-1">{errors[field.name]}</p>
               )}
             </div>
           ))}
@@ -527,9 +527,9 @@ export default function CostEntryForm({
 
         {/* Labor Cost Summary */}
         {category === 'labor' && formData.employee_id && (
-          <div className="bg-blue-50 p-4 rounded-lg">
-            <h4 className="font-medium text-blue-900 mb-2">Cost Breakdown</h4>
-            <div className="text-sm text-blue-800 space-y-1">
+          <div className="bg-accent p-4 rounded-lg">
+            <h4 className="font-medium text-foreground mb-2">Cost Breakdown</h4>
+            <div className="text-sm text-accent-foreground space-y-1">
               <div>ST: {formData.st_hours || 0} hrs × ${formData.st_rate || 0} = ${((formData.st_hours || 0) * (formData.st_rate || 0)).toFixed(2)}</div>
               <div>OT: {formData.ot_hours || 0} hrs × ${formData.ot_rate || 0} = ${((formData.ot_hours || 0) * (formData.ot_rate || 0)).toFixed(2)}</div>
               <div>DT: {formData.dt_hours || 0} hrs × ${formData.dt_rate || 0} = ${((formData.dt_hours || 0) * (formData.dt_rate || 0)).toFixed(2)}</div>
@@ -544,7 +544,7 @@ export default function CostEntryForm({
 
         {/* Change Order Selection */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="block text-sm font-medium text-foreground mb-2">
             Change Order
           </label>
           <select
@@ -553,7 +553,7 @@ export default function CostEntryForm({
               ...prev, 
               change_order_id: e.target.value || undefined 
             }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+            className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-foreground"
             disabled={loading}
           >
             <option value="">Base Contract</option>
@@ -562,7 +562,7 @@ export default function CostEntryForm({
             ))}
           </select>
           {changeOrders.length === 0 && (
-            <p className="mt-1 text-sm text-gray-500">
+            <p className="mt-1 text-sm text-muted-foreground">
               This project has no change orders. Entry will be assigned to Base Contract.
             </p>
           )}
@@ -571,22 +571,22 @@ export default function CostEntryForm({
         {/* Attachments Section - Only show when editing existing item (not duplicating) */}
         {editItem && !duplicateMode && (
           <div className="border-t pt-6">
-            <h4 className="text-sm font-medium text-gray-700 mb-4">File Attachments</h4>
+            <h4 className="text-sm font-medium text-foreground mb-4">File Attachments</h4>
             <FileAttachments
               entityType="cost"
               entityId={editItem.id}
               tenantId={tenant?.id || ''}
               userId={user?.id || ''}
               canEdit={true}
-              className="bg-gray-50 p-4 rounded-lg"
+              className="bg-muted p-4 rounded-lg"
             />
           </div>
         )}
 
         {(!editItem || duplicateMode) && (
           <div className="border-t pt-6">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <div className="flex items-center gap-2 text-blue-700">
+            <div className="bg-accent border border-border rounded-lg p-4">
+              <div className="flex items-center gap-2 text-primary">
                 <FileText className="w-5 h-5" />
                 <div>
                   <p className="text-sm font-medium">File Attachments</p>
@@ -599,7 +599,7 @@ export default function CostEntryForm({
 
         {/* Error Messages */}
         {Object.keys(errors).length > 0 && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md">
+          <div className="bg-destructive/10 border border-destructive/30 text-destructive px-4 py-3 rounded-md">
             <p className="text-sm font-medium">Please fix the following errors:</p>
             <ul className="text-sm mt-1 list-disc list-inside">
               {Object.values(errors).map((error, index) => (
@@ -614,7 +614,7 @@ export default function CostEntryForm({
           <button
             type="button"
             onClick={onCancel}
-            className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+            className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-foreground bg-muted hover:bg-muted rounded-md transition-colors"
           >
             Cancel
           </button>
@@ -622,7 +622,7 @@ export default function CostEntryForm({
             <button
               type="button"
               onClick={() => setShowEmployeeModal(true)}
-              className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md transition-colors flex items-center justify-center gap-2"
+              className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-primary-foreground bg-primary hover:bg-primary/90 rounded-md transition-colors flex items-center justify-center gap-2"
             >
               <Users className="w-4 h-4" />
               Create Employees First
@@ -631,7 +631,7 @@ export default function CostEntryForm({
             <button
               type="submit"
               disabled={loading}
-              className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-primary-foreground bg-primary hover:bg-primary/90 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               <Save className="w-4 h-4" />
               {loading ? 'Saving...' : 'Save Cost'}
@@ -646,7 +646,7 @@ export default function CostEntryForm({
         onClose={() => setShowEmployeeModal(false)}
         onSubmit={handleCreateEmployee}
         loading={employeeLoading}
-        projectId={activeProject?.id}
+        defaultProjectId={activeProject?.id}
       />
     </div>
   )

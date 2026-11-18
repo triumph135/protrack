@@ -71,13 +71,13 @@ export default function AuthGuard({
   if (!hasSettled && !ready) {
     return (
       <div 
-        className="min-h-screen bg-gray-100 flex items-center justify-center"
+        className="min-h-screen bg-muted flex items-center justify-center"
         role="status" 
         aria-label="Loading application"
       >
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading ProTrack...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+          <p className="mt-4 text-muted-foreground">Loading ProTrack...</p>
         </div>
       </div>
     )

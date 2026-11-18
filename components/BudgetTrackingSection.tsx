@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { DollarSign, TrendingUp, TrendingDown, AlertTriangle, Edit3, Save, X } from 'lucide-react'
+import { toast } from 'sonner'
 
 interface BudgetTrackingSectionProps {
   category: string
@@ -45,7 +46,7 @@ export default function BudgetTrackingSection({
 
     // Validate the input
     if (isNaN(newAmount) || newAmount < 0) {
-      alert('Please enter a valid budget amount (0 or greater)')
+      toast.error('Please enter a valid budget amount (0 or greater)')
       return
     }
 
@@ -55,7 +56,7 @@ export default function BudgetTrackingSection({
       setEditing(false)
     } catch (error) {
       console.error('Error updating budget:', error)
-      alert('Failed to update budget. Please try again.')
+      toast.error('Failed to update budget. Please try again.')
       // Reset to original value on error
       setEditValue(budgetAmount.toString())
     } finally {
@@ -80,9 +81,9 @@ export default function BudgetTrackingSection({
   }
 
   const getStatusIcon = () => {
-    if (isOverBudget) return <TrendingDown className="w-5 h-5 text-red-500" />
+    if (isOverBudget) return <TrendingDown className="w-5 h-5 text-destructive" />
     if (percentUsed >= 80) return <AlertTriangle className="w-5 h-5 text-yellow-500" />
-    return <TrendingUp className="w-5 h-5 text-green-500" />
+    return <TrendingUp className="w-5 h-5 text-success" />
   }
 
   const formatCategoryName = (category: string) => {
@@ -101,11 +102,11 @@ export default function BudgetTrackingSection({
   if (loading) {
     return (
       <div className="animate-pulse">
-        <div className="h-4 bg-gray-200 rounded w-1/3 mb-2"></div>
-        <div className="h-8 bg-gray-200 rounded mb-4"></div>
+        <div className="h-4 bg-muted rounded w-1/3 mb-2"></div>
+        <div className="h-8 bg-muted rounded mb-4"></div>
         <div className="grid grid-cols-3 gap-4">
           {[...Array(3)].map((_, i) => (
-            <div key={i} className="h-16 bg-gray-200 rounded"></div>
+            <div key={i} className="h-16 bg-muted rounded"></div>
           ))}
         </div>
       </div>
@@ -115,19 +116,19 @@ export default function BudgetTrackingSection({
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <h3 className="text-lg font-semibold text-gray-900">
+        <h3 className="text-lg font-semibold text-foreground">
           {formatCategoryName(category)} Budget vs Actual
         </h3>
         {getStatusIcon()}
       </div>
 
       {/* Progress Bar */}
-      <div className="w-full bg-gray-200 rounded-full h-3">
+      <div className="w-full bg-muted rounded-full h-3">
         <div
           className={`h-3 rounded-full transition-all duration-300 ${
-            getStatusColor() === 'red' ? 'bg-red-500' :
+            getStatusColor() === 'red' ? 'bg-destructive/100' :
             getStatusColor() === 'yellow' ? 'bg-yellow-500' :
-            'bg-green-500'
+            'bg-success/100'
           }`}
           style={{ width: `${Math.min(percentUsed, 100)}%` }}
         ></div>
@@ -136,15 +137,15 @@ export default function BudgetTrackingSection({
       {/* Budget Details */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Budget Amount - ONLY for current category */}
-        <div className="bg-blue-50 p-4 rounded-lg">
+        <div className="bg-accent p-4 rounded-lg">
           <div className="flex justify-between items-start mb-2">
-            <div className="text-blue-600 text-sm font-medium">
+            <div className="text-primary text-sm font-medium">
               {formatCategoryName(category)} Budget
             </div>
             {canEdit && !editing && (
               <button
                 onClick={handleEdit}
-                className="text-blue-600 hover:text-blue-800 transition-colors"
+                className="text-primary hover:text-accent-foreground transition-colors"
                 title="Edit budget"
               >
                 <Edit3 className="w-4 h-4" />
@@ -157,7 +158,7 @@ export default function BudgetTrackingSection({
                 type="number"
                 value={editValue}
                 onChange={(e) => setEditValue(e.target.value)}
-                className="w-full px-2 py-1 text-lg font-bold border border-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-2 py-1 text-lg font-bold border border-input rounded focus:outline-none focus:ring-2 focus:ring-ring"
                 placeholder="Enter budget amount"
                 step="0.01"
                 min="0"
@@ -175,7 +176,7 @@ export default function BudgetTrackingSection({
                 <button
                   onClick={handleSave}
                   disabled={saving}
-                  className="flex-1 px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="flex-1 px-2 py-1 bg-primary text-primary-foreground text-xs rounded hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   title="Save budget"
                 >
                   {saving ? (
@@ -187,7 +188,7 @@ export default function BudgetTrackingSection({
                 <button
                   onClick={handleCancel}
                   disabled={saving}
-                  className="flex-1 px-2 py-1 bg-gray-500 text-white text-xs rounded hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="flex-1 px-2 py-1 bg-secondary text-foreground text-xs rounded hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   title="Cancel"
                 >
                   <X className="w-3 h-3 mx-auto" />
@@ -195,39 +196,39 @@ export default function BudgetTrackingSection({
               </div>
             </div>
           ) : (
-            <div className="text-blue-900 text-lg font-bold">
+            <div className="text-foreground text-lg font-bold">
               ${budgetAmount.toLocaleString()}
             </div>
           )}
         </div>
 
         {/* Actual Amount */}
-        <div className="bg-gray-50 p-4 rounded-lg">
-          <div className="text-gray-600 text-sm font-medium mb-2">Actual Spent</div>
-          <div className="text-gray-900 text-lg font-bold">
+        <div className="bg-muted p-4 rounded-lg">
+          <div className="text-muted-foreground text-sm font-medium mb-2">Actual Spent</div>
+          <div className="text-foreground text-lg font-bold">
             ${actualAmount.toLocaleString()}
           </div>
-          <div className="text-gray-500 text-xs mt-1">
+          <div className="text-muted-foreground text-xs mt-1">
             {budgetAmount > 0 ? `${percentUsed.toFixed(1)}% of budget` : 'No budget set'}
           </div>
         </div>
 
         {/* Variance */}
         <div className={`p-4 rounded-lg ${
-          isOverBudget ? 'bg-red-50' : 'bg-green-50'
+          isOverBudget ? 'bg-destructive/10' : 'bg-success/10'
         }`}>
           <div className={`text-sm font-medium mb-2 ${
-            isOverBudget ? 'text-red-600' : 'text-green-600'
+            isOverBudget ? 'text-destructive' : 'text-success'
           }`}>
             Variance
           </div>
           <div className={`text-lg font-bold ${
-            isOverBudget ? 'text-red-900' : 'text-green-900'
+            isOverBudget ? 'text-destructive' : 'text-success'
           }`}>
             {isOverBudget ? '-' : ''}${Math.abs(variance).toLocaleString()}
           </div>
           <div className={`text-xs mt-1 ${
-            isOverBudget ? 'text-red-500' : 'text-green-500'
+            isOverBudget ? 'text-destructive' : 'text-success'
           }`}>
             {isOverBudget ? 'Over Budget' : budgetAmount > 0 ? 'Under Budget' : 'No Budget Set'}
           </div>
@@ -236,10 +237,10 @@ export default function BudgetTrackingSection({
 
       {/* Warning for over budget */}
       {isOverBudget && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+        <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-4">
           <div className="flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0" />
-            <div className="text-red-800">
+            <AlertTriangle className="w-5 h-5 text-destructive flex-shrink-0" />
+            <div className="text-destructive">
               <strong>Budget Alert:</strong> This category is ${Math.abs(variance).toLocaleString()} over budget ({Math.abs(percentUsed - 100).toFixed(1)}% over)
             </div>
           </div>

@@ -5,6 +5,7 @@ import { DollarSign, Save, Edit3, Calculator, TrendingUp, TrendingDown } from 'l
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
 import { createClient } from '@/lib/supabase'
+import { toast } from 'sonner'
 
 interface BudgetFormData {
   material_budget: number
@@ -127,7 +128,7 @@ export default function BudgetManagement({ projectId, onBudgetUpdate }: BudgetMa
       
     } catch (error) {
       console.error('Error saving budget:', error)
-      alert('Failed to save budget. Please try again.')
+      toast.error('Failed to save budget. Please try again.')
     } finally {
       setSaving(false)
     }
@@ -157,12 +158,12 @@ export default function BudgetManagement({ projectId, onBudgetUpdate }: BudgetMa
 
   if (loading) {
     return (
-      <div className="bg-white p-6 rounded-lg shadow-md">
+      <div className="bg-card p-6 rounded-lg shadow-md">
         <div className="animate-pulse">
-          <div className="h-6 bg-gray-200 rounded w-1/4 mb-4"></div>
+          <div className="h-6 bg-muted rounded w-1/4 mb-4"></div>
           <div className="space-y-3">
             {[...Array(7)].map((_, i) => (
-              <div key={i} className="h-12 bg-gray-200 rounded"></div>
+              <div key={i} className="h-12 bg-muted rounded"></div>
             ))}
           </div>
         </div>
@@ -171,17 +172,17 @@ export default function BudgetManagement({ projectId, onBudgetUpdate }: BudgetMa
   }
 
   return (
-    <div className="bg-white p-6 rounded-lg shadow-md">
+    <div className="bg-card p-6 rounded-lg shadow-md">
       <div className="flex justify-between items-center mb-6">
         <div className="flex items-center gap-2">
-          <Calculator className="w-6 h-6 text-blue-600" />
-          <h2 className="text-xl font-bold text-gray-900">Project Budget</h2>
+          <Calculator className="w-6 h-6 text-primary" />
+          <h2 className="text-xl font-bold text-foreground">Project Budget</h2>
         </div>
         <div className="flex gap-2">
           {!editing ? (
             <button
               onClick={() => setEditing(true)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2"
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 flex items-center gap-2"
             >
               <Edit3 className="w-4 h-4" />
               Edit Budget
@@ -193,7 +194,7 @@ export default function BudgetManagement({ projectId, onBudgetUpdate }: BudgetMa
                   setEditing(false)
                   loadBudget() // Reset to original values
                 }}
-                className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600"
+                className="px-4 py-2 bg-secondary text-foreground rounded-md hover:bg-muted"
                 disabled={saving}
               >
                 Cancel
@@ -201,7 +202,7 @@ export default function BudgetManagement({ projectId, onBudgetUpdate }: BudgetMa
               <button
                 onClick={saveBudget}
                 disabled={saving}
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center gap-2 disabled:opacity-50"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 flex items-center gap-2 disabled:opacity-50"
               >
                 <Save className="w-4 h-4" />
                 {saving ? 'Saving...' : 'Save Budget'}
@@ -213,8 +214,8 @@ export default function BudgetManagement({ projectId, onBudgetUpdate }: BudgetMa
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {Object.entries(categoryNames).map(([key, label]) => (
-          <div key={key} className="border border-gray-200 rounded-lg p-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+          <div key={key} className="border border-border rounded-lg p-4">
+            <label className="block text-sm font-medium text-foreground mb-2">
               {label}
             </label>
             {editing ? (
@@ -222,15 +223,15 @@ export default function BudgetManagement({ projectId, onBudgetUpdate }: BudgetMa
                 type="number"
                 value={budget[key as keyof BudgetFormData]}
                 onChange={(e) => handleInputChange(key as keyof BudgetFormData, e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                 placeholder="0.00"
                 step="0.01"
                 min="0"
               />
             ) : (
               <div className="flex items-center gap-2">
-                <DollarSign className="w-4 h-4 text-gray-500" />
-                <span className="text-lg font-semibold text-gray-900">
+                <DollarSign className="w-4 h-4 text-muted-foreground" />
+                <span className="text-lg font-semibold text-foreground">
                   {budget[key as keyof BudgetFormData].toLocaleString()}
                 </span>
               </div>
@@ -239,12 +240,12 @@ export default function BudgetManagement({ projectId, onBudgetUpdate }: BudgetMa
         ))}
       </div>
 
-      <div className="mt-6 pt-6 border-t border-gray-200">
+      <div className="mt-6 pt-6 border-t border-border">
         <div className="flex justify-between items-center">
-          <span className="text-lg font-semibold text-gray-700">Total Budget:</span>
+          <span className="text-lg font-semibold text-foreground">Total Budget:</span>
           <div className="flex items-center gap-2">
-            <DollarSign className="w-5 h-5 text-green-600" />
-            <span className="text-2xl font-bold text-green-600">
+            <DollarSign className="w-5 h-5 text-success" />
+            <span className="text-2xl font-bold text-success">
               {getTotalBudget().toLocaleString()}
             </span>
           </div>

@@ -20,6 +20,8 @@ Required environment variables:
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Browser and server |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server only. Invitation emails and invited-user setup. |
 | `NEXT_PUBLIC_SITE_URL` | Server. Used in invitation links. No trailing slash. |
+| `RESEND_API_KEY` | Server only. Optional. Invites still work as copyable links when it is empty. |
+| `EMAIL_FROM` | Server. Sender for invite email, after the domain is verified. |
 
 Set the same values in the Vercel project. Do not commit `.env.local`.
 
@@ -36,8 +38,24 @@ npm run build
 
 The app filters queries by `tenant_id`, but that is not enough on its own. Apply these in the Supabase SQL editor, in order, on a staging project first:
 
-1. `supabase/migrations/20260313000000_enable_rls.sql`
-2. `supabase/migrations/20260313000001_storage_rls.sql`
+1. `supabase/migrations/20261113201043_enable_rls.sql` (applied in production as version `20261113201043`)
+2. `supabase/migrations/20261117235751_storage_rls.sql` (applied in production as version `20261117235751`, without enabling RLS on `storage.objects`)
+3. `supabase/migrations/20261118000000_cost_categories.sql`
+4. `supabase/migrations/20261118000100_team_invites.sql`
+5. `supabase/migrations/20261118000200_company_settings.sql`
+6. `supabase/migrations/20261118000300_baseline_access.sql` — denies API access to the cost baseline table
+7. `supabase/migrations/20261118000400_invoice_collected.sql` — adds `customer_invoices.amount_collected` (default 0)
+
+Apply the category, team, and settings files before deploying the Phase 2 app. They keep the previous app working. The baseline file can follow; it only locks an internal table. Rollbacks live in `supabase/rollback/` and run in reverse order.
+
+Local Postgres, with no connection to production:
+
+```bash
+bash scripts/db-local-reset.sh
+bash scripts/db-local-test.sh
+```
+
+`scripts/db-local-reset.sh` loads `supabase/snapshots/prod-schema-2026-11-13.sql`, then the migrations above, then `supabase/seed/phase2_synthetic.sql`. The test script applies every migration twice, rolls the Phase 2 files back, and reapplies them.
 
 The second script expects a private Storage bucket named `attachments`. Confirm the bucket is not public.
 

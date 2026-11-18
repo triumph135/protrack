@@ -5,7 +5,8 @@ import { createClient } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
 import type { ProjectCost } from '@/types/app.types'
-import { calculateTotalCost, type CostCategory } from '@/lib/costs'
+import { calculateTotalCost, type CostCategory, type CostKind } from '@/lib/costs'
+import { isFallbackCategoryId } from '@/lib/categories'
 
 export type { CostCategory }
 
@@ -16,6 +17,7 @@ interface CostFilters {
 }
 
 export function useCosts(projectId?: string, changeOrderId?: string | null) {
+  const [entries, setEntries] = useState<ProjectCost[]>([])
   const [costs, setCosts] = useState<Record<CostCategory, ProjectCost[]>>({
     material: [],
     labor: [],
@@ -142,6 +144,7 @@ export function useCosts(projectId?: string, changeOrderId?: string | null) {
         }
       })
 
+      setEntries((data || []) as ProjectCost[])
       setCosts(groupedCosts)
     } catch (err: any) {
       console.error('Error loading all costs:', err)
@@ -157,6 +160,7 @@ export function useCosts(projectId?: string, changeOrderId?: string | null) {
       loadAllCosts(projectId, changeOrderId)
     } else {
       // Clear costs if no project
+      setEntries([])
       setCosts({
         material: [],
         labor: [],
@@ -170,17 +174,25 @@ export function useCosts(projectId?: string, changeOrderId?: string | null) {
   }, [projectId, changeOrderId, tenant?.id, loadAllCosts]) // Include loadAllCosts since it's now useCallback
 
   // Create a new cost entry
-  const createCost = async (category: CostCategory, costData: Omit<ProjectCost, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>) => {
+  const createCost = async (
+    category: CostCategory,
+    costData: Omit<ProjectCost, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>,
+    options?: { categoryId?: string | null; kind?: CostKind }
+  ) => {
     if (!tenant?.id || !user?.id) throw new Error('Missing tenant or user')
 
     try {
       setLoading(true)
-
+      const kind = options?.kind || category
+      const categoryId = options?.categoryId
+      const useCategoryId = categoryId && !isFallbackCategoryId(categoryId)
+      const { category: legacyCategory, ...rest } = costData
       const newCost = {
-        ...costData,
+        ...rest,
         tenant_id: tenant.id,
-        category,
-        cost: calculateTotalCost(category, costData)
+        cost: calculateTotalCost(kind, costData),
+        custom_fields: costData.custom_fields || {},
+        ...(useCategoryId ? { category_id: categoryId } : { category: legacyCategory || category }),
       }
 
       console.log('Creating cost:', newCost)
@@ -193,9 +205,10 @@ export function useCosts(projectId?: string, changeOrderId?: string | null) {
 
       if (error) throw error
 
+      setEntries(prev => [data as ProjectCost, ...prev])
       setCosts(prev => ({
         ...prev,
-        [category]: [data, ...prev[category]]
+        [((data as ProjectCost).category || category) as CostCategory]: [data, ...(prev[((data as ProjectCost).category || category) as CostCategory] || [])]
       }))
 
       return data
@@ -209,7 +222,12 @@ export function useCosts(projectId?: string, changeOrderId?: string | null) {
   }
 
   // Update a cost entry
-  const updateCost = async (category: CostCategory, costId: string, updates: Partial<ProjectCost>) => {
+  const updateCost = async (
+    category: CostCategory,
+    costId: string,
+    updates: Partial<ProjectCost>,
+    options?: { kind?: CostKind }
+  ) => {
     if (!tenant?.id) throw new Error('Missing tenant')
 
     try {
@@ -217,9 +235,10 @@ export function useCosts(projectId?: string, changeOrderId?: string | null) {
 
       const updatedData = {
         ...updates,
-        cost: calculateTotalCost(category, updates),
+        cost: calculateTotalCost(options?.kind || category, updates),
         change_order_id: updates.change_order_id === undefined ? null : updates.change_order_id
       }
+      delete updatedData.category
 
       console.log('Updating cost:', costId, updatedData)
 
@@ -233,6 +252,7 @@ export function useCosts(projectId?: string, changeOrderId?: string | null) {
 
       if (error) throw error
 
+      setEntries(prev => prev.map(cost => (cost.id === costId ? (data as ProjectCost) : cost)))
       setCosts(prev => ({
         ...prev,
         [category]: prev[category].map(cost => cost.id === costId ? data : cost)
@@ -265,6 +285,7 @@ export function useCosts(projectId?: string, changeOrderId?: string | null) {
 
       if (error) throw error
 
+      setEntries(prev => prev.filter(cost => cost.id !== costId))
       setCosts(prev => ({
         ...prev,
         [category]: prev[category].filter(cost => cost.id !== costId)
@@ -331,6 +352,7 @@ export function useCosts(projectId?: string, changeOrderId?: string | null) {
 
   return {
     costs,
+    entries,
     loading,
     error,
     createCost,

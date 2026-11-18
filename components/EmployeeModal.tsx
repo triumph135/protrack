@@ -1,8 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { X, User, DollarSign } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import type { Employee } from '@/types/app.types'
+import { useProjects } from '@/contexts/ProjectContext'
+import { employeeProjectIdForSave, employeeScopeLabel } from '@/lib/employee-scope'
+import { Button } from '@/components/ui/button'
+import { Field, Input } from '@/components/ui/input'
+import { Sheet } from '@/components/ui/sheet'
 
 interface EmployeeModalProps {
   isOpen: boolean
@@ -10,7 +14,7 @@ interface EmployeeModalProps {
   onSubmit: (employeeData: Omit<Employee, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>) => Promise<void>
   employee?: Employee | null
   loading?: boolean
-  projectId?: string
+  defaultProjectId?: string
 }
 
 export default function EmployeeModal({
@@ -19,8 +23,9 @@ export default function EmployeeModal({
   onSubmit,
   employee,
   loading = false,
-  projectId
+  defaultProjectId,
 }: EmployeeModalProps) {
+  const { projects } = useProjects()
   const [formData, setFormData] = useState({
     name: '',
     standard_rate: '',
@@ -28,300 +33,121 @@ export default function EmployeeModal({
     dt_rate: '',
     mob: '',
     mob_rate: '',
-    project_id: projectId || ''
+    project_id: '',
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  // Reset form when modal opens/closes or employee changes
   useEffect(() => {
-    if (isOpen) {
-      if (employee) {
-        setFormData({
-          name: employee.name || '',
-          standard_rate: employee.standard_rate?.toString() || '',
-          ot_rate: employee.ot_rate?.toString() || '',
-          dt_rate: employee.dt_rate?.toString() || '',
-          mob: employee.mob?.toString() || '',
-          mob_rate: employee.mob_rate?.toString() || '',
-          project_id: employee.project_id || ''
-        })
-      } else {
-        setFormData({
-          name: '',
-          standard_rate: '',
-          ot_rate: '',
-          dt_rate: '',
-          mob: '',
-          mob_rate: '',
-          project_id: projectId || ''
-        })
-      }
-      setErrors({})
+    if (!isOpen) return
+    if (employee) {
+      setFormData({
+        name: employee.name || '',
+        standard_rate: employee.standard_rate?.toString() || '',
+        ot_rate: employee.ot_rate?.toString() || '',
+        dt_rate: employee.dt_rate?.toString() || '',
+        mob: employee.mob?.toString() || '',
+        mob_rate: employee.mob_rate?.toString() || '',
+        project_id: employee.project_id || '',
+      })
+    } else {
+      setFormData({
+        name: '',
+        standard_rate: '',
+        ot_rate: '',
+        dt_rate: '',
+        mob: '',
+        mob_rate: '',
+        project_id: defaultProjectId || '',
+      })
     }
-  }, [isOpen, employee, projectId])
+    setErrors({})
+  }, [isOpen, employee, defaultProjectId])
+
+  const setField = (name: string, value: string) => {
+    setFormData((prev) => ({ ...prev, [name]: value }))
+    if (errors[name]) setErrors((prev) => ({ ...prev, [name]: '' }))
+  }
 
   const validateForm = () => {
-    const newErrors: Record<string, string> = {}
-
-    if (!formData.name.trim()) {
-      newErrors.name = 'Employee name is required'
+    const next: Record<string, string> = {}
+    if (!formData.name.trim()) next.name = 'Employee name is required'
+    const rate = (value: string, label: string) => {
+      if (!value || Number.isNaN(Number(value)) || Number(value) < 0) next[label] = 'Enter a rate of zero or more'
     }
-
-    if (!formData.standard_rate || isNaN(Number(formData.standard_rate)) || Number(formData.standard_rate) < 0) {
-      newErrors.standard_rate = 'Valid standard rate is required'
-    }
-
-    if (!formData.ot_rate || isNaN(Number(formData.ot_rate)) || Number(formData.ot_rate) < 0) {
-      newErrors.ot_rate = 'Valid overtime rate is required'
-    }
-
-    if (!formData.dt_rate || isNaN(Number(formData.dt_rate)) || Number(formData.dt_rate) < 0) {
-      newErrors.dt_rate = 'Valid double time rate is required'
-    }
-
-    if (formData.mob && (isNaN(Number(formData.mob)) || Number(formData.mob) < 0)) {
-      newErrors.mob = 'MOB value must be a valid number'
-    }
-
-    if (formData.mob_rate && (isNaN(Number(formData.mob_rate)) || Number(formData.mob_rate) < 0)) {
-      newErrors.mob_rate = 'MOB rate must be a valid number'
-    }
-
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
+    rate(formData.standard_rate, 'standard_rate')
+    rate(formData.ot_rate, 'ot_rate')
+    rate(formData.dt_rate, 'dt_rate')
+    if (formData.mob && (Number.isNaN(Number(formData.mob)) || Number(formData.mob) < 0)) next.mob = 'MOB value must be a number'
+    if (formData.mob_rate && (Number.isNaN(Number(formData.mob_rate)) || Number(formData.mob_rate) < 0)) next.mob_rate = 'MOB rate must be a number'
+    setErrors(next)
+    return Object.keys(next).length === 0
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
     if (!validateForm()) return
-
-    try {
-      await onSubmit({
-        name: formData.name.trim(),
-        standard_rate: Number(formData.standard_rate),
-        ot_rate: Number(formData.ot_rate),
-        dt_rate: Number(formData.dt_rate),
-        mob: formData.mob ? Number(formData.mob) : undefined,
-        mob_rate: formData.mob_rate ? Number(formData.mob_rate) : undefined,
-        project_id: formData.project_id || undefined
-      })
-      onClose()
-    } catch (error) {
-      console.error('Error submitting employee:', error)
-    }
+    await onSubmit({
+      name: formData.name.trim(),
+      standard_rate: Number(formData.standard_rate),
+      ot_rate: Number(formData.ot_rate),
+      dt_rate: Number(formData.dt_rate),
+      mob: formData.mob ? Number(formData.mob) : undefined,
+      mob_rate: formData.mob_rate ? Number(formData.mob_rate) : undefined,
+      project_id: employeeProjectIdForSave(formData.project_id),
+    })
   }
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target
-    setFormData(prev => ({ ...prev, [name]: value }))
-    
-    // Clear error when user starts typing
-    if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: '' }))
-    }
-  }
-
-  if (!isOpen) return null
+  const options = [...projects].sort((a, b) => a.jobNumber.localeCompare(b.jobNumber) || a.jobName.localeCompare(b.jobName))
+  const selectedIsListed = !formData.project_id || options.some((project) => project.id === formData.project_id)
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-6 border-b">
-          <h2 className="text-xl font-semibold text-gray-900">
-            {employee ? 'Edit Employee' : 'Add New Employee'}
-          </h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
-          >
-            <X className="w-6 h-6" />
-          </button>
+    <Sheet
+      open={isOpen}
+      onOpenChange={(open) => { if (!open) onClose() }}
+      title={employee ? 'Edit employee' : 'Add employee'}
+      description="Straight time, overtime, and double time rates fill in on labor entries."
+    >
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <Field label="Name" htmlFor="employee-name" error={errors.name}>
+          <Input id="employee-name" value={formData.name} onChange={(event) => setField('name', event.target.value)} />
+        </Field>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Field label="ST rate" htmlFor="st-rate" error={errors.standard_rate}>
+            <Input id="st-rate" className="tabular" inputMode="decimal" value={formData.standard_rate} onChange={(event) => setField('standard_rate', event.target.value)} />
+          </Field>
+          <Field label="OT rate" htmlFor="ot-rate" error={errors.ot_rate}>
+            <Input id="ot-rate" className="tabular" inputMode="decimal" value={formData.ot_rate} onChange={(event) => setField('ot_rate', event.target.value)} />
+          </Field>
+          <Field label="DT rate" htmlFor="dt-rate" error={errors.dt_rate}>
+            <Input id="dt-rate" className="tabular" inputMode="decimal" value={formData.dt_rate} onChange={(event) => setField('dt_rate', event.target.value)} />
+          </Field>
         </div>
-
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Employee Name *
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                name="name"
-                value={formData.name}
-                onChange={handleChange}
-                className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 ${
-                  errors.name ? 'border-red-300 focus:ring-red-500' : 'border-gray-300'
-                }`}
-                placeholder="Enter employee name"
-              />
-              <User className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
-            </div>
-            {errors.name && (
-              <p className="mt-1 text-sm text-red-600">{errors.name}</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Mob quantity" htmlFor="mob" error={errors.mob} hint="Optional">
+            <Input id="mob" className="tabular" inputMode="decimal" value={formData.mob} onChange={(event) => setField('mob', event.target.value)} />
+          </Field>
+          <Field label="Mob rate" htmlFor="mob-rate" error={errors.mob_rate}>
+            <Input id="mob-rate" className="tabular" inputMode="decimal" value={formData.mob_rate} onChange={(event) => setField('mob_rate', event.target.value)} />
+          </Field>
+        </div>
+        <Field label="Scope" htmlFor="assignment" hint="Global people can be used on any project. A project limits them to that job.">
+          <select id="assignment" className="h-11 w-full rounded-lg border border-input bg-card px-3 text-sm" value={formData.project_id} onChange={(event) => setField('project_id', event.target.value)}>
+            <option value="">Global</option>
+            {selectedIsListed ? null : (
+              <option value={formData.project_id}>{employeeScopeLabel(formData.project_id, projects)}</option>
             )}
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Standard Rate ($/hr) *
-              </label>
-              <div className="relative">
-                <input
-                  type="number"
-                  name="standard_rate"
-                  value={formData.standard_rate}
-                  onChange={handleChange}
-                  className={`w-full pl-8 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 ${
-                    errors.standard_rate ? 'border-red-300 focus:ring-red-500' : 'border-gray-300'
-                  }`}
-                  placeholder="0.00"
-                  step="0.01"
-                  min="0"
-                />
-                <DollarSign className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
-              </div>
-              {errors.standard_rate && (
-                <p className="mt-1 text-sm text-red-600">{errors.standard_rate}</p>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Overtime Rate ($/hr) *
-              </label>
-              <div className="relative">
-                <input
-                  type="number"
-                  name="ot_rate"
-                  value={formData.ot_rate}
-                  onChange={handleChange}
-                  className={`w-full pl-8 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 ${
-                    errors.ot_rate ? 'border-red-300 focus:ring-red-500' : 'border-gray-300'
-                  }`}
-                  placeholder="0.00"
-                  step="0.01"
-                  min="0"
-                />
-                <DollarSign className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
-              </div>
-              {errors.ot_rate && (
-                <p className="mt-1 text-sm text-red-600">{errors.ot_rate}</p>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Double Time Rate ($/hr) *
-              </label>
-              <div className="relative">
-                <input
-                  type="number"
-                  name="dt_rate"
-                  value={formData.dt_rate}
-                  onChange={handleChange}
-                  className={`w-full pl-8 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 ${
-                    errors.dt_rate ? 'border-red-300 focus:ring-red-500' : 'border-gray-300'
-                  }`}
-                  placeholder="0.00"
-                  step="0.01"
-                  min="0"
-                />
-                <DollarSign className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
-              </div>
-              {errors.dt_rate && (
-                <p className="mt-1 text-sm text-red-600">{errors.dt_rate}</p>
-              )}
-            </div>
-          </div>
-
-          <div className="border-t pt-6">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">MOB Information (Optional)</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  MOB Value
-                </label>
-                <input
-                  type="number"
-                  name="mob"
-                  value={formData.mob}
-                  onChange={handleChange}
-                  className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 ${
-                    errors.mob ? 'border-red-300 focus:ring-red-500' : 'border-gray-300'
-                  }`}
-                  placeholder="0"
-                  step="1"
-                  min="0"
-                />
-                {errors.mob && (
-                  <p className="mt-1 text-sm text-red-600">{errors.mob}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  MOB Rate ($/unit)
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    name="mob_rate"
-                    value={formData.mob_rate}
-                    onChange={handleChange}
-                    className={`w-full pl-8 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 ${
-                      errors.mob_rate ? 'border-red-300 focus:ring-red-500' : 'border-gray-300'
-                    }`}
-                    placeholder="0.00"
-                    step="0.01"
-                    min="0"
-                  />
-                  <DollarSign className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
-                </div>
-                {errors.mob_rate && (
-                  <p className="mt-1 text-sm text-red-600">{errors.mob_rate}</p>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Assignment
-            </label>
-            <select
-              name="project_id"
-              value={formData.project_id}
-              onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-            >
-              <option value="">Global Employee (All Projects)</option>
-              {projectId && <option value={projectId}>Current Project Only</option>}
-            </select>
-            <p className="mt-1 text-sm text-gray-500">
-              Global employees can be used on any project. Project-specific employees are only available for the current project.
-            </p>
-          </div>
-
-          <div className="flex justify-end space-x-3 pt-6 border-t">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? 'Saving...' : employee ? 'Update Employee' : 'Add Employee'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+            {options.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.jobNumber} — {project.jobName}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+          <Button type="submit" disabled={loading}>{loading ? 'Saving…' : employee ? 'Save employee' : 'Add employee'}</Button>
+        </div>
+      </form>
+    </Sheet>
   )
-} 
+}

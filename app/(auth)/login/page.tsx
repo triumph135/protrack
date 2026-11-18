@@ -10,11 +10,11 @@ import { safeInternalPath } from '@/lib/security'
 // Loading fallback component
 function LoadingFallback() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center px-4">
+    <div className="min-h-screen bg-background from-background to-background flex items-center justify-center px-4">
       <div className="max-w-md w-full space-y-8">
         <div className="text-center">
-          <h2 className="text-2xl font-semibold text-gray-700">Loading...</h2>
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mt-4"></div>
+          <h2 className="text-2xl font-semibold text-foreground">Loading...</h2>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mt-4"></div>
         </div>
       </div>
     </div>
@@ -106,37 +106,37 @@ function LoginContent() {
   return (
     <>
         <div className="text-center">
-          <h2 className="text-2xl font-semibold text-gray-700">
+          <h2 className="text-2xl font-semibold text-foreground">
             {signedIn ? 'Redirecting...' : 'Welcome back'}
           </h2>
-          <p className="mt-2 text-gray-600">
+          <p className="mt-2 text-muted-foreground">
             {signedIn ? 'You are already signed in' : 'Sign in to your account'}
           </p>
         </div>
 
-        <div className="mt-8 bg-white py-8 px-6 shadow-xl rounded-lg">
+        <div className="mt-8 bg-card py-8 px-6 shadow-xl rounded-lg">
           {notice && !signedIn && (
-            <div className="mb-4 bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-md text-sm" role="status">
+            <div className="mb-4 bg-success/10 border border-success/30 text-success px-4 py-3 rounded-md text-sm" role="status">
               {notice}
             </div>
           )}
           {linkError && !signedIn && (
-            <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm" role="alert">
+            <div className="mb-4 bg-destructive/10 border border-destructive/30 text-destructive px-4 py-3 rounded-md text-sm" role="alert">
               {linkError}
             </div>
           )}
           {signedIn ? (
             // Redirect Screen Content
             <div className="text-center">
-              <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
-              <p className="text-gray-600 mb-4">Redirecting to your dashboard...</p>
+              <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary" />
+              <p className="text-muted-foreground mb-4">Redirecting to your dashboard...</p>
               <div className="mt-4">
-                <p className="text-sm text-gray-500 mb-3">
+                <p className="text-sm text-muted-foreground mb-3">
                   If redirect doesn&apos;t work, click here:
                 </p>
                 <button
                   onClick={handleManualRedirect}
-                  className="inline-block px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium"
+                  className="inline-block px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 font-medium"
                 >
                   Go to Dashboard
                 </button>
@@ -146,13 +146,13 @@ function LoginContent() {
             // Login Form Content
             <form onSubmit={handleSubmit} className="space-y-6">
               {error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md" role="alert">
+                <div className="bg-destructive/10 border border-destructive/30 text-destructive px-4 py-3 rounded-md" role="alert">
                   {error}
                 </div>
               )}
 
               <div>
-                <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+                <label htmlFor="email" className="block text-sm font-medium text-foreground mb-2">
                   Email Address
                 </label>
                 <div className="relative">
@@ -165,17 +165,17 @@ function LoginContent() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     disabled={showLoading}
-                    className="appearance-none relative block w-full px-3 py-3 pl-10 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
+                    className="appearance-none relative block w-full px-3 py-3 pl-10 border border-input placeholder:text-muted-foreground text-foreground rounded-md focus:outline-none focus:ring-ring focus:border-ring disabled:opacity-50"
                     placeholder="Enter your email"
                   />
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Mail className="w-5 h-5 text-gray-400" />
+                    <Mail className="w-5 h-5 text-muted-foreground" />
                   </div>
                 </div>
               </div>
 
               <div>
-                <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
+                <label htmlFor="password" className="block text-sm font-medium text-foreground mb-2">
                   Password
                 </label>
                 <div className="relative">
@@ -188,11 +188,11 @@ function LoginContent() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     disabled={showLoading}
-                    className="appearance-none relative block w-full px-3 py-3 pl-10 pr-10 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
+                    className="appearance-none relative block w-full px-3 py-3 pl-10 pr-10 border border-input placeholder:text-muted-foreground text-foreground rounded-md focus:outline-none focus:ring-ring focus:border-ring disabled:opacity-50"
                     placeholder="Enter your password"
                   />
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Lock className="w-5 h-5 text-gray-400" />
+                    <Lock className="w-5 h-5 text-muted-foreground" />
                   </div>
                   <button
                     type="button"
@@ -202,9 +202,9 @@ function LoginContent() {
                     aria-label={showPassword ? 'Hide password' : 'Show password'}
                   >
                     {showPassword ? (
-                      <EyeOff className="w-5 h-5 text-gray-400" />
+                      <EyeOff className="w-5 h-5 text-muted-foreground" />
                     ) : (
-                      <Eye className="w-5 h-5 text-gray-400" />
+                      <Eye className="w-5 h-5 text-muted-foreground" />
                     )}
                   </button>
                 </div>
@@ -214,7 +214,7 @@ function LoginContent() {
                 <button
                   type="submit"
                   disabled={showLoading}
-                  className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-primary-foreground bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {showLoading ? (
                     <>
@@ -231,7 +231,7 @@ function LoginContent() {
                 <div>
                   <Link
                     href="/register"
-                    className="text-blue-600 hover:text-blue-500 text-sm"
+                    className="text-primary hover:text-primary text-sm"
                   >
                     Don&apos;t have an account? Sign up
                   </Link>
@@ -239,7 +239,7 @@ function LoginContent() {
                 <div>
                   <Link
                     href="/forgot-password"
-                    className="text-blue-600 hover:text-blue-500 text-sm"
+                    className="text-primary hover:text-primary text-sm"
                   >
                     Forgot your password?
                   </Link>

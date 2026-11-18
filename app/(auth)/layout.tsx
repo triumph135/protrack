@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation'
 import AuthGuard from '@/components/auth/AuthGuard'
 import Logo from '@/components/ui/Logo'
+import { ThemeToggle } from '@/components/theme/ThemeToggle'
 
 export default function AuthLayout({
   children,
@@ -11,13 +12,17 @@ export default function AuthLayout({
 }) {
   const pathname = usePathname()
   const isTenantSetup = pathname === '/tenant-setup'
+  const isJoin = pathname === '/join'
   const isAcceptInvitation = pathname === '/accept-invitation' || pathname.startsWith('/accept-invitation?')
   const isJoinTenant = pathname === '/join-tenant' || pathname.startsWith('/join-tenant?')
   const isResetPassword = pathname === '/reset-password'
   const isForgotPassword = pathname === '/forgot-password'
 
   const content = (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center px-4">
+    <div className="relative min-h-screen bg-background flex items-center justify-center px-4 py-10">
+      <div className="absolute right-4 top-4">
+        <ThemeToggle />
+      </div>
       <div className="max-w-md w-full space-y-8">
         <div className="text-center">
           <div className="flex justify-center items-center mb-6">
@@ -29,13 +34,14 @@ export default function AuthLayout({
     </div>
   )
 
-  // These pages render their own full-page layout.
-  if (isAcceptInvitation || isJoinTenant || isResetPassword || isForgotPassword) {
+  // Old invite URLs redirect immediately and do not need the frame.
+  if (isAcceptInvitation || isJoinTenant) {
     return children
   }
 
-  // Tenant setup uses the shared auth frame but manages its own session rules.
-  if (isTenantSetup) {
+  // These pages manage their own session. Reset keeps a recovery session, so
+  // it must not bounce a signed-in user back to the dashboard.
+  if (isTenantSetup || isJoin || isResetPassword || isForgotPassword) {
     return content
   }
 

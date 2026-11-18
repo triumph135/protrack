@@ -1,7 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { Save, X, AlertCircle, DollarSign, FileText } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { useChangeOrders } from '@/hooks/useChangeOrders'
 import { useProjects } from '@/contexts/ProjectContext'
 import type { CustomerInvoice, Project } from '@/types/app.types'
@@ -10,8 +9,13 @@ import FileAttachments from '@/components/FileAttachments'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
 import { createClient } from '@/lib/supabase'
+import { Button } from '@/components/ui/button'
+import { Field, Input } from '@/components/ui/input'
+import { Notice } from '@/components/ui/feedback'
+import { Sheet } from '@/components/ui/sheet'
 
 interface InvoiceFormProps {
+  open: boolean
   onSave: (invoiceData: Omit<CustomerInvoice, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>) => Promise<void>
   onCancel: () => void
   editItem?: CustomerInvoice | null
@@ -20,60 +24,54 @@ interface InvoiceFormProps {
 }
 
 export default function InvoiceForm({
+  open,
   onSave,
   onCancel,
   editItem = null,
   loading = false,
-  duplicateMode = false
+  duplicateMode = false,
 }: InvoiceFormProps) {
   const [formData, setFormData] = useState<Partial<CustomerInvoice>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
-  
-  // Add these new state variables
-  const [selectedProjectId, setSelectedProjectId] = useState<string>('')
+  const [selectedProjectId, setSelectedProjectId] = useState('')
   const [availableProjects, setAvailableProjects] = useState<Project[]>([])
-  const supabase = createClient()
-  
-  // Get the active project and change orders
   const { activeProject } = useProjects()
   const { changeOrders } = useChangeOrders(selectedProjectId || activeProject?.id)
   const { user } = useAuth()
   const { tenant } = useTenant()
 
-  // Initialize form data
   useEffect(() => {
+    if (!open) return
     if (editItem) {
       const itemData = { ...editItem }
-      // If in duplicate mode, clear the date and invoice number fields
       if (duplicateMode) {
         itemData.date_billed = getTodayLocalDateString()
         itemData.invoice_number = ''
-        // Remove any fields that shouldn't be copied
-        delete (itemData as any).id
-        delete (itemData as any).created_at
-        delete (itemData as any).updated_at
+        delete (itemData as { id?: string }).id
+        delete (itemData as { created_at?: string }).created_at
+        delete (itemData as { updated_at?: string }).updated_at
       }
       setFormData(itemData)
       setSelectedProjectId(itemData.project_id)
     } else {
-      // Set default values for new invoice using the proper date utility
       setFormData({
         project_id: activeProject?.id || '',
         invoice_number: '',
         amount: 0,
+        amount_collected: 0,
         date_billed: getTodayLocalDateString(),
         change_order_id: undefined,
-        in_system: false
+        in_system: false,
       })
       setSelectedProjectId(activeProject?.id || '')
     }
-  }, [editItem, activeProject?.id, duplicateMode])
+    setErrors({})
+  }, [editItem, activeProject?.id, duplicateMode, open])
 
-  // Load all available projects
   useEffect(() => {
+    const supabase = createClient()
     const loadAvailableProjects = async () => {
       if (!tenant?.id) return
-      
       try {
         const { data, error } = await supabase
           .from('projects')
@@ -81,295 +79,133 @@ export default function InvoiceForm({
           .eq('tenant_id', tenant.id)
           .eq('status', 'Active')
           .order('jobNumber')
-        
         if (error) throw error
         setAvailableProjects(data || [])
       } catch (error) {
         console.error('Error loading projects:', error)
       }
     }
-    
     loadAvailableProjects()
   }, [tenant?.id])
 
-  const handleInputChange = (field: string, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
-    
-    // Clear error when user starts typing
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }))
-    }
+  const handleInputChange = (field: string, value: string | number | boolean | undefined) => {
+    setFormData((prev) => ({ ...prev, [field]: value }))
+    if (errors[field]) setErrors((prev) => ({ ...prev, [field]: '' }))
   }
 
-  // Handle project selection change
   const handleProjectChange = (projectId: string) => {
     setSelectedProjectId(projectId)
-    setFormData(prev => ({
-      ...prev,
-      project_id: projectId,
-      change_order_id: undefined // Always reset to Base Contract when changing projects
-    }))
-    
-    // Clear any project-related errors
+    setFormData((prev) => ({ ...prev, project_id: projectId, change_order_id: undefined }))
     if (errors.project_id) {
-      setErrors(prevErrors => {
-        const { project_id, ...rest } = prevErrors
-        return rest
+      setErrors((prev) => {
+        const next = { ...prev }
+        delete next.project_id
+        return next
       })
     }
   }
 
-  const validateForm = (): boolean => {
-    const newErrors: Record<string, string> = {}
-  
-    if (!selectedProjectId) {
-      newErrors.project_id = 'Project is required'
-    }
-  
-    if (!formData.invoice_number?.trim()) {
-      newErrors.invoice_number = 'Invoice number is required'
-    }
-  
-    if (!formData.amount || Number(formData.amount) <= 0) {
-      newErrors.amount = 'Amount must be greater than 0'
-    }
-  
-    if (!formData.date_billed) {
-      newErrors.date_billed = 'Date billed is required'
-    }
-  
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
+  const validateForm = () => {
+    const next: Record<string, string> = {}
+    if (!selectedProjectId) next.project_id = 'Project is required'
+    if (!formData.invoice_number?.trim()) next.invoice_number = 'Invoice number is required'
+    if (!formData.amount || Number(formData.amount) <= 0) next.amount = 'Amount must be greater than 0'
+    if (formData.amount_collected != null && Number(formData.amount_collected) < 0) next.amount_collected = 'Collected amount cannot be negative'
+    if (!formData.date_billed) next.date_billed = 'Date billed is required'
+    setErrors(next)
+    return Object.keys(next).length === 0
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
     if (!validateForm()) return
-  
-    try {
-      await onSave({
-        project_id: selectedProjectId,
-        invoice_number: formData.invoice_number!,
-        amount: Number(formData.amount),
-        date_billed: formData.date_billed!,
-        change_order_id: formData.change_order_id || undefined,
-        in_system: formData.in_system || false
-      })
-    } catch (error) {
-      console.error('Error saving invoice:', error)
-    }
+    await onSave({
+      project_id: selectedProjectId,
+      invoice_number: formData.invoice_number!,
+      amount: Number(formData.amount),
+      amount_collected: Number(formData.amount_collected || 0),
+      date_billed: formData.date_billed!,
+      change_order_id: formData.change_order_id || undefined,
+      in_system: formData.in_system || false,
+    })
   }
+
+  const title = duplicateMode ? 'Duplicate invoice' : editItem ? 'Edit invoice' : 'Add invoice'
 
   return (
-    <div className="bg-gray-50 p-4 sm:p-6 rounded-lg border">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 sm:mb-6">
-        <h3 className="text-lg font-semibold text-gray-900">
-          {duplicateMode ? 'Duplicate Invoice' : editItem ? 'Edit Invoice' : 'Add New Invoice'}
-        </h3>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="text-gray-400 hover:text-gray-600 self-end sm:self-auto"
-        >
-          <X className="h-5 w-5" />
-        </button>
-      </div>
-
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Project Selector */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Project <span className="text-red-500">*</span>
-          </label>
+    <Sheet open={open} onOpenChange={(next) => { if (!next) onCancel() }} title={title} description="Invoices stay on the project you pick, including its change order.">
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <Field label="Project" htmlFor="invoice-project" error={errors.project_id}>
           <select
+            id="invoice-project"
+            className="h-11 w-full rounded-lg border border-input bg-card px-3 text-sm"
             value={selectedProjectId}
-            onChange={(e) => handleProjectChange(e.target.value)}
-            className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-              errors.project_id ? 'border-red-300' : 'border-gray-300'
-            }`}
+            onChange={(event) => handleProjectChange(event.target.value)}
             disabled={loading}
           >
             <option value="">Select a project</option>
-            {availableProjects.map(project => (
-              <option key={project.id} value={project.id}>
-                {project.jobNumber} - {project.jobName}
-              </option>
+            {availableProjects.map((project) => (
+              <option key={project.id} value={project.id}>{project.jobNumber} — {project.jobName}</option>
             ))}
           </select>
-          {errors.project_id && (
-            <p className="mt-1 text-sm text-red-600 flex items-center">
-              <AlertCircle className="h-4 w-4 mr-1" />
-              {errors.project_id}
-            </p>
-          )}
+        </Field>
+        <Field label="Invoice number" htmlFor="invoice-number" error={errors.invoice_number}>
+          <Input id="invoice-number" value={formData.invoice_number || ''} onChange={(event) => handleInputChange('invoice_number', event.target.value)} disabled={loading} />
+        </Field>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Amount" htmlFor="invoice-amount" error={errors.amount}>
+            <Input id="invoice-amount" className="tabular" inputMode="decimal" value={formData.amount || ''} onChange={(event) => handleInputChange('amount', event.target.value)} disabled={loading} />
+          </Field>
+          <Field label="Collected" htmlFor="invoice-collected" error={errors.amount_collected} hint="Cash received. Leave at 0 until the customer pays.">
+            <Input id="invoice-collected" className="tabular" inputMode="decimal" value={formData.amount_collected || ''} onChange={(event) => handleInputChange('amount_collected', event.target.value)} disabled={loading} />
+          </Field>
+          <Field label="Date billed" htmlFor="invoice-date" error={errors.date_billed}>
+            <Input id="invoice-date" type="date" value={formData.date_billed || ''} onChange={(event) => handleInputChange('date_billed', event.target.value)} disabled={loading} />
+          </Field>
         </div>
-
-        {/* Invoice Number */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Invoice Number <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="text"
-            value={formData.invoice_number || ''}
-            onChange={(e) => handleInputChange('invoice_number', e.target.value)}
-            className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-              errors.invoice_number ? 'border-red-300' : 'border-gray-300'
-            }`}
-            placeholder="Enter invoice number"
-            disabled={loading}
-          />
-          {errors.invoice_number && (
-            <p className="mt-1 text-sm text-red-600 flex items-center">
-              <AlertCircle className="h-4 w-4 mr-1" />
-              {errors.invoice_number}
-            </p>
-          )}
-        </div>
-
-        {/* Amount and Date */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Amount <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="number"
-              value={formData.amount || ''}
-              onChange={(e) => handleInputChange('amount', e.target.value)}
-              className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                errors.amount ? 'border-red-300' : 'border-gray-300'
-              }`}
-              placeholder="0.00"
-              step="0.01"
-              min="0"
-              disabled={loading}
-            />
-            {errors.amount && (
-              <p className="mt-1 text-sm text-red-600 flex items-center">
-                <AlertCircle className="h-4 w-4 mr-1" />
-                {errors.amount}
-              </p>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Date Billed <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="date"
-              value={formData.date_billed || ''}
-              onChange={(e) => handleInputChange('date_billed', e.target.value)}
-              className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                errors.date_billed ? 'border-red-300' : 'border-gray-300'
-              }`}
-              disabled={loading}
-            />
-            {errors.date_billed && (
-              <p className="mt-1 text-sm text-red-600 flex items-center">
-                <AlertCircle className="h-4 w-4 mr-1" />
-                {errors.date_billed}
-              </p>
-            )}
-          </div>
-        </div>
-
-        {/* Change Order */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Change Order
-          </label>
+        <Field label="Change order" htmlFor="invoice-co" hint={changeOrders.length === 0 ? 'This project has no change orders. The invoice stays on the base contract.' : 'Leave this on the base contract unless the invoice is for extra work.'}>
           <select
+            id="invoice-co"
+            className="h-11 w-full rounded-lg border border-input bg-card px-3 text-sm"
             value={formData.change_order_id || ''}
-            onChange={(e) => handleInputChange('change_order_id', e.target.value || undefined)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            onChange={(event) => handleInputChange('change_order_id', event.target.value || undefined)}
             disabled={loading}
           >
-            <option value="">Base Contract</option>
-            {changeOrders.map(co => (
-              <option key={co.id} value={co.id}>
-                {co.name}
-              </option>
+            <option value="">Base contract</option>
+            {changeOrders.map((order) => (
+              <option key={order.id} value={order.id}>{order.name}</option>
             ))}
           </select>
-          {changeOrders.length === 0 ? (
-            <p className="mt-1 text-sm text-gray-500">
-              This project has no change orders. Invoice will be assigned to Base Contract.
-            </p>
-          ) : (
-            <p className="mt-1 text-sm text-gray-500">
-              Select a change order if this invoice is related to additional work
-            </p>
-          )}
-        </div>
-
-        {/* Mark as Processed */}
-        <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-lg">
-          <label className="flex items-center space-x-4 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={formData.in_system || false}
-              onChange={(e) => handleInputChange('in_system', e.target.checked)}
-              className="w-5 h-5 text-blue-600 bg-white border-2 border-gray-400 rounded focus:ring-blue-500 focus:ring-2 cursor-pointer checked:bg-blue-600 checked:border-blue-600 appearance-none relative checked:after:content-['✓'] checked:after:text-white checked:after:text-sm checked:after:font-bold checked:after:absolute checked:after:inset-0 checked:after:flex checked:after:items-center checked:after:justify-center"
-              disabled={loading}
-            />
-            <span className="text-sm font-medium text-gray-800 select-none">
-              Mark as processed in system
-            </span>
-          </label>
-        </div>
-
-        {/* Attachments Section - Only show when editing existing invoice (not duplicating) */}
-        {editItem && !duplicateMode && (
-          <div className="border-t pt-6">
-            <h4 className="text-sm font-medium text-gray-700 mb-4">File Attachments</h4>
+        </Field>
+        <label className="flex min-h-11 items-center gap-3 rounded-lg border border-border px-3 text-sm">
+          <input
+            type="checkbox"
+            className="h-4 w-4 accent-primary"
+            checked={formData.in_system || false}
+            onChange={(event) => handleInputChange('in_system', event.target.checked)}
+            disabled={loading}
+          />
+          Mark as processed in the system
+        </label>
+        {editItem && !duplicateMode ? (
+          <div className="space-y-2 border-t border-border pt-3">
+            <p className="text-sm font-medium">Files</p>
             <FileAttachments
               entityType="customer_invoice"
               entityId={editItem.id}
               tenantId={tenant?.id || ''}
               userId={user?.id || ''}
-              canEdit={true}
-              className="bg-gray-50 p-4 rounded-lg"
+              canEdit
             />
           </div>
+        ) : (
+          <Notice tone="info">Save the invoice first, then open it again to attach files.</Notice>
         )}
-
-        {/* Show message for new/duplicate items about attachments */}
-        {(!editItem || duplicateMode) && (
-          <div className="border-t pt-6">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <div className="flex items-center gap-2 text-blue-700">
-                <FileText className="w-5 h-5" />
-                <div>
-                  <p className="text-sm font-medium">File Attachments</p>
-                  <p className="text-sm">Save this entry first, then edit it to add file attachments</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Form Actions */}
-        <div className="flex justify-end space-x-3 pt-6 border-t">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-            disabled={loading}
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-            disabled={loading}
-          >
-            {loading ? 'Saving...' : editItem ? 'Update Invoice' : 'Create Invoice'}
-          </button>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>Cancel</Button>
+          <Button type="submit" disabled={loading}>{loading ? 'Saving…' : editItem && !duplicateMode ? 'Save invoice' : 'Create invoice'}</Button>
         </div>
       </form>
-    </div>
+    </Sheet>
   )
 }

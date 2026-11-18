@@ -7,6 +7,17 @@ export type CostCategory =
   | 'cap_leases'
   | 'consumable'
 
+export type CostKind = 'labor' | 'standard' | 'named'
+
+/** Labor uses hours and rates. Named and standard categories use the entered amount. */
+export function costKindOf(categoryOrKind: string): CostKind {
+  if (categoryOrKind === 'labor') return 'labor'
+  if (categoryOrKind === 'named' || categoryOrKind === 'equipment' || categoryOrKind === 'subcontractor') {
+    return 'named'
+  }
+  return 'standard'
+}
+
 export interface CostAmountInput {
   cost?: number | null
   st_hours?: number | null
@@ -29,8 +40,8 @@ function money(value: number): number {
  * Labor totals are hours × rates plus per diem and mobilization.
  * Every other category uses the entered cost amount.
  */
-export function calculateTotalCost(category: CostCategory, costData: CostAmountInput): number {
-  if (category === 'labor') {
+export function calculateTotalCost(categoryOrKind: CostCategory | CostKind | string, costData: CostAmountInput): number {
+  if (costKindOf(categoryOrKind) === 'labor') {
     const straight = Number(costData.st_hours || 0) * Number(costData.st_rate || 0)
     const overtime = Number(costData.ot_hours || 0) * Number(costData.ot_rate || 0)
     const doubleTime = Number(costData.dt_hours || 0) * Number(costData.dt_rate || 0)

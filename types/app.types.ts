@@ -63,7 +63,7 @@ export interface Employee {
   standard_rate: number
   ot_rate: number
   dt_rate: number
-  project_id?: string
+  project_id?: string | null
   mob?: number
   mob_rate?: number
   created_at?: string
@@ -91,6 +91,8 @@ export interface ProjectCost {
   tenant_id: string
   project_id: string
   category: 'material' | 'labor' | 'equipment' | 'subcontractor' | 'others' | 'cap_leases' | 'consumable'
+  category_id?: string | null
+  custom_fields?: Record<string, string | number | boolean | null>
   date: string
   cost?: number
   vendor?: string
@@ -224,6 +226,7 @@ export interface CustomerInvoice {
   project_id: string
   invoice_number: string
   amount: number
+  amount_collected?: number
   date_billed: string
   change_order_id?: string
   in_system?: boolean

@@ -1,298 +1,201 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Plus, Edit, Trash2, Users, DollarSign, Search, X, User } from 'lucide-react'
+import { useState } from 'react'
+import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
+import { useTenant } from '@/contexts/TenantContext'
 import { useProjects } from '@/contexts/ProjectContext'
 import { useEmployees } from '@/hooks/useEmployees'
 import EmployeeModal from '@/components/EmployeeModal'
+import { confirmAction } from '@/components/ui/confirm-dialog'
+import { toast } from 'sonner'
+import { userCan } from '@/lib/permissions'
+import { employeeScopeLabel } from '@/lib/employee-scope'
+import { formatCurrency } from '@/lib/format'
+import { ExportMenu, type ExportSpec } from '@/components/export/ExportMenu'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Badge, EmptyState, PageHeader, Skeleton } from '@/components/ui/feedback'
 import type { Employee } from '@/types/app.types'
 
-
-
-// Main Employees Page
 export default function EmployeesPage() {
   const { user } = useAuth()
-  const { activeProject } = useProjects()
+  const { tenant } = useTenant()
+  const { activeProject, projects } = useProjects()
   const { employees, loading, createEmployee, updateEmployee, deleteEmployee } = useEmployees()
-  
   const [showModal, setShowModal] = useState(false)
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [projectFilter, setProjectFilter] = useState<'all' | 'global' | 'project'>('all')
 
-  const hasPermission = (area: string, level: 'read' | 'write' = 'read') => {
-    if (!user) return false
-    if (user.role === 'master') return true
-    
-    const userPermission = user.permissions[area as keyof typeof user.permissions]
-    if (!userPermission || userPermission === 'none') return false
-    
-    if (level === 'read') return ['read', 'write'].includes(userPermission)
-    if (level === 'write') return userPermission === 'write'
-    
-    return false
-  }
+  const canRead = userCan(user, 'employees', 'read')
+  const canWrite = userCan(user, 'employees', 'write')
 
-  const canRead = hasPermission('labor', 'read')
-  const canWrite = hasPermission('labor', 'write')
-
-  // Filter employees
-  const filteredEmployees = employees.filter(employee => {
-    const matchesSearch = searchTerm === '' || 
-      employee.name.toLowerCase().includes(searchTerm.toLowerCase())
-
-    const matchesProject = projectFilter === 'all' ||
-      (projectFilter === 'global' && !employee.project_id) ||
-      (projectFilter === 'project' && employee.project_id === activeProject?.id)
-
+  const filteredEmployees = employees.filter((employee) => {
+    const matchesSearch = searchTerm === '' || employee.name.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesProject = projectFilter === 'all'
+      || (projectFilter === 'global' && !employee.project_id)
+      || (projectFilter === 'project' && employee.project_id === activeProject?.id)
     return matchesSearch && matchesProject
   })
 
-  const handleAddEmployee = () => {
-    setEditingEmployee(null)
-    setShowModal(true)
-  }
-
-  const handleEditEmployee = (employee: Employee) => {
-    setEditingEmployee(employee)
-    setShowModal(true)
-  }
-
   const handleDeleteEmployee = async (employeeId: string) => {
-    const employee = employees.find(emp => emp.id === employeeId)
+    const employee = employees.find((item) => item.id === employeeId)
     if (!employee) return
-
-    if (!window.confirm(`Are you sure you want to delete "${employee.name}"?`)) {
-      return
-    }
-
+    const confirmed = await confirmAction({
+      title: `Delete ${employee.name}?`,
+      description: 'This removes the employee from the company.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!confirmed) return
     try {
       await deleteEmployee(employeeId)
+      toast.success('Employee deleted')
     } catch (error) {
       console.error('Error deleting employee:', error)
-      alert('Error deleting employee. Please try again.')
+      toast.error('Error deleting employee. Please try again.')
     }
   }
 
-  const handleSubmitEmployee = async (employeeData: any) => {
-    try {
-      if (editingEmployee) {
-        await updateEmployee(editingEmployee.id, employeeData)
-      } else {
-        await createEmployee(employeeData)
-      }
-      setShowModal(false)
-      setEditingEmployee(null)
-    } catch (error) {
-      console.error('Error saving employee:', error)
-      throw error
-    }
+  const handleSubmitEmployee = async (employeeData: Omit<Employee, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>) => {
+    if (editingEmployee) await updateEmployee(editingEmployee.id, employeeData)
+    else await createEmployee(employeeData)
+    setShowModal(false)
+    setEditingEmployee(null)
+    toast.success(editingEmployee ? 'Employee updated' : 'Employee added')
+  }
+
+  const scopeFilter = projectFilter === 'all' ? 'All employees' : projectFilter === 'global' ? 'Global only' : 'This project'
+  const exportSpec: ExportSpec = {
+    filename: 'employees',
+    title: 'Employees',
+    company: tenant?.name || 'Company',
+    project: activeProject ? `${activeProject.jobNumber} — ${activeProject.jobName}` : undefined,
+    filters: [searchTerm.trim() ? `Search: ${searchTerm.trim()}` : 'Search: none', `Scope: ${scopeFilter}`],
+    columns: ['Name', 'ST', 'OT', 'DT', 'Mob', 'Scope'],
+    csvRows: filteredEmployees.map((employee) => [
+      employee.name,
+      Number(employee.standard_rate || 0),
+      Number(employee.ot_rate || 0),
+      Number(employee.dt_rate || 0),
+      Number(employee.mob_rate || 0),
+      employeeScopeLabel(employee.project_id, projects),
+    ]),
+    pdfRows: filteredEmployees.map((employee) => [
+      employee.name,
+      formatCurrency(employee.standard_rate),
+      formatCurrency(employee.ot_rate),
+      formatCurrency(employee.dt_rate),
+      formatCurrency(employee.mob_rate),
+      employeeScopeLabel(employee.project_id, projects),
+    ]),
+    totals: [{ label: 'Employees', value: String(filteredEmployees.length) }],
+    visual: {
+      kpis: [
+        { label: 'Total', value: String(employees.length) },
+        { label: 'Global', value: String(employees.filter((employee) => !employee.project_id).length) },
+        { label: 'This project', value: String(employees.filter((employee) => employee.project_id === activeProject?.id).length) },
+      ],
+    },
   }
 
   if (!canRead) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <Users className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-2 text-sm font-medium text-gray-900">Access Denied</h3>
-          <p className="mt-1 text-sm text-gray-500">
-            You don&apos;t have permission to view employees.
-          </p>
-        </div>
-      </div>
-    )
+    return <EmptyState title="No access" body="You don't have permission to view employees." />
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white overflow-hidden shadow rounded-lg p-4 sm:p-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Employee Management</h1>
-            <p className="text-gray-600 text-sm sm:text-base">Manage employee information and labor rates</p>
-          </div>
-          {canWrite && (
-            <button
-              onClick={handleAddEmployee}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center justify-center gap-2 transition-colors w-full sm:w-auto"
-            >
-              <Plus className="w-4 h-4" />
-              Add Employee
-            </button>
-          )}
+    <div className="space-y-4">
+      <PageHeader
+        title="Employees"
+        description="Rates used when someone enters labor."
+        action={
+          <>
+            <ExportMenu spec={filteredEmployees.length > 0 ? exportSpec : null} />
+            {canWrite ? <Button type="button" onClick={() => { setEditingEmployee(null); setShowModal(true) }}><Plus className="h-4 w-4" /> Add employee</Button> : null}
+          </>
+        }
+      />
+
+      <section className="grid gap-3 sm:grid-cols-3">
+        <Stat label="Total" value={String(employees.length)} />
+        <Stat label="Global" value={String(employees.filter((employee) => !employee.project_id).length)} />
+        <Stat label="This project" value={String(employees.filter((employee) => employee.project_id === activeProject?.id).length)} />
+      </section>
+
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <Input className="flex-1" placeholder="Search employees" aria-label="Search employees" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} />
+        <select
+          className="h-11 rounded-lg border border-input bg-card px-3 text-sm sm:w-56"
+          aria-label="Filter employees"
+          value={projectFilter}
+          onChange={(event) => setProjectFilter(event.target.value as 'all' | 'global' | 'project')}
+        >
+          <option value="all">All employees</option>
+          <option value="global">Global only</option>
+          <option value="project">Current project only</option>
+        </select>
+      </div>
+
+      {loading ? <Skeleton className="h-40" /> : filteredEmployees.length === 0 ? (
+        <EmptyState
+          title={searchTerm || projectFilter !== 'all' ? 'No employees match' : 'No employees yet'}
+          body={searchTerm || projectFilter !== 'all' ? 'Try a different name or filter.' : 'Add the first person so labor entries can use their rates.'}
+          action={canWrite && !searchTerm && projectFilter === 'all' ? <Button type="button" onClick={() => setShowModal(true)}>Add employee</Button> : null}
+        />
+      ) : (
+        <div className="overflow-hidden rounded-lg border border-border bg-card">
+          <table className="responsive-cards w-full text-sm">
+            <thead className="border-b border-border text-left text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 font-medium">Name</th>
+                <th className="px-3 py-2 text-right font-medium">ST</th>
+                <th className="px-3 py-2 text-right font-medium">OT</th>
+                <th className="px-3 py-2 text-right font-medium">DT</th>
+                <th className="px-3 py-2 text-right font-medium">Mob</th>
+                <th className="px-3 py-2 font-medium">Scope</th>
+                {canWrite ? <th className="px-3 py-2" /> : null}
+              </tr>
+            </thead>
+            <tbody>
+              {filteredEmployees.map((employee) => (
+                <tr key={employee.id} className="border-b border-border last:border-0">
+                  <td className="px-3 py-2 font-medium" data-label="Name">{employee.name}</td>
+                  <td className="px-3 py-2 text-right tabular" data-label="ST">{formatCurrency(employee.standard_rate)}</td>
+                  <td className="px-3 py-2 text-right tabular" data-label="OT">{formatCurrency(employee.ot_rate)}</td>
+                  <td className="px-3 py-2 text-right tabular" data-label="DT">{formatCurrency(employee.dt_rate)}</td>
+                  <td className="px-3 py-2 text-right tabular" data-label="Mob">{employee.mob_rate ? formatCurrency(employee.mob_rate) : '—'}</td>
+                  <td className="px-3 py-2" data-label="Scope">
+                    <Badge tone={employee.project_id ? 'neutral' : 'success'}>{employeeScopeLabel(employee.project_id, projects)}</Badge>
+                  </td>
+                  {canWrite ? (
+                    <td className="px-3 py-2 text-right" data-label="Actions">
+                      <Button variant="ghost" size="icon" type="button" aria-label={`Edit ${employee.name}`} onClick={() => { setEditingEmployee(employee); setShowModal(true) }}><Pencil className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" type="button" aria-label={`Delete ${employee.name}`} onClick={() => handleDeleteEmployee(employee.id)}><Trash2 className="h-4 w-4" /></Button>
+                    </td>
+                  ) : null}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      </div>
+      )}
 
-      {/* Summary Card */}
-      <div className="bg-white p-4 sm:p-6 rounded-lg shadow-md">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
-          <div className="text-center">
-            <div className="text-xl sm:text-2xl font-bold text-blue-600">{employees.length}</div>
-            <div className="text-xs sm:text-sm text-gray-600">Total Employees</div>
-          </div>
-          <div className="text-center">
-            <div className="text-xl sm:text-2xl font-bold text-green-600">
-              {employees.filter(emp => !emp.project_id).length}
-            </div>
-            <div className="text-xs sm:text-sm text-gray-600">Global Employees</div>
-          </div>
-          <div className="text-center">
-            <div className="text-xl sm:text-2xl font-bold text-purple-600">
-              {employees.filter(emp => emp.project_id === activeProject?.id).length}
-            </div>
-            <div className="text-xs sm:text-sm text-gray-600">Project Employees</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="bg-white p-4 sm:p-6 rounded-lg shadow-md">
-        <div className="flex flex-col sm:flex-row gap-4">
-          {/* Search */}
-          <div className="flex-1">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <input
-                type="text"
-                placeholder="Search employees..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-          </div>
-
-          {/* Project Filter */}
-          <div className="sm:w-48">
-            <select
-              value={projectFilter}
-              onChange={(e) => setProjectFilter(e.target.value as 'all' | 'global' | 'project')}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="all">All Employees</option>
-              <option value="global">Global Only</option>
-              <option value="project">Current Project Only</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* Employee List */}
-      <div className="bg-white shadow rounded-lg">
-        {loading ? (
-          <div className="p-8 text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading employees...</p>
-          </div>
-        ) : filteredEmployees.length === 0 ? (
-          <div className="p-8 text-center">
-            <Users className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              {searchTerm || projectFilter !== 'all' ? 'No employees found' : 'No employees yet'}
-            </h3>
-            <p className="text-gray-600 mb-4">
-              {searchTerm || projectFilter !== 'all' 
-                ? 'Try adjusting your search or filter criteria.'
-                : 'Get started by adding your first employee.'
-              }
-            </p>
-            {canWrite && !searchTerm && projectFilter === 'all' && (
-              <button
-                onClick={handleAddEmployee}
-                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center gap-2 mx-auto transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                Add First Employee
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="divide-y divide-gray-200">
-            {filteredEmployees.map((employee) => (
-              <div key={employee.id} className="p-4 sm:p-6 hover:bg-gray-50 transition-colors">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-3">
-                      <div className="flex-shrink-0">
-                        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                          <Users className="w-5 h-5 text-blue-600" />
-                        </div>
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <h3 className="text-lg font-medium text-gray-900 truncate">
-                          {employee.name}
-                        </h3>
-                        <div className="mt-1 flex flex-wrap gap-4 text-sm text-gray-600">
-                          <span className="flex items-center gap-1">
-                            <DollarSign className="w-3 h-3" />
-                            ST: ${employee.standard_rate}/hr
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <DollarSign className="w-3 h-3" />
-                            OT: ${employee.ot_rate}/hr
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <DollarSign className="w-3 h-3" />
-                            DT: ${employee.dt_rate}/hr
-                          </span>
-                          {employee.mob_rate && (
-                            <span className="flex items-center gap-1">
-                              <DollarSign className="w-3 h-3" />
-                              MOB: ${employee.mob_rate}
-                            </span>
-                          )}
-                        </div>
-                        <div className="mt-1">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            employee.project_id 
-                              ? 'bg-purple-100 text-purple-800' 
-                              : 'bg-green-100 text-green-800'
-                          }`}>
-                            {employee.project_id ? 'Project Employee' : 'Global Employee'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {canWrite && (
-                    <div className="flex items-center space-x-2 flex-shrink-0">
-                      <button
-                        onClick={() => handleEditEmployee(employee)}
-                        className="text-blue-600 hover:text-blue-900 p-2 rounded-md border border-blue-200 hover:border-blue-300 transition-colors"
-                        title="Edit employee"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteEmployee(employee.id)}
-                        className="text-red-600 hover:text-red-900 p-2 rounded-md border border-red-200 hover:border-red-300 transition-colors"
-                        title="Delete employee"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Employee Modal */}
       <EmployeeModal
         isOpen={showModal}
-        onClose={() => {
-          setShowModal(false)
-          setEditingEmployee(null)
-        }}
+        onClose={() => { setShowModal(false); setEditingEmployee(null) }}
         onSubmit={handleSubmitEmployee}
         employee={editingEmployee}
-        projectId={activeProject?.id}
       />
+    </div>
+  )
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <p className="text-sm text-muted-foreground">{label}</p>
+      <p className="mt-1 text-2xl font-semibold tabular">{value}</p>
     </div>
   )
 }
