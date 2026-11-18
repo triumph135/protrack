@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { DollarSign, TrendingUp, TrendingDown, AlertTriangle, Edit3, Save, X } from 'lucide-react'
+import { toast } from 'sonner'
 
 interface BudgetTrackingSectionProps {
   category: string
@@ -45,7 +46,7 @@ export default function BudgetTrackingSection({
 
     // Validate the input
     if (isNaN(newAmount) || newAmount < 0) {
-      alert('Please enter a valid budget amount (0 or greater)')
+      toast.error('Please enter a valid budget amount (0 or greater)')
       return
     }
 
@@ -55,7 +56,7 @@ export default function BudgetTrackingSection({
       setEditing(false)
     } catch (error) {
       console.error('Error updating budget:', error)
-      alert('Failed to update budget. Please try again.')
+      toast.error('Failed to update budget. Please try again.')
       // Reset to original value on error
       setEditValue(budgetAmount.toString())
     } finally {

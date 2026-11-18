@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Building, Mail, Phone, Loader2 } from 'lucide-react'
+import PendingInvites from '@/components/PendingInvites'
 import { createClient } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import AuthGuard from '@/components/auth/AuthGuard'
@@ -188,6 +189,7 @@ function TenantSetupContent() {
 
   return (
     <>
+      <PendingInvites />
       <h2 className="text-3xl font-extrabold text-gray-900 text-center">
         Set up your ProTrack workspace
       </h2>

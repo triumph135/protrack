@@ -6,6 +6,8 @@ import {
   FileText, Image as ImageIcon, AlertCircle, Loader2 
 } from 'lucide-react'
 import { fileUploadService } from '@/lib/fileUploadService'
+import { confirmAction } from '@/components/ui/confirm-dialog'
+import { toast } from 'sonner'
 
 interface FileAttachmentsProps {
   entityType: string
@@ -111,9 +113,13 @@ export default function FileAttachments({
   }
 
   const handleDelete = async (attachmentId: string) => {
-    if (!window.confirm('Are you sure you want to delete this attachment?')) {
-      return
-    }
+    const confirmed = await confirmAction({
+      title: 'Delete this attachment?',
+      description: 'The file will be removed from this record.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!confirmed) return
 
     try {
       setError('')
@@ -147,7 +153,7 @@ export default function FileAttachments({
               // Show user instructions for iOS
               setTimeout(() => {
                 if (!newWindow.closed) {
-                  alert('To save this file on iOS:\n1. Tap and hold the file\n2. Select "Save to Files" or "Share"\n3. Choose your preferred location')
+                  toast.message('On iPhone, tap and hold the file, then choose Save to Files.')
                 }
               }, 1000)
             } else {

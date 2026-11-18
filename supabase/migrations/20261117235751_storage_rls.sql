@@ -1,4 +1,5 @@
--- Apply after 20260313000000_enable_rls.sql.
+-- Apply after 20261113201043_enable_rls.sql.
+-- Production recorded this file as version 20261117235751 (storage_rls).
 -- The attachments bucket is already private in production and already has
 -- three policies. Those policies are dropped by their exact names and
 -- replaced. Paths stay {tenant_id}/{entity_type}/{entity_id}/{filename}.
@@ -19,9 +20,11 @@ drop policy if exists attachments_storage_insert on storage.objects;
 drop policy if exists attachments_storage_update on storage.objects;
 drop policy if exists attachments_storage_delete on storage.objects;
 
--- Production already has RLS on. Enabling it here is a no-op there, and
--- it is what makes the new policies apply on a database that only has them.
-alter table storage.objects enable row level security;
+-- Do not run `alter table storage.objects enable row level security` here.
+-- Production rejected that statement for non-owners (SQLSTATE 42501). RLS on
+-- storage.objects is already on in Supabase, and the local bootstrap turns
+-- it on before this file runs. The version applied to prod on 2026-11-17
+-- omitted this line; the repo now matches that applied script.
 
 create policy attachments_storage_select on storage.objects
   for select to authenticated

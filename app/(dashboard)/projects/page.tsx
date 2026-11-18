@@ -8,6 +8,8 @@ import { useProjects } from '@/contexts/ProjectContext'
 import { useChangeOrders } from '@/hooks/useChangeOrders'
 import { createClient } from '@/lib/supabase'
 import ProjectModal from '@/components/ProjectModal'
+import { confirmAction } from '@/components/ui/confirm-dialog'
+import { toast } from 'sonner'
 import type { Project, ChangeOrder } from '@/types/app.types'
 
 export default function ProjectsPage() {
@@ -41,7 +43,8 @@ export default function ProjectsPage() {
     const userPermission = user.permissions[area as keyof typeof user.permissions]
     if (!userPermission || userPermission === 'none') return false
     
-    if (level === 'read') return ['read', 'write'].includes(userPermission)
+    if (typeof userPermission !== 'string') return false
+    if (level === 'read') return userPermission === 'read' || userPermission === 'write'
     if (level === 'write') return userPermission === 'write'
     
     return false
@@ -69,15 +72,19 @@ export default function ProjectsPage() {
   }
 
   const handleDeleteProject = async (project: Project) => {
-    if (!window.confirm(`Are you sure you want to delete "${project.jobName}"? This will also delete all associated data.`)) {
-      return
-    }
+    const confirmed = await confirmAction({
+      title: `Delete ${project.jobName}?`,
+      description: 'This also deletes the costs, invoices, and change orders on the project.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!confirmed) return
 
     try {
       await deleteProject(project.id)
     } catch (error) {
       console.error('Error deleting project:', error)
-      alert('Error deleting project. Please try again.')
+      toast.error('Error deleting project. Please try again.')
     }
   }
 
@@ -124,7 +131,7 @@ export default function ProjectsPage() {
   // Export projects data
   const exportProjectsData = async () => {
     if (filteredProjects.length === 0) {
-      alert('No projects to export')
+      toast.error('No projects to export')
       return
     }
 
@@ -421,12 +428,18 @@ function ProjectCard({
       onCloseChangeOrderForm()
     } catch (error) {
       console.error('Error saving change order:', error)
-      alert('Error saving change order. Please try again.')
+      toast.error('Error saving change order. Please try again.')
     }
   }
 
   const handleDeleteChangeOrder = async (changeOrderId: string) => {
-    if (!window.confirm('Are you sure you want to delete this change order? This will affect related costs and invoices.')) {
+    const confirmed = await confirmAction({
+      title: 'Delete this change order?',
+      description: 'Costs and invoices tied to it stay on the project, without this change order.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!confirmed) {
       return
     }
 
@@ -434,7 +447,7 @@ function ProjectCard({
       await deleteChangeOrder(changeOrderId)
     } catch (error) {
       console.error('Error deleting change order:', error)
-      alert('Error deleting change order. Please try again.')
+      toast.error('Error deleting change order. Please try again.')
     }
   }
 

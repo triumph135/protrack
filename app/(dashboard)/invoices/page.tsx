@@ -5,6 +5,7 @@ import { Plus, Edit, Trash2, FileText, DollarSign, Calendar, Filter, Download, S
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
 import { useProjects } from '@/contexts/ProjectContext'
+import { useWorkspace } from '@/contexts/WorkspaceContext'
 import { useInvoices } from '@/hooks/useInvoices'
 import { useChangeOrders } from '@/hooks/useChangeOrders'
 import InvoiceForm from '@/components/InvoiceForm'
@@ -12,6 +13,8 @@ import ProjectChangeOrderSelector from '@/components/ProjectChangeOrderSelector'
 import type { CustomerInvoice } from '@/types/app.types'
 import { formatLocalDateForDisplay } from '@/lib/dateUtils'
 import { fileUploadService } from '@/lib/fileUploadService'
+import { confirmAction } from '@/components/ui/confirm-dialog'
+import { toast } from 'sonner'
 
 interface InvoiceFilters {
   startDate: string
@@ -27,7 +30,8 @@ export default function InvoicesPage() {
   const { activeProject } = useProjects()
   
   // Invoice management state
-  const [selectedChangeOrder, setSelectedChangeOrder] = useState<string>('all')
+  const { changeOrderId, setChangeOrderId } = useWorkspace()
+  const selectedChangeOrder = changeOrderId ?? 'all'
   const [showForm, setShowForm] = useState(false)
   const [editingInvoice, setEditingInvoice] = useState<CustomerInvoice | null>(null)
   const [isDuplicateMode, setIsDuplicateMode] = useState(false)
@@ -49,9 +53,9 @@ export default function InvoicesPage() {
   const changeOrderForSelector = selectedChangeOrder === 'all' ? null : selectedChangeOrder
   
   // Stable callback to prevent useEffect loops in ProjectChangeOrderSelector
-  const handleChangeOrderChange = useCallback((changeOrderId: string | null) => {
-    setSelectedChangeOrder(changeOrderId || 'all')
-  }, [])
+  const handleChangeOrderChange = useCallback((nextId: string | null) => {
+    setChangeOrderId(nextId)
+  }, [setChangeOrderId])
 
   // Data hooks
   const { 
@@ -75,7 +79,8 @@ export default function InvoicesPage() {
     const userPermission = user.permissions[area as keyof typeof user.permissions]
     if (!userPermission || userPermission === 'none') return false
     
-    if (level === 'read') return ['read', 'write'].includes(userPermission)
+    if (typeof userPermission !== 'string') return false
+    if (level === 'read') return userPermission === 'read' || userPermission === 'write'
     if (level === 'write') return userPermission === 'write'
     
     return false
@@ -100,19 +105,25 @@ export default function InvoicesPage() {
       setIsDuplicateMode(false)
     } catch (error) {
       console.error('Error saving invoice:', error)
-      alert('Error saving invoice. Please try again.')
+      toast.error('Error saving invoice. Please try again.')
     }
   }
 
   // Handle delete
   const handleDelete = async (invoiceId: string) => {
-    if (!window.confirm('Are you sure you want to delete this invoice?')) return
+    const confirmed = await confirmAction({
+      title: 'Delete this invoice?',
+      description: 'The invoice will be removed from this project.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!confirmed) return
     
     try {
       await deleteInvoice(invoiceId)
     } catch (error) {
       console.error('Error deleting invoice:', error)
-      alert('Error deleting invoice. Please try again.')
+      toast.error('Error deleting invoice. Please try again.')
     }
   }
 
@@ -141,7 +152,7 @@ export default function InvoicesPage() {
   // Export data
   const exportData = () => {
     if (filteredInvoices.length === 0) {
-      alert('No data to export')
+      toast.error('No data to export')
       return
     }
 

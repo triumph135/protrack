@@ -334,6 +334,8 @@ export interface Database {
           tenant_id: string
           project_id: string
           category: string
+          category_id: string | null
+          custom_fields: Json
           date: string
           cost: number | null
           vendor: string | null
@@ -361,7 +363,9 @@ export interface Database {
           id?: string
           tenant_id: string
           project_id: string
-          category: string
+          category?: string
+          category_id?: string | null
+          custom_fields?: Json
           date: string
           cost?: number | null
           vendor?: string | null
@@ -390,6 +394,8 @@ export interface Database {
           tenant_id?: string
           project_id?: string
           category?: string
+          category_id?: string | null
+          custom_fields?: Json
           date?: string
           cost?: number | null
           vendor?: string | null
@@ -418,7 +424,7 @@ export interface Database {
         Row: {
           id: string
           tenant_id: string
-          email: string
+          email: string | null
           role: string
           permissions: Json | null
           invited_by: string | null
@@ -427,11 +433,19 @@ export interface Database {
           expires_at: string
           created_at: string
           updated_at: string | null
+          invite_type: string
+          max_uses: number | null
+          use_count: number
+          accepted_by: string | null
+          accepted_at: string | null
+          revoked_at: string | null
+          last_sent_at: string | null
+          send_count: number
         }
         Insert: {
           id?: string
           tenant_id: string
-          email: string
+          email?: string | null
           role: string
           permissions?: Json | null
           invited_by?: string | null
@@ -440,11 +454,19 @@ export interface Database {
           expires_at?: string
           created_at?: string
           updated_at?: string | null
+          invite_type?: string
+          max_uses?: number | null
+          use_count?: number
+          accepted_by?: string | null
+          accepted_at?: string | null
+          revoked_at?: string | null
+          last_sent_at?: string | null
+          send_count?: number
         }
         Update: {
           id?: string
           tenant_id?: string
-          email?: string
+          email?: string | null
           role?: string
           permissions?: Json | null
           invited_by?: string | null
@@ -453,6 +475,148 @@ export interface Database {
           expires_at?: string
           created_at?: string
           updated_at?: string | null
+          invite_type?: string
+          max_uses?: number | null
+          use_count?: number
+          accepted_by?: string | null
+          accepted_at?: string | null
+          revoked_at?: string | null
+          last_sent_at?: string | null
+          send_count?: number
+        }
+      }
+      cost_categories: {
+        Row: {
+          id: string
+          tenant_id: string
+          builtin_key: string | null
+          name: string
+          kind: string
+          parent_id: string | null
+          sort_order: number
+          is_hidden: boolean
+          is_builtin: boolean
+          gl_code: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          tenant_id: string
+          builtin_key?: string | null
+          name: string
+          kind: string
+          parent_id?: string | null
+          sort_order?: number
+          is_hidden?: boolean
+          is_builtin?: boolean
+          gl_code?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          tenant_id?: string
+          builtin_key?: string | null
+          name?: string
+          kind?: string
+          parent_id?: string | null
+          sort_order?: number
+          is_hidden?: boolean
+          is_builtin?: boolean
+          gl_code?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
+      project_category_budgets: {
+        Row: {
+          id: string
+          tenant_id: string
+          project_id: string
+          category_id: string
+          amount: number
+          updated_by: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          tenant_id: string
+          project_id: string
+          category_id: string
+          amount?: number
+          updated_by?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          tenant_id?: string
+          project_id?: string
+          category_id?: string
+          amount?: number
+          updated_by?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
+      labor_field_definitions: {
+        Row: {
+          id: string
+          tenant_id: string
+          label: string
+          field_type: string
+          options: Json
+          preset_key: string | null
+          is_enabled: boolean
+          sort_order: number
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          tenant_id: string
+          label: string
+          field_type: string
+          options?: Json
+          preset_key?: string | null
+          is_enabled?: boolean
+          sort_order?: number
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          tenant_id?: string
+          label?: string
+          field_type?: string
+          options?: Json
+          preset_key?: string | null
+          is_enabled?: boolean
+          sort_order?: number
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
+      project_assignments: {
+        Row: {
+          project_id: string
+          user_id: string
+          tenant_id: string
+          created_at: string
+        }
+        Insert: {
+          project_id: string
+          user_id: string
+          tenant_id: string
+          created_at?: string
+        }
+        Update: {
+          project_id?: string
+          user_id?: string
+          tenant_id?: string
+          created_at?: string
         }
       }
       tenants: {
@@ -560,6 +724,24 @@ export interface Database {
           p_token: string
         }
         Returns: Json
+      }
+      register_invitation_send: {
+        Args: {
+          p_invitation_id: string
+        }
+        Returns: undefined
+      }
+      set_labor_split: {
+        Args: {
+          p_enabled: boolean
+        }
+        Returns: undefined
+      }
+      apply_invite_project_assignments: {
+        Args: {
+          p_token: string
+        }
+        Returns: undefined
       }
     }
     Enums: {

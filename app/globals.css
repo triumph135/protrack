@@ -1,52 +1,59 @@
 @import "tailwindcss";
 
-/* Light theme variables */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #fafafa;
+  --foreground: #18181b;
   --card: #ffffff;
-  --card-foreground: #171717;
+  --card-foreground: #18181b;
   --popover: #ffffff;
-  --popover-foreground: #171717;
-  --primary: #2563eb;
+  --popover-foreground: #18181b;
+  --primary: #1e40af;
   --primary-foreground: #ffffff;
-  --secondary: #f1f5f9;
-  --secondary-foreground: #0f172a;
-  --muted: #f1f5f9;
-  --muted-foreground: #64748b;
-  --accent: #f1f5f9;
-  --accent-foreground: #0f172a;
-  --destructive: #ef4444;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #52525b;
+  --accent: #eff6ff;
+  --accent-foreground: #1e3a8a;
+  --destructive: #b91c1c;
   --destructive-foreground: #ffffff;
-  --border: #e2e8f0;
-  --input: #e2e8f0;
-  --ring: #2563eb;
+  --success: #166534;
+  --warning: #a16207;
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --ring: #1e40af;
+  --radius: 0.5rem;
+  --sidebar: #fafafa;
 }
 
-/* Dark theme variables */
-:root.dark {
-  --background: #0f172a;
-  --foreground: #f8fafc;
-  --card: #1e293b;
-  --card-foreground: #f8fafc;
-  --popover: #1e293b;
-  --popover-foreground: #f8fafc;
-  --primary: #3b82f6;
-  --primary-foreground: #ffffff;
-  --secondary: #1e293b;
-  --secondary-foreground: #f8fafc;
-  --muted: #1e293b;
-  --muted-foreground: #94a3b8;
-  --accent: #1e293b;
-  --accent-foreground: #f8fafc;
-  --destructive: #ef4444;
-  --destructive-foreground: #ffffff;
-  --border: #334155;
-  --input: #334155;
-  --ring: #3b82f6;
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --radius-lg: var(--radius);
+  --radius-md: var(--radius);
+  --font-sans: var(--font-sans), Inter, ui-sans-serif, system-ui, sans-serif;
 }
 
-/* Base styles */
 * {
   box-sizing: border-box;
 }
@@ -56,119 +63,62 @@ html {
 }
 
 body {
-  background: #f8fafc;
-  color: #0f172a;
-  font-family: inherit;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Inter, ui-sans-serif, system-ui, sans-serif;
 }
 
 :focus-visible {
-  outline: 2px solid #2563eb;
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
-/* Custom scrollbar for dark mode */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+.tabular {
+  font-variant-numeric: tabular-nums;
 }
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
-}
-
-.dark ::-webkit-scrollbar-thumb {
-  background: #475569;
-}
-
-.dark ::-webkit-scrollbar-thumb:hover {
-  background: #64748b;
-}
-
-/* Ensure smooth transitions for theme changes */
-.transition-theme {
-  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
-}
-
-/* Dark mode utility classes */
-.dark {
-  color-scheme: dark;
-}
-
-/* Override browser defaults for form elements in dark mode */
-.dark input, 
-.dark textarea, 
-.dark select {
+input,
+textarea,
+select {
   color: var(--foreground);
-  background: var(--card);
+  background-color: var(--card);
 }
 
-.dark input::placeholder,
-.dark textarea::placeholder {
+input::placeholder,
+textarea::placeholder {
   color: var(--muted-foreground);
 }
 
-/* Ensure proper contrast for focus states */
-.dark *:focus {
-  outline-color: var(--ring);
-}
-
-/* Safari/iOS specific form fixes */
-input, textarea, select {
-  color: #1f2937 !important; /* Force dark gray text */
-  background-color: #ffffff !important; /* Force white background */
-  -webkit-appearance: none;
-  appearance: none;
-  -webkit-text-fill-color: #1f2937 !important; /* Override Safari's text color */
-}
-
-input::placeholder, textarea::placeholder {
-  color: #6b7280 !important; /* Force gray placeholder */
-  -webkit-text-fill-color: #6b7280 !important;
-}
-
-/* Dark mode overrides for form elements */
-.dark input, 
-.dark textarea, 
-.dark select {
-  color: #f9fafb !important;
-  background-color: #374151 !important;
-  -webkit-text-fill-color: #f9fafb !important;
-}
-
-.dark input::placeholder,
-.dark textarea::placeholder {
-  color: #9ca3af !important;
-  -webkit-text-fill-color: #9ca3af !important;
-}
-
-/* Prevent iOS Safari from applying its own styling */
-@supports (-webkit-touch-callout: none) {
-  input, textarea, select {
-    color: #1f2937 !important;
-    background-color: #ffffff !important;
-    -webkit-text-fill-color: #1f2937 !important;
+@media (max-width: 767px) {
+  table.responsive-cards thead {
+    display: none;
   }
-  
-  .dark input, .dark textarea, .dark select {
-    color: #f9fafb !important;
-    background-color: #374151 !important;
-    -webkit-text-fill-color: #f9fafb !important;
+
+  table.responsive-cards tr {
+    display: block;
+    margin-bottom: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--card);
+  }
+
+  table.responsive-cards td {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    text-align: right;
+  }
+
+  table.responsive-cards td:last-child {
+    border-bottom: 0;
+  }
+
+  table.responsive-cards td::before {
+    content: attr(data-label);
+    color: var(--muted-foreground);
+    font-weight: 500;
+    text-align: left;
   }
 }
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-

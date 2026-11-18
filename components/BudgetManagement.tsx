@@ -5,6 +5,7 @@ import { DollarSign, Save, Edit3, Calculator, TrendingUp, TrendingDown } from 'l
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
 import { createClient } from '@/lib/supabase'
+import { toast } from 'sonner'
 
 interface BudgetFormData {
   material_budget: number
@@ -127,7 +128,7 @@ export default function BudgetManagement({ projectId, onBudgetUpdate }: BudgetMa
       
     } catch (error) {
       console.error('Error saving budget:', error)
-      alert('Failed to save budget. Please try again.')
+      toast.error('Failed to save budget. Please try again.')
     } finally {
       setSaving(false)
     }

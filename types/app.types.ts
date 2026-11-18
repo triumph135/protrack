@@ -91,6 +91,8 @@ export interface ProjectCost {
   tenant_id: string
   project_id: string
   category: 'material' | 'labor' | 'equipment' | 'subcontractor' | 'others' | 'cap_leases' | 'consumable'
+  category_id?: string | null
+  custom_fields?: Record<string, string | number | boolean | null>
   date: string
   cost?: number
   vendor?: string

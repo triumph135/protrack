@@ -1,767 +1,243 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useReactToPrint } from 'react-to-print'
-import Link from 'next/link'
-import { Plus, BarChart3, Building, DollarSign, FileText, Users, TrendingUp, Calendar, AlertTriangle, Download, FileDown } from 'lucide-react'
+import { toast } from 'sonner'
+import { Download, FileDown } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
 import { useProjects } from '@/contexts/ProjectContext'
+import { useCategories } from '@/contexts/CategoryContext'
 import { useCosts } from '@/hooks/useCosts'
 import { useChangeOrders } from '@/hooks/useChangeOrders'
 import { createClient } from '@/lib/supabase'
-import ProjectChangeOrderSelector from '@/components/ProjectChangeOrderSelector'
+import { canAccessCategory } from '@/lib/permissions'
+import { flattenCategoryTree, ownAmountsByCategory, rollupCategoryAmounts } from '@/lib/categories'
+import { formatCurrency, formatPercent } from '@/lib/format'
+import { Button } from '@/components/ui/button'
+import { EmptyState, PageHeader, Skeleton } from '@/components/ui/feedback'
+import { isMissingRelation } from '@/lib/security'
+
+const BUDGET_COLUMNS: Record<string, string> = {
+  material: 'material_budget',
+  labor: 'labor_budget',
+  equipment: 'equipment_budget',
+  subcontractor: 'subcontractor_budget',
+  others: 'others_budget',
+  cap_leases: 'cap_leases_budget',
+  consumable: 'consumable_budget',
+}
 
 export default function DashboardPage() {
   const { user } = useAuth()
   const { tenant } = useTenant()
-  const { projects, activeProject, setActiveProject, loading, error: projectsError } = useProjects()
+  const { activeProject, loading: projectsLoading } = useProjects()
+  const { categories, tree, schemaPending } = useCategories()
+  const { entries, loading: costsLoading, refreshCosts } = useCosts(activeProject?.id, null)
+  const { getTotalAdditionalValue } = useChangeOrders(activeProject?.id)
+  const [invoices, setInvoices] = useState<Array<{ amount?: number | null }>>([])
+  const [budgets, setBudgets] = useState<Record<string, number>>({})
   const printRef = useRef<HTMLDivElement>(null)
-  
-  // Dashboard shows ALL data for the project (no change order filtering)
-  const { costs, getTotals, getCounts, refreshCosts } = useCosts(activeProject?.id, null) // null = show all change orders
-  const { changeOrders, getTotalAdditionalValue } = useChangeOrders(activeProject?.id)
-  
-  // Customer Invoice Data
-  const [customerInvoices, setCustomerInvoices] = useState<any[]>([])
-  const [invoicesLoading, setInvoicesLoading] = useState(false)
   const supabase = createClient()
 
-  // Load customer invoices for the active project (all change orders)
   useEffect(() => {
-    if (activeProject?.id && tenant?.id) {
-      loadCustomerInvoices()
-    }
-  }, [activeProject?.id, tenant?.id])
-
-  // Refresh costs when project changes to ensure dashboard updates
-  useEffect(() => {
-    if (activeProject?.id) {
-      refreshCosts()
-    }
+    if (activeProject?.id) refreshCosts()
   }, [activeProject?.id, refreshCosts])
 
-
-  const loadCustomerInvoices = async () => {
+  useEffect(() => {
     if (!activeProject?.id || !tenant?.id) return
-
-    try {
-      setInvoicesLoading(true)
-      
-      // Get ALL invoices for the project (no change order filtering on dashboard)
+    let cancelled = false
+    ;(async () => {
       const { data, error } = await supabase
         .from('customer_invoices')
-        .select('*')
+        .select('amount')
         .eq('tenant_id', tenant.id)
         .eq('project_id', activeProject.id)
+      if (!cancelled) setInvoices(error ? [] : data || [])
 
-      if (error) throw error
-      setCustomerInvoices(data || [])
-    } catch (error) {
-      console.error('Error loading customer invoices:', error)
-      setCustomerInvoices([])
-    } finally {
-      setInvoicesLoading(false)
-    }
-  }
-
-  // Calculate financial metrics
-  const calculateMetrics = () => {
-    if (!activeProject) {
-      return {
-        baseContractValue: 0,
-        changeOrderValue: 0,
-        totalContractValue: 0,
-        totalProjectCosts: 0,
-        totalInvoicedAmount: 0,
-        amountYetToBilled: 0,
-        grossProfit: 0,
-        grossProfitPercentage: 0
+      const categoryBudgets = await supabase
+        .from('project_category_budgets')
+        .select('category_id, amount')
+        .eq('project_id', activeProject.id)
+      if (!categoryBudgets.error && categoryBudgets.data) {
+        const next: Record<string, number> = {}
+        for (const row of categoryBudgets.data) next[row.category_id] = Number(row.amount || 0)
+        if (!cancelled) setBudgets(next)
+        return
       }
+      if (categoryBudgets.error && !isMissingRelation(categoryBudgets.error)) {
+        console.error(categoryBudgets.error)
+      }
+      const legacy = await supabase
+        .from('project_budgets')
+        .select('*')
+        .eq('project_id', activeProject.id)
+        .maybeSingle()
+      if (cancelled || !legacy.data) return
+      const next: Record<string, number> = {}
+      for (const category of categories) {
+        const column = category.builtin_key ? BUDGET_COLUMNS[category.builtin_key] : null
+        if (column) next[category.id] = Number((legacy.data as Record<string, number | null>)[column] || 0)
+      }
+      setBudgets(next)
+    })()
+    return () => {
+      cancelled = true
     }
+  }, [activeProject?.id, tenant?.id, supabase, categories])
 
-    const baseContractValue = activeProject.totalContractValue || 0
-    const changeOrderValue = getTotalAdditionalValue()
-    const totalContractValue = baseContractValue + changeOrderValue
-    
-    // Calculate total project costs (all categories, all change orders)
-    const costTotals = getTotals()
-    const totalProjectCosts = Object.values(costTotals).reduce((sum, total) => sum + total, 0)
-    
-    // Calculate total invoiced amount (all invoices for the project)
-    const totalInvoicedAmount = customerInvoices.reduce((sum, invoice) => sum + (invoice.amount || 0), 0)
-    
-    // Calculate remaining metrics
-    const amountYetToBilled = totalContractValue - totalInvoicedAmount
-    const grossProfit = totalInvoicedAmount - totalProjectCosts
-    const grossProfitPercentage = totalInvoicedAmount > 0 ? (grossProfit / totalInvoicedAmount) * 100 : 0
+  const visible = useMemo(() => {
+    const byId = new Map(categories.map((category) => [category.id, category]))
+    return categories.filter((category) =>
+      canAccessCategory(user, {
+        id: category.id,
+        builtinKey: category.builtin_key,
+        parentBuiltinKey: category.parent_id ? byId.get(category.parent_id)?.builtin_key : null,
+      }, 'read')
+    )
+  }, [categories, user])
 
-    return {
-      baseContractValue,
-      changeOrderValue,
-      totalContractValue,
-      totalProjectCosts,
-      totalInvoicedAmount,
-      amountYetToBilled,
-      grossProfit,
-      grossProfitPercentage
-    }
-  }
+  const rollup = useMemo(() => {
+    const own = ownAmountsByCategory(entries, categories)
+    return rollupCategoryAmounts(categories, own)
+  }, [entries, categories])
 
-  const metrics = calculateMetrics()
-  const costTotals = getTotals()
-  const costCounts = getCounts()
-  const totalCostEntries = Object.values(costCounts).reduce((sum, count) => sum + count, 0)
+  const budgetRollup = useMemo(() => rollupCategoryAmounts(categories, budgets), [categories, budgets])
 
-  const hasPermission = (area: string, level: 'read' | 'write' = 'read') => {
-    if (!user) return false
-    if (user.role === 'master') return true
-    
-    const userPermission = user.permissions[area as keyof typeof user.permissions]
-    if (!userPermission || userPermission === 'none') return false
-    
-    if (level === 'read') return ['read', 'write'].includes(userPermission)
-    if (level === 'write') return userPermission === 'write'
-    
-    return false
-  }
+  const baseContract = activeProject?.totalContractValue || 0
+  const changeOrders = getTotalAdditionalValue()
+  const contract = baseContract + changeOrders
+  const totalCosts = visible.reduce((sum, category) => {
+    if (category.parent_id) return sum
+    return sum + (rollup[category.id]?.total || 0)
+  }, 0)
+  const invoiced = invoices.reduce((sum, invoice) => sum + Number(invoice.amount || 0), 0)
+  const unbilled = contract - invoiced
+  const profit = invoiced - totalCosts
+  const margin = invoiced > 0 ? (profit / invoiced) * 100 : 0
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(amount)
-  }
+  const print = useReactToPrint({ contentRef: printRef, documentTitle: activeProject ? `${activeProject.jobNumber} summary` : 'ProTrack' })
 
-  const formatPercentage = (percentage: number) => {
-    return `${percentage.toFixed(1)}%`
-  }
-
-  const getStatusColor = (value: number, isPercentage = false) => {
-    if (isPercentage) {
-      if (value >= 15) return 'text-green-600'
-      if (value >= 5) return 'text-yellow-600'
-      return 'text-red-600'
-    } else {
-      if (value >= 0) return 'text-green-600'
-      return 'text-red-600'
-    }
-  }
-
-  const getStatusIcon = (value: number) => {
-    if (value >= 0) return <TrendingUp className="w-4 h-4" />
-    return <AlertTriangle className="w-4 h-4" />
-  }
-
-  // Export dashboard to PDF
-  const handlePrintPDF = useReactToPrint({
-    contentRef: printRef,
-    documentTitle: `${activeProject?.jobNumber || 'Dashboard'}_${new Date().toLocaleDateString().replace(/\//g, '-')}`,
-  })
-
-  const exportDashboardToPDF = () => {
+  const exportCsv = () => {
     if (!activeProject) {
-      alert('No active project to export')
+      toast.error('Choose a project before exporting')
       return
     }
-    handlePrintPDF()
-  }
-
-  // Export dashboard data to CSV
-  const exportDashboardData = () => {
-    if (!activeProject) {
-      alert('No active project to export')
-      return
-    }
-
-    const data = [
-      ['Project Information', ''],
-      ['Job Number', activeProject.jobNumber],
-      ['Job Name', activeProject.jobName],
-      ['Customer', activeProject.customer],
-      ['Status', activeProject.status || 'Active'],
-      ['Export Date', new Date().toLocaleDateString()],
-      [''],
-      
-      ['Financial Metrics', ''],
-      ['Base Contract Value', `$${metrics.baseContractValue.toLocaleString()}`],
-      ['Change Orders Value', `$${metrics.changeOrderValue.toLocaleString()}`],
-      ['Total Contract Value', `$${metrics.totalContractValue.toLocaleString()}`],
-      ['Total Project Costs', `$${metrics.totalProjectCosts.toLocaleString()}`],
-      ['Total Invoiced Amount', `$${metrics.totalInvoicedAmount.toLocaleString()}`],
-      ['Amount Yet to Bill', `$${metrics.amountYetToBilled.toLocaleString()}`],
-      ['Gross Profit', `$${metrics.grossProfit.toLocaleString()}`],
-      ['Gross Profit Percentage', `${formatPercentage(metrics.grossProfitPercentage)}`],
-      [''],
-      
-      ['Change Orders Summary', ''],
-      ['Number of Change Orders', changeOrders.length.toString()],
-      ...changeOrders.map(co => [
-        `CO: ${co.name}`, 
-        `$${(co.additional_contract_value || 0).toLocaleString()}`
+    const rows = [
+      ['Metric', 'Amount'],
+      ['Base contract', baseContract],
+      ['Change orders', changeOrders],
+      ['Total contract', contract],
+      ['Costs', totalCosts],
+      ['Invoiced', invoiced],
+      ['Not yet billed', unbilled],
+      ['Gross profit', profit],
+      ...flattenCategoryTree(tree).filter((category) => visible.some((item) => item.id === category.id)).map((category) => [
+        category.name,
+        rollup[category.id]?.total || 0,
       ]),
-      [''],
-      
-      ['Cost Summary', ''],
-      ['Total Cost Entries', totalCostEntries.toString()],
-      ['Total Invoice Entries', customerInvoices.length.toString()]
     ]
-
-    const csvContent = data.map(row => 
-      row.map(cell => `"${cell.toString().replace(/"/g, '""')}"`).join(',')
-    ).join('\n')
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const csv = rows.map((row) => row.join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `${activeProject.jobNumber}_dashboard_summary_${new Date().toLocaleDateString().replace(/\//g, '-')}.csv`
-    document.body.appendChild(link)
+    link.download = `${activeProject.jobNumber}_dashboard_summary.csv`
     link.click()
-    document.body.removeChild(link)
     URL.revokeObjectURL(url)
   }
 
-  if (loading) {
+  if (projectsLoading || costsLoading) {
     return (
-      <div className="space-y-6">
-        <ProjectChangeOrderSelector 
-          showChangeOrderSelector={true}
-          disableChangeOrderSelector={true}
-        />
-                    <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200 text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-              <p className="text-gray-600">Loading dashboard...</p>
-            </div>
+      <div className="space-y-3">
+        <Skeleton className="h-16" />
+        <Skeleton className="h-40" />
       </div>
     )
   }
 
   if (!activeProject) {
-    return (
-      <div className="space-y-6">
-        <ProjectChangeOrderSelector 
-          showChangeOrderSelector={false}
-        />
-                    <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200 text-center">
-              {projectsError && (
-                <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-left" role="alert">
-                  Could not load projects. {projectsError}
-                </div>
-              )}
-              <BarChart3 className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-              <h2 className="text-2xl font-bold text-gray-900 mb-4">Welcome!</h2>
-              <p className="text-gray-600 mb-6">Get started by creating your first project.</p>
-          {hasPermission('projects', 'write') ? (
-            <Link
-              href="/projects"
-              className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 gap-2"
-            >
-              <Plus className="w-5 h-5" />
-              Create Your First Project
-            </Link>
-          ) : (
-            <p className="text-gray-500">Ask an administrator to create a project for you.</p>
-          )}
-        </div>
-      </div>
-    )
+    return <EmptyState title="No project yet" body="Create a project to see contract value, costs, and invoices." />
   }
 
+  const topLevel = flattenCategoryTree(tree).filter((category) => !category.parent_id && visible.some((item) => item.id === category.id))
+
   return (
-    <div className="space-y-6">
-      {/* Project Selector (Change Order Selector Disabled for Dashboard) */}
-      <ProjectChangeOrderSelector 
-        showChangeOrderSelector={true}
-        disableChangeOrderSelector={true}
+    <div className="space-y-4">
+      <PageHeader
+        title={activeProject.jobName}
+        description={`${activeProject.jobNumber} · ${activeProject.customer}`}
+        action={
+          <>
+            <Button variant="outline" type="button" onClick={exportCsv}>
+              <Download className="h-4 w-4" /> CSV
+            </Button>
+            <Button variant="outline" type="button" onClick={() => print()}>
+              <FileDown className="h-4 w-4" /> PDF
+            </Button>
+          </>
+        }
       />
-
-      {projectsError && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md" role="alert">
-          Some project data could not be refreshed. {projectsError}
-        </div>
-      )}
-
-      {/* Header with Project Info */}
-      <div className="bg-white overflow-hidden shadow rounded-lg border border-gray-200">
-        <div className="p-4 sm:p-6">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-            <div>
-              <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Dashboard</h1>
-              <p className="text-gray-600 text-sm sm:text-base">Welcome back, {user?.name}!</p>
-              <p className="text-xs sm:text-sm text-gray-500 mt-1">
-                Viewing: Complete Project Overview
-              </p>
-            </div>
-            <div className="flex flex-col lg:items-end gap-3">
-              <div className="flex gap-2">
-                <button
-                  onClick={exportDashboardToPDF}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-                >
-                  <FileDown className="h-4 w-4 mr-2" />
-                  Export PDF
-                </button>
-                <button
-                  onClick={exportDashboardData}
-                  className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  Export CSV
-                </button>
-              </div>
-              <div className="lg:text-right">
-                <p className="text-xs sm:text-sm text-gray-500">Active Project</p>
-                <p className="text-base sm:text-lg font-semibold text-blue-600 break-words">
-                  {activeProject.jobNumber} - {activeProject.jobName}
-                </p>
-                <p className="text-xs sm:text-sm text-gray-600">{activeProject.customer}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* PDF Export Content - Hidden wrapper */}
-      <div className="hidden">
-        <div ref={printRef} className="p-8 bg-white">
-          {/* Print Header */}
-          <div className="mb-6 pb-4 border-b-2 border-gray-300">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Dashboard Report</h1>
-            <div className="text-sm text-gray-600">
-              <p><strong>Project:</strong> {activeProject.jobNumber} - {activeProject.jobName}</p>
-              <p><strong>Customer:</strong> {activeProject.customer}</p>
-              <p><strong>Report Date:</strong> {new Date().toLocaleDateString()}</p>
-            </div>
-          </div>
-
-          {/* Financial Metrics */}
-          <div className="mb-6">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="border border-gray-300 rounded-lg p-4">
-                <p className="text-sm text-gray-600 mb-1">Total Contract Value</p>
-                <p className="text-2xl font-bold text-gray-900">{formatCurrency(metrics.totalContractValue)}</p>
-                <p className="text-xs text-gray-500 mt-1">
-                  Base: {formatCurrency(metrics.baseContractValue)} | COs: {formatCurrency(metrics.changeOrderValue)}
-                </p>
-              </div>
-              <div className="border border-gray-300 rounded-lg p-4">
-                <p className="text-sm text-gray-600 mb-1">Total Project Costs</p>
-                <p className="text-2xl font-bold text-red-600">{formatCurrency(metrics.totalProjectCosts)}</p>
-                <p className="text-xs text-gray-500 mt-1">{totalCostEntries} cost entries</p>
-              </div>
-              <div className="border border-gray-300 rounded-lg p-4">
-                <p className="text-sm text-gray-600 mb-1">Invoiced</p>
-                <p className={`text-2xl font-bold ${metrics.totalInvoicedAmount < metrics.totalProjectCosts ? 'text-red-600' : 'text-green-600'}`}>
-                  {formatCurrency(metrics.totalInvoicedAmount)}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">Yet to Bill: {formatCurrency(metrics.amountYetToBilled)}</p>
-              </div>
-              <div className="border border-gray-300 rounded-lg p-4">
-                <p className="text-sm text-gray-600 mb-1">Gross Profit</p>
-                <p className={`text-2xl font-bold ${getStatusColor(metrics.grossProfit)}`}>
-                  {formatCurrency(metrics.grossProfit)}
-                </p>
-                <p className={`text-xs font-medium mt-1 ${getStatusColor(metrics.grossProfitPercentage, true)}`}>
-                  {formatPercentage(metrics.grossProfitPercentage)} margin
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Financial Summary */}
-          <div className="mb-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">Financial Summary</h2>
-            <div className="grid grid-cols-2 gap-6">
-              <div>
-                <h3 className="text-base font-semibold text-gray-900 mb-3 border-b pb-2">Contract Breakdown</h3>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Base Contract:</span>
-                    <span className="font-medium">{formatCurrency(metrics.baseContractValue)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Change Orders ({changeOrders.length}):</span>
-                    <span className="font-medium">{formatCurrency(metrics.changeOrderValue)}</span>
-                  </div>
-                  <div className="flex justify-between pt-2 border-t">
-                    <span className="font-semibold text-gray-900">Total Contract Value:</span>
-                    <span className="font-bold text-blue-600">{formatCurrency(metrics.totalContractValue)}</span>
-                  </div>
-                </div>
-              </div>
-              <div>
-                <h3 className="text-base font-semibold text-gray-900 mb-3 border-b pb-2">Profitability Analysis</h3>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Total Revenue:</span>
-                    <span className="font-medium">{formatCurrency(metrics.totalInvoicedAmount)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Total Costs:</span>
-                    <span className="font-medium">{formatCurrency(metrics.totalProjectCosts)}</span>
-                  </div>
-                  <div className="flex justify-between pt-2 border-t">
-                    <span className="font-semibold text-gray-900">Gross Profit:</span>
-                    <span className={`font-bold ${getStatusColor(metrics.grossProfit)}`}>
-                      {formatCurrency(metrics.grossProfit)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-semibold text-gray-900">Gross Margin:</span>
-                    <span className={`font-bold ${getStatusColor(metrics.grossProfitPercentage, true)}`}>
-                      {formatPercentage(metrics.grossProfitPercentage)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            {metrics.grossProfitPercentage < 5 && metrics.totalContractValue > 0 && (
-              <div className="mt-4 bg-red-50 border-2 border-red-300 rounded-lg p-3">
-                <p className="text-sm font-semibold text-red-800">⚠ Low Profit Margin Alert</p>
-                <p className="text-sm text-red-700">
-                  Current gross margin is {formatPercentage(metrics.grossProfitPercentage)}.
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* Cost Breakdown */}
-          <div className="break-before-page">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">Cost Breakdown by Category</h2>
-            <div className="grid grid-cols-2 gap-4">
-              {Object.entries(costTotals).map(([category, total]) => {
-                const count = costCounts[category as keyof typeof costCounts]
-                const categoryNames = {
-                  material: 'Material',
-                  labor: 'Labor',
-                  equipment: 'Equipment',
-                  subcontractor: 'Subcontractor',
-                  others: 'Others',
-                  cap_leases: 'Cap Leases',
-                  consumable: 'Consumable'
-                }
-                
-                const categoryName = categoryNames[category as keyof typeof categoryNames]
-                const percentage = metrics.totalProjectCosts > 0 ? (total / metrics.totalProjectCosts) * 100 : 0
-                const hasReadPermission = hasPermission(category === 'cap_leases' ? 'capLeases' : category, 'read')
-                
-                if (!hasReadPermission) return null
-                
+      <div ref={printRef} className="space-y-4 bg-background">
+        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Metric label="Contract" value={formatCurrency(contract)} detail={`${formatCurrency(baseContract)} base · ${formatCurrency(changeOrders)} changes`} />
+          <Metric label="Costs" value={formatCurrency(totalCosts)} />
+          <Metric label="Invoiced" value={formatCurrency(invoiced)} detail={`${formatCurrency(unbilled)} not yet billed`} />
+          <Metric label="Gross profit" value={formatCurrency(profit)} detail={formatPercent(margin)} tone={profit >= 0 ? 'good' : 'bad'} />
+        </section>
+        <section className="overflow-hidden rounded-lg border border-border bg-card">
+          <table className="responsive-cards w-full text-sm">
+            <thead className="border-b border-border text-left text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 font-medium">Category</th>
+                <th className="px-3 py-2 text-right font-medium">Budget</th>
+                <th className="px-3 py-2 text-right font-medium">Actual</th>
+                <th className="px-3 py-2 text-right font-medium">Remaining</th>
+              </tr>
+            </thead>
+            <tbody>
+              {topLevel.map((category) => {
+                const actual = rollup[category.id]?.total || 0
+                const budget = budgetRollup[category.id]?.total || 0
+                const children = category.children.filter((child) => visible.some((item) => item.id === child.id))
                 return (
-                  <div key={category} className="border border-gray-300 rounded-lg p-3">
-                    <p className="text-xs font-medium text-gray-600">{categoryName}</p>
-                    <p className="text-lg font-bold text-gray-900">{formatCurrency(total)}</p>
-                    <p className="text-xs text-gray-500">{count} entries • {percentage.toFixed(1)}%</p>
-                  </div>
+                  <Fragment key={category.id}>
+                    <tr className="border-b border-border">
+                      <td className="px-3 py-2" data-label="Category">{category.name}</td>
+                      <td className="px-3 py-2 text-right tabular" data-label="Budget">{formatCurrency(budget)}</td>
+                      <td className="px-3 py-2 text-right tabular" data-label="Actual">{formatCurrency(actual)}</td>
+                      <td className="px-3 py-2 text-right tabular" data-label="Remaining">{formatCurrency(budget - actual)}</td>
+                    </tr>
+                    {children.map((child) => (
+                      <tr key={child.id} className="border-b border-border text-muted-foreground">
+                        <td className="px-3 py-2 pl-8" data-label="Category">{child.name}</td>
+                        <td className="px-3 py-2 text-right tabular" data-label="Budget">{formatCurrency(budgets[child.id] || 0)}</td>
+                        <td className="px-3 py-2 text-right tabular" data-label="Actual">{formatCurrency(rollup[child.id]?.own || 0)}</td>
+                        <td className="px-3 py-2 text-right tabular" data-label="Remaining">{formatCurrency((budgets[child.id] || 0) - (rollup[child.id]?.own || 0))}</td>
+                      </tr>
+                    ))}
+                  </Fragment>
                 )
               })}
-            </div>
-          </div>
-        </div>
+            </tbody>
+          </table>
+          {schemaPending ? null : (
+            <p className="px-3 py-2 text-xs text-muted-foreground">
+              Parent rows include their children. Labor entries filed before a direct/indirect split stay on Labor.
+            </p>
+          )}
+        </section>
       </div>
+    </div>
+  )
+}
 
-      {/* Financial Metrics - Primary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 lg:gap-6">
-        {/* Total Contract Value */}
-        <div className="bg-white p-4 lg:p-6 rounded-lg shadow-md border border-gray-200">
-          <div className="flex items-start space-x-3">
-            <div className="flex-shrink-0">
-              <Building className="h-6 w-6 lg:h-8 lg:w-8 text-blue-500" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-lg lg:text-2xl font-semibold text-gray-900 break-words">
-                {formatCurrency(metrics.totalContractValue)}
-              </p>
-              <p className="text-sm lg:text-base text-gray-600">Total Contract Value</p>
-              <div className="text-xs text-gray-500 mt-1 break-words">
-                Base: {formatCurrency(metrics.baseContractValue)}<br />
-                COs: {formatCurrency(metrics.changeOrderValue)}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Total Project Costs */}
-        <div className="bg-white p-4 lg:p-6 rounded-lg shadow-md border border-gray-200">
-          <div className="flex items-start space-x-3">
-            <div className="flex-shrink-0">
-              <DollarSign className="h-6 w-6 lg:h-8 lg:w-8 text-red-500" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-lg lg:text-2xl font-semibold text-gray-900 break-words">
-                {formatCurrency(metrics.totalProjectCosts)}
-              </p>
-              <p className="text-sm lg:text-base text-gray-600">Total Project Costs</p>
-              <div className="text-xs text-gray-500 mt-1">
-                {totalCostEntries} cost entries
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Amount Yet to be Billed */}
-        <div className="bg-white p-4 lg:p-6 rounded-lg shadow-md border border-gray-200">
-          <div className="flex items-start space-x-3">
-            <div className="flex-shrink-0">
-              <FileText className="h-6 w-6 lg:h-8 lg:w-8 text-orange-500" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className={`text-lg lg:text-2xl font-semibold break-words ${metrics.totalInvoicedAmount < metrics.totalProjectCosts ? 'text-red-600' : 'text-green-600'}`}> 
-                {formatCurrency(metrics.totalInvoicedAmount)}
-              </p>
-              <p className="text-sm lg:text-base text-gray-600">Invoiced</p>
-              <div className="text-xs text-gray-500 mt-1 break-words">
-                Amount Yet to Bill: {formatCurrency(metrics.amountYetToBilled)}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Gross Profit */}
-        <div className="bg-white p-4 lg:p-6 rounded-lg shadow-md">
-          <div className="flex items-start space-x-3">
-            <div className="flex-shrink-0">
-              <div className={`h-6 w-6 lg:h-8 lg:w-8 ${getStatusColor(metrics.grossProfit)}`}>
-                {getStatusIcon(metrics.grossProfit)}
-              </div>
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className={`text-lg lg:text-2xl font-semibold break-words ${getStatusColor(metrics.grossProfit)}`}>
-                {formatCurrency(metrics.grossProfit)}
-              </p>
-              <p className="text-sm lg:text-base text-gray-600">Gross Profit</p>
-              <div className={`text-xs mt-1 font-medium ${getStatusColor(metrics.grossProfitPercentage, true)}`}>
-                {formatPercentage(metrics.grossProfitPercentage)} margin
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Financial Summary */}
-      <div className="bg-white rounded-lg shadow-md p-4 lg:p-6">
-        <h2 className="text-lg lg:text-xl font-semibold text-gray-900 mb-4 lg:mb-6">Financial Summary</h2>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Revenue Breakdown */}
-          <div>
-            <h3 className="text-base lg:text-lg font-medium text-gray-900 mb-3">Contract Breakdown</h3>
-            <div className="space-y-2">
-              <div className="flex justify-between items-start gap-2">
-                <span className="text-gray-600 text-sm lg:text-base flex-shrink-0">Base Contract:</span>
-                <span className="font-medium text-sm lg:text-base text-right break-words">
-                  {formatCurrency(metrics.baseContractValue)}
-                </span>
-              </div>
-              <div className="flex justify-between items-start gap-2">
-                <span className="text-gray-600 text-sm lg:text-base flex-shrink-0">
-                  Change Orders ({changeOrders.length}):
-                </span>
-                <span className="font-medium text-sm lg:text-base text-right break-words">
-                  {formatCurrency(metrics.changeOrderValue)}
-                </span>
-              </div>
-              <div className="flex justify-between items-start gap-2 border-t pt-2">
-                <span className="font-medium text-gray-900 text-sm lg:text-base flex-shrink-0">
-                  Total Contract Value:
-                </span>
-                <span className="font-bold text-blue-600 text-sm lg:text-base text-right break-words">
-                  {formatCurrency(metrics.totalContractValue)}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Profitability Analysis */}
-          <div>
-            <h3 className="text-base lg:text-lg font-medium text-gray-900 mb-3">Profitability Analysis</h3>
-            <div className="space-y-2">
-              <div className="flex justify-between items-start gap-2">
-                <span className="text-gray-600 text-sm lg:text-base flex-shrink-0">Total Revenue:</span>
-                <span className="font-medium text-sm lg:text-base text-right break-words">
-                  {formatCurrency(metrics.totalInvoicedAmount)}
-                </span>
-              </div>
-              <div className="flex justify-between items-start gap-2">
-                <span className="text-gray-600 text-sm lg:text-base flex-shrink-0">Total Costs:</span>
-                <span className="font-medium text-sm lg:text-base text-right break-words">
-                  {formatCurrency(metrics.totalProjectCosts)}
-                </span>
-              </div>
-              <div className="flex justify-between items-start gap-2 border-t pt-2">
-                <span className="font-medium text-gray-900 text-sm lg:text-base flex-shrink-0">Gross Profit:</span>
-                <span className={`font-bold text-sm lg:text-base text-right break-words ${getStatusColor(metrics.grossProfit)}`}>
-                  {formatCurrency(metrics.grossProfit)}
-                </span>
-              </div>
-              <div className="flex justify-between items-start gap-2">
-                <span className="font-medium text-gray-900 text-sm lg:text-base flex-shrink-0">Gross Margin:</span>
-                <span className={`font-bold text-sm lg:text-base text-right ${getStatusColor(metrics.grossProfitPercentage, true)}`}>
-                  {formatPercentage(metrics.grossProfitPercentage)}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Profit Margin Alert */}
-        {metrics.grossProfitPercentage < 5 && metrics.totalContractValue > 0 && (
-          <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-4">
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
-              <div>
-                <p className="text-sm font-medium text-red-800">Low Profit Margin Alert</p>
-                <p className="text-sm text-red-700">
-                  Current gross margin is {formatPercentage(metrics.grossProfitPercentage)}. 
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Cost Breakdown by Category */}
-      <div className="bg-white rounded-lg shadow-md p-4 lg:p-6">
-        <h2 className="text-lg lg:text-xl font-semibold text-gray-900 mb-4 lg:mb-6">Cost Breakdown by Category</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 lg:gap-4">
-          {Object.entries(costTotals).map(([category, total]) => {
-            const count = costCounts[category as keyof typeof costCounts]
-            const categoryNames = {
-              material: 'Material',
-              labor: 'Labor',
-              equipment: 'Equipment',
-              subcontractor: 'Subcontractor',
-              others: 'Others',
-              cap_leases: 'Cap Leases',
-              consumable: 'Consumable'
-            }
-            
-            const categoryName = categoryNames[category as keyof typeof categoryNames]
-            const categorySlug = category === 'cap_leases' ? 'cap-leases' : category
-            const hasReadPermission = hasPermission(category === 'cap_leases' ? 'capLeases' : category, 'read')
-            const percentage = metrics.totalProjectCosts > 0 ? (total / metrics.totalProjectCosts) * 100 : 0
-            
-            if (!hasReadPermission) return null
-            
-            return (
-              <Link
-                key={category}
-                href={`/costs?category=${categorySlug}`}
-                className="bg-gray-50 p-3 lg:p-4 rounded-lg hover:bg-gray-100 transition-colors"
-              >
-                <div className="flex justify-between items-start gap-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs lg:text-sm font-medium text-gray-600 truncate">{categoryName}</p>
-                    <p className="text-sm lg:text-lg font-semibold text-gray-900 break-words">
-                      {formatCurrency(total)}
-                    </p>
-                    <p className="text-xs text-gray-500">{count} entries • {percentage.toFixed(1)}%</p>
-                  </div>
-                  <div className="flex-shrink-0">
-                    <DollarSign className="h-4 w-4 lg:h-5 lg:w-5 text-gray-400" />
-                  </div>
-                </div>
-              </Link>
-            )
-          })}
-        </div>
-      </div>
-
-      {/* Quick Actions */}
-      <div className="bg-white rounded-lg shadow-md p-4 lg:p-6">
-        <h2 className="text-lg lg:text-xl font-semibold text-gray-900 mb-4 lg:mb-6">Quick Actions</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 lg:gap-4">
-          {hasPermission('material', 'write') && (
-            <Link
-              href="/costs?category=material"
-              className="flex items-center p-3 lg:p-4 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
-            >
-              <div className="flex-shrink-0">
-                <DollarSign className="h-6 w-6 lg:h-8 lg:w-8 text-blue-500" />
-              </div>
-              <div className="ml-3 min-w-0 flex-1">
-                <p className="text-sm lg:text-base font-medium text-gray-900 truncate">Add Material Cost</p>
-                <p className="text-xs lg:text-sm text-gray-600">Track material expenses</p>
-              </div>
-            </Link>
-          )}
-
-          {hasPermission('labor', 'write') && (
-            <Link
-              href="/costs?category=labor"
-              className="flex items-center p-3 lg:p-4 bg-green-50 rounded-lg hover:bg-green-100 transition-colors"
-            >
-              <div className="flex-shrink-0">
-                <Users className="h-6 w-6 lg:h-8 lg:w-8 text-green-500" />
-              </div>
-              <div className="ml-3 min-w-0 flex-1">
-                <p className="text-sm lg:text-base font-medium text-gray-900 truncate">Add Labor Cost</p>
-                <p className="text-xs lg:text-sm text-gray-600">Log employee hours</p>
-              </div>
-            </Link>
-          )}
-
-          {hasPermission('projects', 'write') && (
-            <Link
-              href="/projects"
-              className="flex items-center p-3 lg:p-4 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors"
-            >
-              <div className="flex-shrink-0">
-                <FileText className="h-6 w-6 lg:h-8 lg:w-8 text-purple-500" />
-              </div>
-              <div className="ml-3 min-w-0 flex-1">
-                <p className="text-sm lg:text-base font-medium text-gray-900 truncate">Manage Change Orders</p>
-                <p className="text-xs lg:text-sm text-gray-600">Add or edit change orders</p>
-              </div>
-            </Link>
-          )}
-
-          {hasPermission('invoices', 'write') && (
-            <Link
-              href="/invoices"
-              className="flex items-center p-3 lg:p-4 bg-orange-50 rounded-lg hover:bg-orange-100 transition-colors"
-            >
-              <div className="flex-shrink-0">
-                <FileText className="h-6 w-6 lg:h-8 lg:w-8 text-orange-500" />
-              </div>
-              <div className="ml-3 min-w-0 flex-1">
-                <p className="text-sm lg:text-base font-medium text-gray-900 truncate">Customer Invoices</p>
-                <p className="text-xs lg:text-sm text-gray-600">Manage billing</p>
-              </div>
-            </Link>
-          )}
-
-          {hasPermission('projects', 'read') && (
-            <Link
-              href="/projects"
-              className="flex items-center p-3 lg:p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-            >
-              <div className="flex-shrink-0">
-                <Building className="h-6 w-6 lg:h-8 lg:w-8 text-gray-500" />
-              </div>
-              <div className="ml-3 min-w-0 flex-1">
-                <p className="text-sm lg:text-base font-medium text-gray-900 truncate">View All Projects</p>
-                <p className="text-xs lg:text-sm text-gray-600">Manage projects</p>
-              </div>
-            </Link>
-          )}
-
-          {hasPermission('users', 'read') && (
-            <Link
-              href="/users"
-              className="flex items-center p-3 lg:p-4 bg-yellow-50 rounded-lg hover:bg-yellow-100 transition-colors"
-            >
-              <div className="flex-shrink-0">
-                <Users className="h-6 w-6 lg:h-8 lg:w-8 text-yellow-500" />
-              </div>
-              <div className="ml-3 min-w-0 flex-1">
-                <p className="text-sm lg:text-base font-medium text-gray-900 truncate">User Management</p>
-                <p className="text-xs lg:text-sm text-gray-600">Manage team access</p>
-              </div>
-            </Link>
-          )}
-        </div>
-      </div>
+function Metric({ label, value, detail, tone }: { label: string; value: string; detail?: string; tone?: 'good' | 'bad' }) {
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <p className="text-sm text-muted-foreground">{label}</p>
+      <p className={`mt-1 text-2xl font-semibold tabular ${tone === 'bad' ? 'text-destructive' : tone === 'good' ? 'text-success' : ''}`}>{value}</p>
+      {detail ? <p className="mt-1 text-xs text-muted-foreground tabular">{detail}</p> : null}
     </div>
   )
 }

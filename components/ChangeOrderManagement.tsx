@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Plus, Edit, Trash2, Save, DollarSign, FileText, AlertCircle } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useChangeOrders } from '@/hooks/useChangeOrders'
+import { confirmAction } from '@/components/ui/confirm-dialog'
 import type { ChangeOrder } from '@/types/app.types'
 
 interface ChangeOrderManagementProps {
@@ -85,9 +86,13 @@ export default function ChangeOrderManagement({ projectId, canWrite = false }: C
   }
 
   const handleDelete = async (changeOrderId: string) => {
-    if (!window.confirm('Are you sure you want to delete this change order? This will affect all related costs and invoices.')) {
-      return
-    }
+    const confirmed = await confirmAction({
+      title: 'Delete this change order?',
+      description: 'Costs and invoices tied to it stay on the project, without this change order.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!confirmed) return
 
     try {
       await deleteChangeOrder(changeOrderId)

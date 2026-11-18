@@ -6,6 +6,8 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useProjects } from '@/contexts/ProjectContext'
 import { useEmployees } from '@/hooks/useEmployees'
 import EmployeeModal from '@/components/EmployeeModal'
+import { confirmAction } from '@/components/ui/confirm-dialog'
+import { toast } from 'sonner'
 import type { Employee } from '@/types/app.types'
 
 
@@ -28,7 +30,8 @@ export default function EmployeesPage() {
     const userPermission = user.permissions[area as keyof typeof user.permissions]
     if (!userPermission || userPermission === 'none') return false
     
-    if (level === 'read') return ['read', 'write'].includes(userPermission)
+    if (typeof userPermission !== 'string') return false
+    if (level === 'read') return userPermission === 'read' || userPermission === 'write'
     if (level === 'write') return userPermission === 'write'
     
     return false
@@ -63,15 +66,19 @@ export default function EmployeesPage() {
     const employee = employees.find(emp => emp.id === employeeId)
     if (!employee) return
 
-    if (!window.confirm(`Are you sure you want to delete "${employee.name}"?`)) {
-      return
-    }
+    const confirmed = await confirmAction({
+      title: `Delete ${employee.name}?`,
+      description: 'This removes the employee from the company.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!confirmed) return
 
     try {
       await deleteEmployee(employeeId)
     } catch (error) {
       console.error('Error deleting employee:', error)
-      alert('Error deleting employee. Please try again.')
+      toast.error('Error deleting employee. Please try again.')
     }
   }
 

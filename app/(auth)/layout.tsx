@@ -11,13 +11,14 @@ export default function AuthLayout({
 }) {
   const pathname = usePathname()
   const isTenantSetup = pathname === '/tenant-setup'
+  const isJoin = pathname === '/join'
   const isAcceptInvitation = pathname === '/accept-invitation' || pathname.startsWith('/accept-invitation?')
   const isJoinTenant = pathname === '/join-tenant' || pathname.startsWith('/join-tenant?')
   const isResetPassword = pathname === '/reset-password'
   const isForgotPassword = pathname === '/forgot-password'
 
   const content = (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center px-4">
+    <div className="min-h-screen bg-background flex items-center justify-center px-4 py-10">
       <div className="max-w-md w-full space-y-8">
         <div className="text-center">
           <div className="flex justify-center items-center mb-6">
@@ -35,7 +36,7 @@ export default function AuthLayout({
   }
 
   // Tenant setup uses the shared auth frame but manages its own session rules.
-  if (isTenantSetup) {
+  if (isTenantSetup || isJoin) {
     return content
   }
 

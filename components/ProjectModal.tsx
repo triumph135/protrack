@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import { X, Building, User, DollarSign, MapPin, Users, Plus, Edit, Trash2 } from 'lucide-react'
 import { useEmployees } from '@/hooks/useEmployees'
 import EmployeeModal from '@/components/EmployeeModal'
+import { confirmAction } from '@/components/ui/confirm-dialog'
+import { toast } from 'sonner'
 import type { Project, Employee } from '@/types/app.types'
 
 interface ProjectModalProps {
@@ -158,15 +160,19 @@ export default function ProjectModal({
   }
 
   const handleDeleteEmployee = async (employee: Employee) => {
-    if (!window.confirm(`Are you sure you want to delete "${employee.name}"?`)) {
-      return
-    }
+    const confirmed = await confirmAction({
+      title: `Delete ${employee.name}?`,
+      description: 'This removes the employee from the company.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!confirmed) return
 
     try {
       await deleteEmployee(employee.id)
     } catch (error) {
       console.error('Error deleting employee:', error)
-      alert('Error deleting employee. Please try again.')
+      toast.error('Error deleting employee. Please try again.')
     }
   }
 

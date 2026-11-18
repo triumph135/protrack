@@ -64,7 +64,8 @@ export default function ProjectChangeOrderSelector({
     const userPermission = user.permissions[area as keyof typeof user.permissions]
     if (!userPermission || userPermission === 'none') return false
     
-    if (level === 'read') return ['read', 'write'].includes(userPermission)
+    if (typeof userPermission !== 'string') return false
+    if (level === 'read') return userPermission === 'read' || userPermission === 'write'
     if (level === 'write') return userPermission === 'write'
     
     return false

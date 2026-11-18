@@ -1,4 +1,4 @@
--- Rolls back 20260313000000_enable_rls.sql and 20260313000001_storage_rls.sql
+-- Rolls back 20261113201043_enable_rls.sql and 20261117235751_storage_rls.sql
 -- to the ProTrack-Prod shape captured on 2026-11-13.
 --
 -- Run in the Supabase SQL editor as one script. One transaction.
