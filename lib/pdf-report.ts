@@ -11,6 +11,7 @@ export interface PdfBar {
   actual: number
   budget: number
   caption: string
+  depth?: number
 }
 
 export interface PdfPoint {
@@ -39,6 +40,7 @@ export interface PdfReport {
   filters: string[]
   columns: string[]
   rows: string[][]
+  rowDepth?: number[]
   totals: Array<{ label: string; value: string }>
   visual?: PdfVisual
 }
@@ -65,6 +67,13 @@ export function pdfText(value: string): string {
     .replace(/[\u201C\u201D]/g, '"')
     .replace(/\u2026/g, '...')
     .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, '')
+}
+
+function childRow(cells: string[], explicit?: number): { depth: number; cells: string[] } {
+  if (explicit && explicit > 0) return { depth: explicit, cells }
+  const label = cells[0] || ''
+  if (!label.startsWith('  ')) return { depth: 0, cells }
+  return { depth: 1, cells: [label.replace(/^ +/, ''), ...cells.slice(1)] }
 }
 
 function wrap(text: string, width: number, size: number, measure: (value: string, size: number) => number): string[] {
@@ -144,21 +153,30 @@ export async function renderReportPdf(report: PdfReport): Promise<Uint8Array> {
 
   const columns = Math.max(report.columns.length, 1)
   const colWidth = contentWidth / columns
-  const drawRow = (cells: string[], header: boolean) => {
+  const drawRow = (cells: string[], header: boolean, depth = 0) => {
+    const nested = !header && depth > 0
     const face = header ? bold : font
-    const wrapped = cells.map((cell) => wrap(cell || '', colWidth - 8, header ? 8 : 8, (value, size) => face.widthOfTextAtSize(pdfText(value), size)))
+    const size = nested ? 7 : 8
+    const indent = nested ? 16 : 0
+    const wrapped = cells.map((cell, index) => wrap(cell || '', colWidth - 8 - (index === 0 ? indent : 0), size, (value, fontSize) => face.widthOfTextAtSize(pdfText(value), fontSize)))
     const lineCount = Math.max(1, ...wrapped.map((item) => item.length))
     const height = lineCount * 10 + 8
     ensure(height)
     page.drawRectangle({ x: MARGIN, y: y - height + 4, width: contentWidth, height, color: header ? rgb(0.94, 0.95, 0.96) : rgb(1, 1, 1), borderColor: line, borderWidth: 0.3 })
+    if (nested) {
+      const railX = MARGIN + 6
+      const mid = y - height / 2 + 2
+      page.drawLine({ start: { x: railX, y: y + 2 }, end: { x: railX, y: y - height + 2 }, thickness: 0.7, color: line })
+      page.drawLine({ start: { x: railX, y: mid }, end: { x: railX + 8, y: mid }, thickness: 0.7, color: line })
+    }
     wrapped.forEach((item, index) => {
       item.forEach((text, lineIndex) => {
         page.drawText(text, {
-          x: MARGIN + index * colWidth + 4,
+          x: MARGIN + index * colWidth + 4 + (index === 0 ? indent : 0),
           y: y - 11 - lineIndex * 10,
-          size: 8,
+          size,
           font: face,
-          color: ink,
+          color: nested ? muted : ink,
         })
       })
     })
@@ -168,7 +186,10 @@ export async function renderReportPdf(report: PdfReport): Promise<Uint8Array> {
   if (report.columns.length > 0) {
     heading('Details')
     drawRow(report.columns, true)
-    for (const row of report.rows) drawRow(row, false)
+    report.rows.forEach((row, index) => {
+      const marked = childRow(row, report.rowDepth?.[index])
+      drawRow(marked.cells, false, marked.depth)
+    })
   }
 
   y -= 14
@@ -235,8 +256,16 @@ export async function renderReportPdf(report: PdfReport): Promise<Uint8Array> {
     const barW = contentWidth - labelW - captionW
     const max = Math.max(1, ...items.flatMap((item) => [item.actual, item.budget]))
     for (const item of items) {
+      const nested = (item.depth || 0) > 0 || item.label.startsWith('  ')
+      const label = nested ? item.label.replace(/^ +/, '') : item.label
+      const indent = nested ? 14 : 0
       ensure(16)
-      page.drawText(fit(item.label, labelW - 6, 8, font), { x: MARGIN, y: y - 8, size: 8, font, color: ink })
+      if (nested) {
+        const railX = MARGIN + 2
+        page.drawLine({ start: { x: railX, y: y + 2 }, end: { x: railX, y: y - 12 }, thickness: 0.7, color: line })
+        page.drawLine({ start: { x: railX, y: y - 5 }, end: { x: railX + 8, y: y - 5 }, thickness: 0.7, color: line })
+      }
+      page.drawText(fit(label, labelW - indent - 6, nested ? 7 : 8, font), { x: MARGIN + indent, y: y - 8, size: nested ? 7 : 8, font, color: nested ? muted : ink })
       const barX = MARGIN + labelW
       page.drawRectangle({ x: barX, y: y - 9, width: barW, height: 6, color: track })
       const actualW = Math.max(0, Math.min(barW, (item.actual / max) * barW))

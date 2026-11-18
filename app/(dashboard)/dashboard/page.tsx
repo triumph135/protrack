@@ -18,6 +18,8 @@ import { isMissingColumnError, isMissingRelation } from '@/lib/security'
 import { Button } from '@/components/ui/button'
 import { EmptyState, PageHeader, Skeleton } from '@/components/ui/feedback'
 import { ExportMenu, type ExportSpec } from '@/components/export/ExportMenu'
+import { CategoryName } from '@/components/costs/CategoryName'
+import { cn } from '@/lib/cn'
 import type { ChangeOrder, CustomerInvoice, ProjectCost } from '@/types/app.types'
 
 const BUDGET_COLUMNS: Record<string, string> = {
@@ -218,12 +220,25 @@ export default function DashboardPage() {
       alerts: alerts.map((alert) => `${alert.name} is ${alert.state === 'over' ? 'over budget' : 'nearing its budget'} (${formatCurrency(alert.actual)} of ${formatCurrency(alert.budget)}).`),
       bars: {
         title: 'Budget versus actual',
-        items: topLevel.map((category) => ({
-          label: category.name,
-          actual: rollup[category.id]?.total || 0,
-          budget: budgetRollup[category.id]?.total || 0,
-          caption: `${formatCurrency(rollup[category.id]?.total || 0)} / ${formatCurrency(budgetRollup[category.id]?.total || 0)}`,
-        })),
+        items: topLevel.flatMap((category) => {
+          const children = category.children.filter((child) => visible.some((item) => item.id === child.id))
+          return [
+            {
+              label: category.name,
+              actual: rollup[category.id]?.total || 0,
+              budget: budgetRollup[category.id]?.total || 0,
+              caption: `${formatCurrency(rollup[category.id]?.total || 0)} / ${formatCurrency(budgetRollup[category.id]?.total || 0)}`,
+              depth: 0,
+            },
+            ...children.map((child) => ({
+              label: child.name,
+              actual: rollup[child.id]?.own || 0,
+              budget: budgets[child.id] || 0,
+              caption: `${formatCurrency(rollup[child.id]?.own || 0)} / ${formatCurrency(budgets[child.id] || 0)}`,
+              depth: 1,
+            })),
+          ]
+        }),
       },
       series: {
         title: 'Cost trend',
@@ -325,20 +340,31 @@ export default function DashboardPage() {
               </div>
               <div className="space-y-3">
                 {topLevel.map((category) => {
-                  const actual = rollup[category.id]?.total || 0
-                  const budget = budgetRollup[category.id]?.total || 0
-                  const max = Math.max(budget, actual, 1)
+                  const children = category.children.filter((child) => visible.some((item) => item.id === child.id))
                   return (
-                    <Link key={category.id} href={`/costs?category=${category.id}` as never} className="block rounded-md px-1 py-1 hover:bg-muted">
-                      <div className="mb-1 flex justify-between gap-3 text-sm">
-                        <span>{category.name}</span>
-                        <span className="tabular text-muted-foreground">{formatCurrency(actual)} / {budget > 0 ? formatCurrency(budget) : 'No budget'}</span>
-                      </div>
-                      <div className="relative h-2 overflow-hidden rounded-full bg-muted">
-                        <div className="absolute inset-y-0 left-0 bg-primary/25" style={{ width: `${Math.min(100, (budget / max) * 100)}%` }} />
-                        <div className={`absolute inset-y-0 left-0 ${actual > budget && budget > 0 ? 'bg-destructive' : 'bg-primary'}`} style={{ width: `${Math.min(100, (actual / max) * 100)}%` }} />
-                      </div>
-                    </Link>
+                    <div key={category.id}>
+                      <OverviewBar
+                        href={`/costs?category=${category.id}`}
+                        name={category.name}
+                        actual={rollup[category.id]?.total || 0}
+                        budget={budgetRollup[category.id]?.total || 0}
+                        depth={0}
+                      />
+                      {children.length > 0 ? (
+                        <div className="ml-6 mt-1 border-l border-muted-foreground/45">
+                          {children.map((child) => (
+                            <OverviewBar
+                              key={child.id}
+                              href={`/costs?category=${child.id}`}
+                              name={child.name}
+                              actual={rollup[child.id]?.own || 0}
+                              budget={budgets[child.id] || 0}
+                              depth={1}
+                            />
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
                   )
                 })}
               </div>
@@ -378,8 +404,12 @@ export default function DashboardPage() {
                         <td className="px-3 py-2 text-right tabular" data-label="Remaining">{formatCurrency(budget - actual)}</td>
                       </tr>
                       {children.map((child) => (
-                        <tr key={child.id} className="border-b border-border text-muted-foreground">
-                          <td className="px-3 py-2 pl-8" data-label="Category"><Link href={`/costs?category=${child.id}` as never}>{child.name}</Link></td>
+                        <tr key={child.id} className="border-b border-border text-[13px] text-muted-foreground">
+                          <td className="px-3 py-2" data-label="Category">
+                            <CategoryName depth={1}>
+                              <Link className="text-muted-foreground hover:text-foreground" href={`/costs?category=${child.id}` as never}>{child.name}</Link>
+                            </CategoryName>
+                          </td>
                           <td className="px-3 py-2 text-right tabular" data-label="Budget">{formatCurrency(budgets[child.id] || 0)}</td>
                           <td className="px-3 py-2 text-right tabular" data-label="Actual">{formatCurrency(rollup[child.id]?.own || 0)}</td>
                           <td className="px-3 py-2 text-right tabular" data-label="Remaining">{formatCurrency((budgets[child.id] || 0) - (rollup[child.id]?.own || 0))}</td>
@@ -400,6 +430,23 @@ export default function DashboardPage() {
         </>
       ) : null}
     </div>
+  )
+}
+
+function OverviewBar({ href, name, actual, budget, depth }: { href: string; name: string; actual: number; budget: number; depth: number }) {
+  const max = Math.max(budget, actual, 1)
+  return (
+    <Link href={href as never} className={cn('relative block rounded-md py-1 hover:bg-muted', depth > 0 ? 'pl-3' : 'px-1')}>
+      {depth > 0 ? <span aria-hidden className="absolute left-0 top-1/2 h-px w-3 bg-muted-foreground/45" /> : null}
+      <div className={cn('mb-1 flex justify-between gap-3', depth > 0 ? 'pl-3 text-[13px] text-muted-foreground' : 'text-sm')}>
+        <span className="min-w-0 truncate">{name}</span>
+        <span className="tabular text-muted-foreground">{formatCurrency(actual)} / {budget > 0 ? formatCurrency(budget) : 'No budget'}</span>
+      </div>
+      <div className={cn('relative overflow-hidden rounded-full bg-muted', depth > 0 ? 'ml-3 h-1.5' : 'h-2')}>
+        <div className="absolute inset-y-0 left-0 bg-primary/25" style={{ width: `${Math.min(100, (budget / max) * 100)}%` }} />
+        <div className={cn('absolute inset-y-0 left-0', actual > budget && budget > 0 ? 'bg-destructive' : 'bg-primary')} style={{ width: `${Math.min(100, (actual / max) * 100)}%` }} />
+      </div>
+    </Link>
   )
 }
 

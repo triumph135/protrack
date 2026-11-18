@@ -129,9 +129,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   const go = () => setMobileOpen(false)
-  const itemClass = (active: boolean) => cn(
-    'flex min-h-11 min-w-0 flex-1 items-center rounded-lg px-2 text-sm',
-    active ? 'bg-accent font-medium text-accent-foreground' : 'text-foreground hover:bg-muted',
+  const itemClass = (active: boolean, nested = false) => cn(
+    'flex min-h-11 min-w-0 flex-1 items-center rounded-lg px-2',
+    nested ? 'text-[13px]' : 'text-sm',
+    active
+      ? 'bg-accent font-medium text-accent-foreground'
+      : nested
+        ? 'font-normal text-muted-foreground hover:bg-muted hover:text-foreground'
+        : 'text-foreground hover:bg-muted',
   )
   const navList = (rail: boolean) => (
     <nav className="space-y-0.5" aria-label="Main">
@@ -180,17 +185,23 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     <span className="truncate">{node.name}</span>
                   </Link>
                 </div>
-                {open ? node.children.map((child) => (
-                  <Link
-                    key={child.id}
-                    href={`/costs?category=${child.id}` as never}
-                    onClick={go}
-                    title={child.name}
-                    className={cn(itemClass(activeCategoryId === child.id), 'ml-10')}
-                  >
-                    <span className="truncate">{child.name}</span>
-                  </Link>
-                )) : null}
+                {open && node.children.length > 0 ? (
+                  <div className="ml-12 border-l border-muted-foreground/45">
+                    {node.children.map((child) => (
+                      <div key={child.id} className="relative flex items-center">
+                        <span aria-hidden className="absolute left-0 top-1/2 h-px w-3 bg-muted-foreground/45" />
+                        <Link
+                          href={`/costs?category=${child.id}` as never}
+                          onClick={go}
+                          title={child.name}
+                          className={cn(itemClass(activeCategoryId === child.id, true), 'ml-3')}
+                        >
+                          <span className="truncate">{child.name}</span>
+                        </Link>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             )
           }) : null}

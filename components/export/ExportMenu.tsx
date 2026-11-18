@@ -16,6 +16,7 @@ export interface ExportSpec {
   columns: string[]
   csvRows: CsvCell[][]
   pdfRows: string[][]
+  rowDepth?: number[]
   totals: Array<{ label: string; value: string }>
   visual?: PdfVisual
 }
@@ -65,6 +66,7 @@ export function ExportMenu({ spec, disabled = false }: { spec: ExportSpec | null
           filters: spec.filters,
           columns: spec.columns,
           rows: spec.pdfRows,
+          rowDepth: spec.rowDepth,
           totals: spec.totals,
           visual: spec.visual,
         })

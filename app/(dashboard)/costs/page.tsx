@@ -20,6 +20,7 @@ import { builtinKeyFromSlug, flattenCategoryTree, isFallbackCategoryId, legacyCa
 import { costDetailText, costGroupIds, countCostEntries, groupCostEntries, resolveEntryCategoryId, visibleCostLines, type CostGroup, type CostSortDirection, type CostSortKey } from '@/lib/cost-groups'
 import { categoryBudgetState } from '@/lib/overview'
 import { ExportMenu, type ExportSpec } from '@/components/export/ExportMenu'
+import { CategoryName } from '@/components/costs/CategoryName'
 import { calculateTotalCost, type CostCategory } from '@/lib/costs'
 import { enabledLaborFields, normalizeLaborFieldValue, validateLaborFieldValue } from '@/lib/labor-fields'
 import { readCompanySettings } from '@/lib/company-settings'
@@ -412,12 +413,22 @@ export default function CostsPage() {
         alerts: summaryRows.filter((row) => categoryBudgetState(row.actual, row.budget) === 'over' || categoryBudgetState(row.actual, row.budget) === 'near').map((row) => `${row.name} is ${categoryBudgetState(row.actual, row.budget) === 'over' ? 'over' : 'nearing'} its budget (${formatCurrency(row.actual)} of ${formatCurrency(row.budget)}).`),
         bars: {
           title: 'Budget versus actual',
-          items: parents.map(({ node }) => ({
-            label: node.name,
-            actual: actualRollup[node.id]?.total || 0,
-            budget: budgetRollup[node.id]?.total || 0,
-            caption: `${formatCurrency(actualRollup[node.id]?.total || 0)} / ${formatCurrency(budgetRollup[node.id]?.total || 0)}`,
-          })),
+          items: parents.flatMap(({ node, children }) => [
+            {
+              label: node.name,
+              actual: actualRollup[node.id]?.total || 0,
+              budget: budgetRollup[node.id]?.total || 0,
+              caption: `${formatCurrency(actualRollup[node.id]?.total || 0)} / ${formatCurrency(budgetRollup[node.id]?.total || 0)}`,
+              depth: 0,
+            },
+            ...children.map((child) => ({
+              label: child.name,
+              actual: actualRollup[child.id]?.own || 0,
+              budget: budgets[child.id] || 0,
+              caption: `${formatCurrency(actualRollup[child.id]?.own || 0)} / ${formatCurrency(budgets[child.id] || 0)}`,
+              depth: 1,
+            })),
+          ]),
         },
       },
     }
@@ -436,20 +447,27 @@ export default function CostsPage() {
         <section className="rounded-lg border border-border bg-card p-4">
           <h2 className="text-sm font-medium">Budget versus actual</h2>
           <div className="mt-3 space-y-3">
-            {parents.map(({ node }) => {
+            {parents.map(({ node, children }) => {
               const actual = actualRollup[node.id]?.total || 0
               const budget = budgetRollup[node.id]?.total || 0
-              const max = Math.max(actual, budget, 1)
               return (
-                <Link key={node.id} href={`/costs?category=${node.id}` as never} className="block rounded-md px-1 py-1 hover:bg-muted">
-                  <div className="mb-1 flex justify-between gap-3 text-sm">
-                    <span>{node.name}</span>
-                    <span className="tabular text-muted-foreground">{formatCurrency(actual)} / {budget > 0 ? formatCurrency(budget) : 'No budget'}</span>
-                  </div>
-                  <div className="relative h-2 overflow-hidden rounded-full bg-muted">
-                    <div className={`absolute inset-y-0 left-0 ${actual > budget && budget > 0 ? 'bg-destructive' : 'bg-primary'}`} style={{ width: `${Math.min(100, (actual / max) * 100)}%` }} />
-                  </div>
-                </Link>
+                <div key={node.id}>
+                  <SummaryBar href={`/costs?category=${node.id}`} name={node.name} actual={actual} budget={budget} depth={0} />
+                  {children.length > 0 ? (
+                    <div className="ml-6 mt-1 border-l border-muted-foreground/45">
+                      {children.map((child) => (
+                        <SummaryBar
+                          key={child.id}
+                          href={`/costs?category=${child.id}`}
+                          name={child.name}
+                          actual={actualRollup[child.id]?.own || 0}
+                          budget={budgets[child.id] || 0}
+                          depth={1}
+                        />
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
               )
             })}
           </div>
@@ -467,9 +485,11 @@ export default function CostsPage() {
             </thead>
             <tbody>
               {summaryRows.map((row) => (
-                <tr key={row.id} className="border-b border-border last:border-0">
-                  <td className={row.depth ? 'px-3 py-2 pl-8' : 'px-3 py-2'} data-label="Category">
-                    <Link className="font-medium text-primary" href={`/costs?category=${row.id}` as never}>{row.name}</Link>
+                <tr key={row.id} className={`border-b border-border last:border-0 ${row.depth ? 'text-[13px] text-muted-foreground' : ''}`}>
+                  <td className="px-3 py-2" data-label="Category">
+                    <CategoryName depth={row.depth}>
+                      <Link className={row.depth ? 'text-muted-foreground hover:text-foreground' : 'font-medium text-primary'} href={`/costs?category=${row.id}` as never}>{row.name}</Link>
+                    </CategoryName>
                   </td>
                   <td className="px-3 py-2 text-right tabular" data-label="Entries">{row.count}</td>
                   <td className="px-3 py-2 text-right tabular" data-label="Budget">{formatCurrency(row.budget)}</td>
@@ -528,6 +548,7 @@ export default function CostsPage() {
         actual,
         budget,
         caption: `${formatCurrency(actual)} / ${budget > 0 ? formatCurrency(budget) : 'No budget'}`,
+        depth: 1,
       }
     }),
   ]
@@ -548,6 +569,7 @@ export default function CostsPage() {
     pdfRows: shown.map((line) => line.kind === 'collapsed' || !line.row
       ? [line.path, '', `${line.entryCount} entries`, formatCurrency(line.amount)]
       : [line.path, line.row.date || '', costDetailText(line.row) || '—', formatCurrency(line.row.cost)]),
+    rowDepth: shown.map((line) => (line.path.includes(' / ') ? 1 : 0)),
     totals: [{ label: 'Shown total', value: formatCurrency(shownTotal) }],
     visual: {
       kpis: [
@@ -701,6 +723,22 @@ export default function CostsPage() {
   )
 }
 
+function SummaryBar({ href, name, actual, budget, depth }: { href: string; name: string; actual: number; budget: number; depth: number }) {
+  const max = Math.max(actual, budget, 1)
+  return (
+    <Link href={href as never} className={`relative block rounded-md py-1 hover:bg-muted ${depth > 0 ? 'pl-3' : 'px-1'}`}>
+      {depth > 0 ? <span aria-hidden className="absolute left-0 top-1/2 h-px w-3 bg-muted-foreground/45" /> : null}
+      <div className={`mb-1 flex justify-between gap-3 ${depth > 0 ? 'pl-3 text-[13px] text-muted-foreground' : 'text-sm'}`}>
+        <span className="min-w-0 truncate">{name}</span>
+        <span className="tabular">{formatCurrency(actual)} / {budget > 0 ? formatCurrency(budget) : 'No budget'}</span>
+      </div>
+      <div className={`relative overflow-hidden rounded-full bg-muted ${depth > 0 ? 'ml-3 h-1.5' : 'h-2'}`}>
+        <div className={`absolute inset-y-0 left-0 ${actual > budget && budget > 0 ? 'bg-destructive' : 'bg-primary'}`} style={{ width: `${Math.min(100, (actual / max) * 100)}%` }} />
+      </div>
+    </Link>
+  )
+}
+
 function SummaryStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg border border-border bg-card p-4">
@@ -752,8 +790,9 @@ function CostBranch({
   const count = countCostEntries([group])
   const unassigned = category?.builtin_key === 'labor' && laborSplit
   return (
-    <section className={depth === 0 ? 'rounded-lg border border-border bg-card' : 'border-t border-border'}>
-      <div className={`sticky top-0 z-10 flex flex-col gap-2 border-b border-border bg-card px-3 py-2 sm:flex-row sm:items-center ${depth > 0 ? 'pl-8' : ''}`}>
+    <section className={depth === 0 ? 'rounded-lg border border-border bg-card' : 'ml-6 border-l border-muted-foreground/45'}>
+      <div className={`sticky top-0 z-10 flex flex-col gap-2 border-b border-border bg-card px-3 py-2 sm:flex-row sm:items-center ${depth > 0 ? 'relative pl-5' : ''}`}>
+        {depth > 0 ? <span aria-hidden className="absolute left-0 top-1/2 h-px w-3 bg-muted-foreground/45" /> : null}
         <button
           type="button"
           className="flex min-h-11 flex-1 items-center gap-2 text-left"
@@ -763,7 +802,7 @@ function CostBranch({
         >
           {isOpen ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
           <span>
-            <span className="font-medium">{name}</span>
+            <span className={depth > 0 ? 'text-[13px] font-medium text-muted-foreground' : 'font-medium'}>{name}</span>
             <span className="ml-2 text-xs text-muted-foreground">
               {count} {count === 1 ? 'entry' : 'entries'}
               {group.children.length > 0 ? ' · includes children' : ''}

@@ -6,6 +6,7 @@ import { ThemeToggle } from '@/components/theme/ThemeToggle'
 import { PageHeader } from '@/components/ui/feedback'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/format'
+import { CategoryName } from '@/components/costs/CategoryName'
 
 const screens = ['Login', 'Forgot password', 'Overview', 'Projects', 'Costs', 'Category', 'Invoices', 'Employees', 'Team', 'Settings'] as const
 
@@ -61,7 +62,14 @@ function NavTree({ screen }: { screen: string }) {
             <span className="inline-flex h-11 w-8 items-center justify-center" aria-hidden>{materialsOpen ? '▾' : '▸'}</span>
             {row('Materials', screen === 'Category')}
           </div>
-          {materialsOpen ? row('Lumber', false, 'ml-10') : null}
+          {materialsOpen ? (
+            <div className="ml-12 border-l border-muted-foreground/45">
+              <div className="relative flex items-center">
+                <span aria-hidden className="absolute left-0 top-1/2 h-px w-3 bg-muted-foreground/45" />
+                <div className="ml-3 min-w-0 flex-1">{row('Lumber', false, 'text-[13px] font-normal text-muted-foreground')}</div>
+              </div>
+            </div>
+          ) : null}
           <div className="flex items-center pl-2">
             <span className="inline-flex h-11 w-8 items-center justify-center" aria-hidden>▸</span>
             {row('Labor', false)}
@@ -129,15 +137,25 @@ function Overview() {
       <div className="rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm">Subcontractor is nearing its budget ($2,200.00 of $8,000.00).</div>
       <div className="rounded-lg border border-border bg-card p-4">
         <div className="mb-3 flex items-center justify-between text-sm"><span className="font-medium">Budget versus actual</span><span className="text-primary">View in Costs</span></div>
-        {[['Material', 3], ['Labor', 8], ['Subcontractor', 28]].map(([name, width]) => (
-          <div key={String(name)} className="mb-3">
-            <div className="mb-1 flex justify-between text-sm"><span>{name}</span></div>
-            <div className="h-2 rounded-full bg-muted"><div className="h-2 rounded-full bg-primary" style={{ width: `${width}%` }} /></div>
+        <div className="mb-3">
+          <div className="mb-1 flex justify-between text-sm"><span>Materials</span></div>
+          <div className="h-2 rounded-full bg-muted"><div className="h-2 w-[4%] rounded-full bg-primary" /></div>
+        </div>
+        <div className="mb-3">
+          <div className="mb-1 flex justify-between text-sm"><span>Labor</span></div>
+          <div className="h-2 rounded-full bg-muted"><div className="h-2 w-[8%] rounded-full bg-primary" /></div>
+          <div className="ml-6 mt-1 border-l border-muted-foreground/45 pl-3">
+            <div className="mb-1 flex justify-between text-[13px] text-muted-foreground"><span>Direct</span></div>
+            <div className="h-1.5 rounded-full bg-muted"><div className="h-1.5 w-[6%] rounded-full bg-primary" /></div>
           </div>
-        ))}
+        </div>
+        <div>
+          <div className="mb-1 flex justify-between text-sm"><span>Subcontractor</span></div>
+          <div className="h-2 rounded-full bg-muted"><div className="h-2 w-[28%] rounded-full bg-primary" /></div>
+        </div>
       </div>
-      <Table headers={['Category', 'Budget', 'Actual', 'Remaining']} rows={[
-        ['Material', '$10,000.00', '$250.00', '$9,750.00'],
+      <Table headers={['Category', 'Budget', 'Actual', 'Remaining']} depths={[0, 0, 1, 0]} rows={[
+        ['Materials', '$10,000.00', '$410.00', '$9,590.00'],
         ['Labor', '$20,000.00', '$650.00', '$19,350.00'],
         ['Direct', '$12,000.00', '$400.00', '$11,600.00'],
         ['Subcontractor', '$8,000.00', '$2,200.00', '$5,800.00'],
@@ -169,14 +187,22 @@ function Costs() {
       </div>
       <div className="rounded-lg border border-border bg-card p-4">
         <p className="text-sm font-medium">Budget versus actual</p>
-        {[['Materials', 4], ['Labor', 8], ['Subcontractor', 28]].map(([name, width]) => (
+        <div className="mt-3">
+          <div className="mb-1 flex justify-between text-sm"><span className="text-primary">Materials</span><span className="tabular text-muted-foreground">$410 / $10,000</span></div>
+          <div className="h-2 rounded-full bg-muted"><div className="h-2 w-[4%] rounded-full bg-primary" /></div>
+          <div className="ml-6 mt-1 border-l border-muted-foreground/45 pl-3">
+            <div className="mb-1 flex justify-between text-[13px] text-muted-foreground"><span>Lumber</span><span className="tabular">$160 / $4,000</span></div>
+            <div className="h-1.5 rounded-full bg-muted"><div className="h-1.5 w-[4%] rounded-full bg-primary" /></div>
+          </div>
+        </div>
+        {[['Labor', '$650 / $20,000', 8], ['Subcontractor', '$2,200 / $8,000', 28]].map(([name, caption, width]) => (
           <div key={String(name)} className="mt-3">
-            <div className="mb-1 flex justify-between text-sm"><span className="text-primary">{name}</span><span className="tabular text-muted-foreground">{width === 4 ? '$410 / $10,000' : width === 8 ? '$650 / $20,000' : '$2,200 / $8,000'}</span></div>
+            <div className="mb-1 flex justify-between text-sm"><span className="text-primary">{name}</span><span className="tabular text-muted-foreground">{caption}</span></div>
             <div className="h-2 rounded-full bg-muted"><div className="h-2 rounded-full bg-primary" style={{ width: `${width}%` }} /></div>
           </div>
         ))}
       </div>
-      <Table headers={['Category', 'Entries', 'Budget', 'Actual', 'Remaining']} rows={[
+      <Table headers={['Category', 'Entries', 'Budget', 'Actual', 'Remaining']} depths={[0, 1, 0]} rows={[
         ['Materials', '2', '$10,000.00', '$410.00', '$9,590.00'],
         ['Lumber', '1', '$4,000.00', '$160.00', '$3,840.00'],
         ['Labor', '2', '$20,000.00', '$650.00', '$19,350.00'],
@@ -196,10 +222,13 @@ function CategoryPage() {
           <span className="text-xs tabular text-muted-foreground">$410.00 / $10,000.00</span>
         </div>
         <Table headers={['Date', 'Details', 'Amount']} rows={[['Jan 15, 2026', 'Steel', '$250.00']]} />
-        <div className="border-t border-border px-3 py-2 pl-8">
-          <p className="font-medium">▾ Lumber · 1 entry</p>
+        <div className="ml-6 border-l border-muted-foreground/45">
+          <div className="relative border-t border-border bg-card px-3 py-2 pl-5">
+            <span aria-hidden className="absolute left-0 top-1/2 h-px w-3 bg-muted-foreground/45" />
+            <p className="text-[13px] font-medium text-muted-foreground">▾ Lumber · 1 entry</p>
+          </div>
+          <Table framed={false} headers={['Date', 'Details', 'Amount']} rows={[['Jan 16, 2026', 'Framing', '$160.00']]} />
         </div>
-        <Table headers={['Date', 'Details', 'Amount']} rows={[['Jan 16, 2026', 'Framing', '$160.00']]} />
       </section>
     </div>
   )
@@ -306,23 +335,25 @@ function Stat({ label, value }: { label: string; value: string }) {
   )
 }
 
-function Table({ headers, rows }: { headers: string[]; rows: string[][] }) {
-  return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
+function Table({ headers, rows, depths = [], framed = true }: { headers: string[]; rows: string[][]; depths?: number[]; framed?: boolean }) {
+  const table = (
       <table className="responsive-cards w-full text-sm">
         <thead className="border-b border-border text-left text-muted-foreground">
           <tr>{headers.map((header) => <th key={header} className="px-3 py-2 font-medium">{header}</th>)}</tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr key={row.join('|')} className="border-b border-border last:border-0">
+          {rows.map((row, rowIndex) => (
+            <tr key={row.join('|')} className={`border-b border-border last:border-0 ${depths[rowIndex] ? 'text-[13px] text-muted-foreground' : ''}`}>
               {row.map((cell, index) => (
-                <td key={cell} className="px-3 py-2 tabular" data-label={headers[index]}>{cell}</td>
+                <td key={`${rowIndex}-${cell}`} className={`px-3 py-2 ${index > 0 ? 'tabular' : ''}`} data-label={headers[index]}>
+                  {index === 0 ? <CategoryName depth={depths[rowIndex] || 0}>{cell}</CategoryName> : cell}
+                </td>
               ))}
             </tr>
           ))}
         </tbody>
       </table>
-    </div>
   )
+  if (!framed) return table
+  return <div className="overflow-hidden rounded-lg border border-border bg-card">{table}</div>
 }
