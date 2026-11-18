@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
+  Layers,
   LogOut,
   Menu,
   Receipt,
@@ -45,7 +46,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false)
 
   const nav = useMemo(() => {
-    const items: Array<{ href: string; label: string; depth: number; icon?: 'overview' | 'projects' | 'invoices' | 'employees' | 'team' | 'settings' }> = [
+    const items: Array<{ href: string; label: string; depth: number; icon?: 'overview' | 'costs' | 'projects' | 'invoices' | 'employees' | 'team' | 'settings' }> = [
       { href: '/dashboard', label: 'Overview', depth: 0, icon: 'overview' },
     ]
     if (userCan(user, 'projects', 'read')) {
@@ -62,14 +63,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       }, 'read')
     })
     if (readable.length > 0) {
-      items.push({ href: '/costs', label: 'Costs', depth: 0 })
-    }
-    for (const category of readable) {
-      items.push({
-        href: `/costs?category=${category.id}`,
-        label: category.name,
-        depth: category.depth + 1,
-      })
+      items.push({ href: '/costs', label: 'Costs', depth: 0, icon: 'costs' })
     }
     if (userCan(user, 'invoices', 'read')) {
       items.push({ href: '/invoices', label: 'Invoices', depth: 0, icon: 'invoices' })
@@ -220,6 +214,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 function NavIcon({ name }: { name?: string }) {
   const className = 'mr-2 h-4 w-4 shrink-0 text-muted-foreground'
   if (name === 'overview') return <BarChart3 className={className} />
+  if (name === 'costs') return <Layers className={className} />
   if (name === 'projects') return <Building2 className={className} />
   if (name === 'invoices') return <Receipt className={className} />
   if (name === 'employees') return <Users className={className} />

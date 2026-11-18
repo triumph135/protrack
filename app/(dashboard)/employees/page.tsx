@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
+import { useTenant } from '@/contexts/TenantContext'
 import { useProjects } from '@/contexts/ProjectContext'
 import { useEmployees } from '@/hooks/useEmployees'
 import EmployeeModal from '@/components/EmployeeModal'
@@ -11,6 +12,7 @@ import { toast } from 'sonner'
 import { userCan } from '@/lib/permissions'
 import { employeeScopeLabel } from '@/lib/employee-scope'
 import { formatCurrency } from '@/lib/format'
+import { ExportMenu, type ExportSpec } from '@/components/export/ExportMenu'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge, EmptyState, PageHeader, Skeleton } from '@/components/ui/feedback'
@@ -18,6 +20,7 @@ import type { Employee } from '@/types/app.types'
 
 export default function EmployeesPage() {
   const { user } = useAuth()
+  const { tenant } = useTenant()
   const { activeProject, projects } = useProjects()
   const { employees, loading, createEmployee, updateEmployee, deleteEmployee } = useEmployees()
   const [showModal, setShowModal] = useState(false)
@@ -63,6 +66,33 @@ export default function EmployeesPage() {
     toast.success(editingEmployee ? 'Employee updated' : 'Employee added')
   }
 
+  const scopeFilter = projectFilter === 'all' ? 'All employees' : projectFilter === 'global' ? 'Global only' : 'This project'
+  const exportSpec: ExportSpec = {
+    filename: 'employees',
+    title: 'Employees',
+    company: tenant?.name || 'Company',
+    project: activeProject ? `${activeProject.jobNumber} — ${activeProject.jobName}` : undefined,
+    filters: [searchTerm.trim() ? `Search: ${searchTerm.trim()}` : 'Search: none', `Scope: ${scopeFilter}`],
+    columns: ['Name', 'ST', 'OT', 'DT', 'Mob', 'Scope'],
+    csvRows: filteredEmployees.map((employee) => [
+      employee.name,
+      Number(employee.standard_rate || 0),
+      Number(employee.ot_rate || 0),
+      Number(employee.dt_rate || 0),
+      Number(employee.mob_rate || 0),
+      employeeScopeLabel(employee.project_id, projects),
+    ]),
+    pdfRows: filteredEmployees.map((employee) => [
+      employee.name,
+      formatCurrency(employee.standard_rate),
+      formatCurrency(employee.ot_rate),
+      formatCurrency(employee.dt_rate),
+      formatCurrency(employee.mob_rate),
+      employeeScopeLabel(employee.project_id, projects),
+    ]),
+    totals: [{ label: 'Employees', value: String(filteredEmployees.length) }],
+  }
+
   if (!canRead) {
     return <EmptyState title="No access" body="You don't have permission to view employees." />
   }
@@ -72,7 +102,12 @@ export default function EmployeesPage() {
       <PageHeader
         title="Employees"
         description="Rates used when someone enters labor."
-        action={canWrite ? <Button type="button" onClick={() => { setEditingEmployee(null); setShowModal(true) }}><Plus className="h-4 w-4" /> Add employee</Button> : null}
+        action={
+          <>
+            <ExportMenu spec={filteredEmployees.length > 0 ? exportSpec : null} />
+            {canWrite ? <Button type="button" onClick={() => { setEditingEmployee(null); setShowModal(true) }}><Plus className="h-4 w-4" /> Add employee</Button> : null}
+          </>
+        }
       />
 
       <section className="grid gap-3 sm:grid-cols-3">

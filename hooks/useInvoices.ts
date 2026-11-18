@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
+import { isMissingColumnError } from '@/lib/security'
 import type { CustomerInvoice } from '@/types/app.types'
 
 export function useInvoices(projectId?: string, changeOrderId?: string | null) {
@@ -74,11 +75,18 @@ export function useInvoices(projectId?: string, changeOrderId?: string | null) {
         amount: Number(invoiceData.amount)
       }
 
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('customer_invoices')
         .insert([invoicePayload])
         .select()
         .single()
+
+      if (error && isMissingColumnError(error)) {
+        const { amount_collected: _collected, ...withoutCollected } = invoicePayload
+        const retry = await supabase.from('customer_invoices').insert([withoutCollected]).select().single()
+        data = retry.data
+        error = retry.error
+      }
 
       if (error) throw error
 
@@ -103,17 +111,25 @@ export function useInvoices(projectId?: string, changeOrderId?: string | null) {
       const updatePayload = {
         ...updates,
         amount: updates.amount ? Number(updates.amount) : undefined,
+        amount_collected: updates.amount_collected == null ? undefined : Number(updates.amount_collected),
         updated_at: new Date().toISOString(),
         change_order_id: updates.change_order_id === undefined ? null : updates.change_order_id
       }
 
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('customer_invoices')
         .update(updatePayload)
         .eq('id', invoiceId)
         .eq('tenant_id', tenant.id)
         .select()
         .single()
+
+      if (error && isMissingColumnError(error)) {
+        const { amount_collected: _collected, ...withoutCollected } = updatePayload
+        const retry = await supabase.from('customer_invoices').update(withoutCollected).eq('id', invoiceId).eq('tenant_id', tenant.id).select().single()
+        data = retry.data
+        error = retry.error
+      }
 
       if (error) throw error
 

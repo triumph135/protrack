@@ -174,6 +174,7 @@ export interface Database {
           project_id: string
           invoice_number: string
           amount: number
+          amount_collected: number
           date_billed: string
           created_at: string | null
           updated_at: string | null
@@ -185,6 +186,7 @@ export interface Database {
           project_id: string
           invoice_number: string
           amount: number
+          amount_collected?: number
           date_billed: string
           created_at?: string | null
           updated_at?: string | null
@@ -196,6 +198,7 @@ export interface Database {
           project_id?: string
           invoice_number?: string
           amount?: number
+          amount_collected?: number
           date_billed?: string
           created_at?: string | null
           updated_at?: string | null

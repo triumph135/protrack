@@ -33,6 +33,7 @@ done
 
 echo "Rollback Phase 2, then reapply"
 for f in \
+  supabase/rollback/20261118000400_invoice_collected_rollback.sql \
   supabase/rollback/20261118000300_baseline_access_rollback.sql \
   supabase/rollback/20261118000200_company_settings_rollback.sql \
   supabase/rollback/20261118000100_team_invites_rollback.sql \
@@ -45,7 +46,8 @@ for f in \
   supabase/migrations/20261118000000_cost_categories.sql \
   supabase/migrations/20261118000100_team_invites.sql \
   supabase/migrations/20261118000200_company_settings.sql \
-  supabase/migrations/20261118000300_baseline_access.sql
+  supabase/migrations/20261118000300_baseline_access.sql \
+  supabase/migrations/20261118000400_invoice_collected.sql
 do
   echo "  -> ${f}"
   "${RUN[@]}" "${PSQL[@]}" -d "${DB_NAME}" -f "${f}" >/dev/null

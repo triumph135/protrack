@@ -48,8 +48,8 @@ function AppFrame({ screen, mobile }: { screen: string; mobile: boolean }) {
         <aside className="w-60 border-r border-border bg-sidebar p-3">
           <Logo size="sm" />
           <nav className="mt-4 space-y-1 text-sm">
-            {['Overview', 'Projects', 'Costs', 'Material', 'Labor', 'Invoices', 'Employees', 'Team', 'Settings'].map((item) => (
-              <div key={item} className={`rounded-lg px-2 py-2 ${item === screen ? 'bg-accent font-medium text-accent-foreground' : ''} ${item === 'Material' || item === 'Labor' ? 'pl-6' : ''}`}>
+            {['Overview', 'Projects', 'Costs', 'Invoices', 'Employees', 'Team', 'Settings'].map((item) => (
+              <div key={item} className={`rounded-lg px-2 py-2 ${item === screen ? 'bg-accent font-medium text-accent-foreground' : ''}`}>
                 {item}
               </div>
             ))}
@@ -80,17 +80,30 @@ function AppFrame({ screen, mobile }: { screen: string; mobile: boolean }) {
 function Overview() {
   return (
     <div className="space-y-4">
-      <PageHeader title="Acme Test Job" description="JOB-A-001 · Acme Customer" action={<Button variant="outline" type="button">CSV</Button>} />
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <PageHeader title="Acme Test Job" description="JOB-A-001 · Acme Customer" action={<><Button size="sm" type="button">This project</Button><Button size="sm" variant="ghost" type="button">All projects</Button><Button variant="outline" type="button">Export</Button><Button variant="outline" type="button">Open costs</Button></>} />
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <Stat label="Contract" value={formatCurrency(112000)} />
-        <Stat label="Costs" value={formatCurrency(4834.5)} />
-        <Stat label="Invoiced" value={formatCurrency(2300)} />
+        <Stat label="Cost to date" value={formatCurrency(4834.5)} />
+        <Stat label="Budget" value={formatCurrency(38000)} />
         <Stat label="Gross profit" value={formatCurrency(2300 - 4834.5)} />
+        <Stat label="Invoiced" value={formatCurrency(2300)} />
+        <Stat label="Collected" value={formatCurrency(900)} />
       </div>
-      <Table headers={['Category', 'Budget', 'Actual']} rows={[
-        ['Material', '$10,000.00', '$250.00'],
-        ['Labor', '$20,000.00', '$650.00'],
-        ['Subcontractor', '$8,000.00', '$2,200.00'],
+      <div className="rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm">Subcontractor is nearing its budget ($2,200.00 of $8,000.00).</div>
+      <div className="rounded-lg border border-border bg-card p-4">
+        <div className="mb-3 flex items-center justify-between text-sm"><span className="font-medium">Budget versus actual</span><span className="text-primary">View in Costs</span></div>
+        {[['Material', 3], ['Labor', 8], ['Subcontractor', 28]].map(([name, width]) => (
+          <div key={String(name)} className="mb-3">
+            <div className="mb-1 flex justify-between text-sm"><span>{name}</span></div>
+            <div className="h-2 rounded-full bg-muted"><div className="h-2 rounded-full bg-primary" style={{ width: `${width}%` }} /></div>
+          </div>
+        ))}
+      </div>
+      <Table headers={['Category', 'Budget', 'Actual', 'Remaining']} rows={[
+        ['Material', '$10,000.00', '$250.00', '$9,750.00'],
+        ['Labor', '$20,000.00', '$650.00', '$19,350.00'],
+        ['Direct', '$12,000.00', '$400.00', '$11,600.00'],
+        ['Subcontractor', '$8,000.00', '$2,200.00', '$5,800.00'],
       ]} />
     </div>
   )
@@ -99,7 +112,7 @@ function Overview() {
 function Projects() {
   return (
     <div className="space-y-4">
-      <PageHeader title="Projects" description="Jobs, contract values, and change orders." action={<><Button variant="outline" type="button">Export CSV</Button><Button type="button">Add project</Button></>} />
+      <PageHeader title="Projects" description="Jobs, contract values, and change orders." action={<><Button variant="outline" type="button">Export</Button><Button type="button">Add project</Button></>} />
       <Table headers={['Job', 'Customer', 'Contract', 'Status']} rows={[
         ['JOB-A-001 Acme Test Job', 'Acme Customer', '$112,000.00', 'Active · Current'],
         ['JOB-A-002 Second job', 'Acme Customer', '$40,000.00', 'Active'],
@@ -111,27 +124,27 @@ function Projects() {
 function Costs() {
   return (
     <div className="space-y-4">
-      <PageHeader title="Costs" description="Grouped by category" action={<><Button variant="outline" type="button">Expand all</Button><Button variant="outline" type="button">Collapse all</Button></>} />
+      <PageHeader title="Costs" description="Grouped by category" action={<><Button variant="outline" type="button">Expand all</Button><Button variant="outline" type="button">Collapse all</Button><Button variant="outline" type="button">Export</Button></>} />
       <section className="rounded-lg border border-border bg-card">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
           <div>
-            <p className="font-medium">Material</p>
-            <p className="text-xs text-muted-foreground">1 entry</p>
+            <p className="font-medium">▾ Materials</p>
+            <p className="text-xs text-muted-foreground">2 entries · includes children</p>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted" aria-hidden>
-              <div className="h-full bg-primary" style={{ width: '3%' }} />
-            </div>
-            <span className="text-xs tabular text-muted-foreground">$250.00 / $10,000.00</span>
-          </div>
+          <span className="text-xs tabular text-muted-foreground">$410.00 / $10,000.00</span>
         </div>
-        <Table headers={['Date', 'Details', 'Amount']} rows={[['Jan 15, 2026', 'Synthetic cost A', '$250.00']]} />
+        <Table headers={['Date', 'Details', 'Amount']} rows={[['Jan 15, 2026', 'Steel', '$250.00']]} />
+        <div className="border-t border-border px-3 py-2 pl-8">
+          <p className="font-medium">▾ Lumber</p>
+          <p className="text-xs text-muted-foreground">1 entry</p>
+        </div>
+        <Table headers={['Date', 'Details', 'Amount']} rows={[['Jan 16, 2026', 'Framing', '$160.00']]} />
       </section>
       <section className="rounded-lg border border-border bg-card">
         <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
           <div>
-            <p className="font-medium">Labor</p>
-            <p className="text-xs text-muted-foreground">1 entry · collapsed</p>
+            <p className="font-medium">▸ Labor</p>
+            <p className="text-xs text-muted-foreground">2 entries · includes children</p>
           </div>
           <span className="text-xs tabular text-muted-foreground">$650.00 / $20,000.00</span>
         </div>
@@ -143,11 +156,11 @@ function Costs() {
 function Invoices() {
   return (
     <div className="space-y-4">
-      <PageHeader title="Invoices" description="JOB-A-001 · All change orders" action={<><Button variant="outline" type="button">Filters</Button><Button variant="outline" type="button">Export CSV</Button><Button type="button">Add invoice</Button></>} />
-      <p className="text-sm text-muted-foreground">2 invoices · $2,300.00 billed. The change order in the top bar filters this list.</p>
-      <Table headers={['Number', 'Amount', 'Billed', 'Change order', 'Files']} rows={[
-        ['INV-A-001', '$500.00', 'Jan 20, 2026', 'Base contract', '—'],
-        ['INV-A-002', '$1,800.00', 'Feb 15, 2026', 'Added welding', '1'],
+      <PageHeader title="Invoices" description="JOB-A-001 · All change orders" action={<><Button variant="outline" type="button">Filters</Button><Button variant="outline" type="button">Export</Button><Button type="button">Add invoice</Button></>} />
+      <p className="text-sm text-muted-foreground">2 invoices · $2,300.00 billed · $900.00 collected. The change order in the top bar filters this list.</p>
+      <Table headers={['Number', 'Amount', 'Collected', 'Billed', 'Change order', 'Files']} rows={[
+        ['INV-A-001', '$500.00', '$0.00', 'Jan 20, 2026', 'Base contract', '—'],
+        ['INV-A-002', '$1,800.00', '$900.00', 'Feb 15, 2026', 'Added welding', '1'],
       ]} />
     </div>
   )
@@ -156,7 +169,7 @@ function Invoices() {
 function Employees() {
   return (
     <div className="space-y-4">
-      <PageHeader title="Employees" description="Rates used when someone enters labor." action={<Button type="button">Add employee</Button>} />
+      <PageHeader title="Employees" description="Rates used when someone enters labor." action={<><Button variant="outline" type="button">Export</Button><Button type="button">Add employee</Button></>} />
       <div className="grid gap-3 sm:grid-cols-3">
         <Stat label="Total" value="3" />
         <Stat label="Global" value="1" />

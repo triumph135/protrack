@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Copy, Download, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Copy, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
 import { useProjects } from '@/contexts/ProjectContext'
@@ -16,6 +16,7 @@ import { confirmAction } from '@/components/ui/confirm-dialog'
 import { toast } from 'sonner'
 import { userCan } from '@/lib/permissions'
 import { formatCurrency } from '@/lib/format'
+import { ExportMenu, type ExportSpec } from '@/components/export/ExportMenu'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge, EmptyState, PageHeader, Skeleton } from '@/components/ui/feedback'
@@ -132,31 +133,39 @@ export default function InvoicesPage() {
   }, [tenant?.id, user?.id, invoiceIds])
 
   const filteredTotal = filteredInvoices.reduce((sum, invoice) => sum + invoice.amount, 0)
-
-  const exportData = () => {
-    if (filteredInvoices.length === 0) {
-      toast.error('No data to export')
-      return
+  const collectedTotal = filteredInvoices.reduce((sum, invoice) => sum + Number(invoice.amount_collected || 0), 0)
+  const invoiceRows = filteredInvoices.map((invoice) => {
+    const changeOrderName = invoice.change_order_id
+      ? changeOrders.find((order) => order.id === invoice.change_order_id)?.name || 'Deleted change order'
+      : 'Base contract'
+    return {
+      number: invoice.invoice_number || '',
+      amount: Number(invoice.amount || 0),
+      collected: Number(invoice.amount_collected || 0),
+      billed: invoice.date_billed,
+      changeOrder: changeOrderName,
+      processed: Boolean(invoice.in_system),
+      files: attachmentCounts[invoice.id] || 0,
     }
-    const headers = ['Date Billed', 'Invoice Number', 'Amount', 'In System', 'Change Order']
-    const csvContent = [
-      headers.join(','),
-      ...filteredInvoices.map((invoice) => {
-        const changeOrderName = invoice.change_order_id
-          ? changeOrders.find((order) => order.id === invoice.change_order_id)?.name || 'Base Contract'
-          : 'Base Contract'
-        return [invoice.date_billed, invoice.invoice_number || '', invoice.amount || 0, invoice.in_system ? 'Yes' : 'No', changeOrderName].join(',')
-      }),
-    ].join('\n')
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `${activeProject?.jobNumber}_invoices_${scopeName()}_${new Date().toLocaleDateString().replace(/\//g, '-')}.csv`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(url)
+  })
+  const exportSpec: ExportSpec = {
+    filename: `${activeProject?.jobNumber || 'invoices'}-invoices`,
+    title: 'Invoices',
+    company: tenant?.name || 'Company',
+    project: activeProject ? `${activeProject.jobNumber} — ${activeProject.jobName}` : undefined,
+    filters: [
+      filters.startDate || filters.endDate ? `Billed ${filters.startDate || 'start'} to ${filters.endDate || 'end'}` : 'Billed: all dates',
+      filters.invoiceNumber ? `Number contains ${filters.invoiceNumber}` : 'Number: all',
+      filters.minAmount || filters.maxAmount ? `Amount ${filters.minAmount || '0'} to ${filters.maxAmount || 'any'}` : 'Amount: all',
+      `Change order: ${scopeName()}`,
+    ],
+    columns: ['Number', 'Amount', 'Collected', 'Billed', 'Change order', 'Processed', 'Files'],
+    csvRows: invoiceRows.map((row) => [row.number, row.amount, row.collected, row.billed, row.changeOrder, row.processed, row.files]),
+    pdfRows: invoiceRows.map((row) => [row.number, formatCurrency(row.amount), formatCurrency(row.collected), row.billed, row.changeOrder, row.processed ? 'Yes' : 'No', String(row.files)]),
+    totals: [
+      { label: 'Billed', value: formatCurrency(filteredTotal) },
+      { label: 'Collected', value: formatCurrency(collectedTotal) },
+    ],
   }
 
   useEffect(() => {
@@ -184,14 +193,14 @@ export default function InvoicesPage() {
         action={
           <>
             <Button type="button" variant="outline" onClick={() => setShowFilters((open) => !open)}>Filters</Button>
-            {filteredInvoices.length > 0 ? <Button type="button" variant="outline" onClick={exportData}><Download className="h-4 w-4" /> Export CSV</Button> : null}
+            <ExportMenu spec={filteredInvoices.length > 0 ? exportSpec : null} />
             {canWrite ? <Button type="button" onClick={() => { setEditingInvoice(null); setIsDuplicateMode(false); setShowForm(true) }}><Plus className="h-4 w-4" /> Add invoice</Button> : null}
           </>
         }
       />
 
       <p className="text-sm text-muted-foreground">
-        {filteredInvoices.length} invoice{filteredInvoices.length === 1 ? '' : 's'} · <span className="tabular font-medium text-foreground">{formatCurrency(filteredTotal)}</span> billed. The change order in the top bar filters this list.
+        {filteredInvoices.length} invoice{filteredInvoices.length === 1 ? '' : 's'} · <span className="tabular font-medium text-foreground">{formatCurrency(filteredTotal)}</span> billed · <span className="tabular font-medium text-foreground">{formatCurrency(collectedTotal)}</span> collected. The change order in the top bar filters this list.
       </p>
 
       {showFilters ? (
@@ -220,6 +229,7 @@ export default function InvoicesPage() {
               <tr>
                 <th className="px-3 py-2 font-medium">Number</th>
                 <th className="px-3 py-2 text-right font-medium">Amount</th>
+                <th className="px-3 py-2 text-right font-medium">Collected</th>
                 <th className="px-3 py-2 font-medium">Billed</th>
                 <th className="px-3 py-2 font-medium">Change order</th>
                 <th className="px-3 py-2 font-medium">Files</th>
@@ -236,6 +246,7 @@ export default function InvoicesPage() {
                       {invoice.in_system ? <Badge tone="success">Processed</Badge> : null}
                     </td>
                     <td className="px-3 py-2 text-right tabular" data-label="Amount">{formatCurrency(invoice.amount)}</td>
+                    <td className="px-3 py-2 text-right tabular" data-label="Collected">{formatCurrency(invoice.amount_collected || 0)}</td>
                     <td className="px-3 py-2" data-label="Billed">{formatLocalDateForDisplay(invoice.date_billed)}</td>
                     <td className="px-3 py-2" data-label="Change order">
                       {invoice.change_order_id ? (related ? related.name : 'Deleted change order') : 'Base contract'}

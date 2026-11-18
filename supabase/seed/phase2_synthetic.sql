@@ -121,12 +121,12 @@ insert into public.project_costs (
 on conflict (id) do nothing;
 
 insert into public.customer_invoices (
-  id, tenant_id, project_id, invoice_number, amount, date_billed, in_system
+  id, tenant_id, project_id, invoice_number, amount, amount_collected, date_billed, in_system
 ) values (
   '66666666-6666-4666-8666-6666666666a2',
   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',
   '22222222-2222-4222-8222-2222222222a1',
-  'INV-A-002', 1800.00, '2026-02-15', true
+  'INV-A-002', 1800.00, 900.00, '2026-02-15', true
 ) on conflict (id) do nothing;
 
 insert into public.attachments (

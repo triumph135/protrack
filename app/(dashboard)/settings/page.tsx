@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { GripVertical } from 'lucide-react'
+import { ChevronRight, GripVertical } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
 import { useCategories } from '@/contexts/CategoryContext'
@@ -53,15 +53,27 @@ export default function SettingsPage() {
   )
 }
 
-function CompanyForm({ tenant, refresh }: { tenant: { id: string; name: string; email: string; phone: string | null }; refresh: () => Promise<void> }) {
+function CompanyForm({ tenant, refresh }: { tenant: { id: string; name: string; email: string; phone: string | null; settings?: Record<string, unknown> | null }; refresh: () => Promise<void> }) {
+  const current = readCompanySettings(tenant.settings)
   const [name, setName] = useState(tenant.name)
   const [email, setEmail] = useState(tenant.email)
   const [phone, setPhone] = useState(tenant.phone || '')
+  const [goal, setGoal] = useState(current.gp_goal_percent == null ? '' : String(current.gp_goal_percent))
   const supabase = createClient()
   return (
     <form className="max-w-md space-y-3" onSubmit={async (event) => {
       event.preventDefault()
-      const { error } = await supabase.from('tenants').update({ name, email, phone }).eq('id', tenant.id)
+      const parsedGoal = goal.trim() === '' ? null : Number(goal)
+      if (parsedGoal != null && (!Number.isFinite(parsedGoal) || parsedGoal < 0 || parsedGoal > 100)) {
+        toast.error('Gross profit goal must be between 0 and 100')
+        return
+      }
+      const { error } = await supabase.from('tenants').update({
+        name,
+        email,
+        phone,
+        settings: { ...(tenant.settings || {}), gp_goal_percent: parsedGoal },
+      }).eq('id', tenant.id)
       if (error) toast.error(error.message)
       else {
         toast.success('Company saved')
@@ -71,6 +83,9 @@ function CompanyForm({ tenant, refresh }: { tenant: { id: string; name: string; 
       <Field label="Company name" htmlFor="company-name"><Input id="company-name" value={name} onChange={(event) => setName(event.target.value)} required /></Field>
       <Field label="Email" htmlFor="company-email"><Input id="company-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></Field>
       <Field label="Phone" htmlFor="company-phone"><Input id="company-phone" value={phone} onChange={(event) => setPhone(event.target.value)} /></Field>
+      <Field label="Gross profit goal (%)" htmlFor="company-goal" hint="Shown on the project overview next to the actual gross profit percent.">
+        <Input id="company-goal" inputMode="decimal" value={goal} onChange={(event) => setGoal(event.target.value)} placeholder="20" />
+      </Field>
       <Button type="submit">Save company</Button>
     </form>
   )
@@ -122,7 +137,7 @@ function Categories({ categories, reload, tenantId }: { categories: CostCategory
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">{visible} of {VISIBLE_CATEGORY_LIMIT} used. Hidden categories do not count.</p>
+      <p className="text-sm text-muted-foreground">{visible} of {VISIBLE_CATEGORY_LIMIT} used. Parents and children both count. Hidden categories do not. A child rolls into its parent on Costs and Overview.</p>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={ids} strategy={verticalListSortingStrategy}>
           <ul className="divide-y divide-border rounded-lg border border-border bg-card">
@@ -141,7 +156,7 @@ function Categories({ categories, reload, tenantId }: { categories: CostCategory
             <option value="labor">Labor</option>
           </select>
         </Field>
-        <Field label="Parent">
+        <Field label="Parent" hint="Leave this empty for a top-level category such as Materials. Pick a parent for Lumber or Concrete.">
           <select className="h-11 w-full rounded-lg border border-input bg-card px-3 text-sm" value={parentId} onChange={(event) => setParentId(event.target.value)}>
             <option value="">None</option>
             {parents.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
@@ -188,9 +203,16 @@ function CategoryRow({ category, nested, reload }: { category: CostCategoryRecor
         <Button type="button" variant="outline" size="sm" onClick={() => hide(!category.is_hidden)}>{category.is_hidden ? 'Unhide' : 'Hide'}</Button>
         {!category.is_builtin ? <Button type="button" variant="ghost" size="sm" onClick={remove}>Delete</Button> : null}
       </div>
-      {nested.map((child) => (
-        <ChildRow key={child.id} category={child} reload={reload} />
-      ))}
+      {nested.length > 0 ? (
+        <ul className="mt-2 space-y-2 border-l border-border pl-4">
+          {nested.map((child) => (
+            <li key={child.id} className="flex flex-wrap items-center gap-2">
+              <ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden />
+              <ChildRow category={child} reload={reload} />
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </li>
   )
 }
@@ -199,7 +221,7 @@ function ChildRow({ category, reload }: { category: CostCategoryRecord; reload: 
   const [name, setName] = useState(category.name)
   const supabase = createClient()
   return (
-    <div className="ml-10 mt-2 flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <Input className="max-w-xs" value={name} aria-label={`Rename ${category.name}`} onChange={(event) => setName(event.target.value)} onBlur={async () => {
         if (name.trim() === category.name) return
         const { error } = await supabase.from('cost_categories').update({ name: name.trim() }).eq('id', category.id)

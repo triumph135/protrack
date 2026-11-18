@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
-import { ChevronDown, ChevronRight, Copy, Download, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Copy, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
 import { useProjects } from '@/contexts/ProjectContext'
@@ -15,8 +15,9 @@ import { useChangeOrders } from '@/hooks/useChangeOrders'
 import FileAttachments from '@/components/FileAttachments'
 import { createClient } from '@/lib/supabase'
 import { canAccessCategory, canExport } from '@/lib/permissions'
-import { builtinKeyFromSlug, flattenCategoryTree, isFallbackCategoryId, legacyCategoryText } from '@/lib/categories'
-import { groupCostEntries, type CostSortDirection, type CostSortKey } from '@/lib/cost-groups'
+import { builtinKeyFromSlug, flattenCategoryTree, isFallbackCategoryId, legacyCategoryText, rollupCategoryAmounts } from '@/lib/categories'
+import { costDetailText, costGroupIds, countCostEntries, groupCostEntries, visibleCostLines, type CostGroup, type CostSortDirection, type CostSortKey } from '@/lib/cost-groups'
+import { ExportMenu, type ExportSpec } from '@/components/export/ExportMenu'
 import { calculateTotalCost, type CostCategory } from '@/lib/costs'
 import { enabledLaborFields, normalizeLaborFieldValue, validateLaborFieldValue } from '@/lib/labor-fields'
 import { readCompanySettings } from '@/lib/company-settings'
@@ -156,6 +157,8 @@ export default function CostsPage() {
     sortDirection,
     focusCategoryId: focusCategory && readable.some((category) => category.id === focusCategory.id) ? focusCategory.id : null,
   }), [entries, readable, query, changeOrderId, sortKey, sortDirection, focusCategory])
+
+  const budgetRollup = useMemo(() => rollupCategoryAmounts(categories, budgets), [categories, budgets])
 
   const storageKey = activeProject?.id ? `protrack-cost-groups:${activeProject.id}` : ''
   useEffect(() => {
@@ -345,32 +348,6 @@ export default function CostsPage() {
     }
   }
 
-  const exportCsv = () => {
-    const exportable = groups.flatMap((group) => {
-      const category = readable.find((item) => item.id === group.categoryId)
-      if (!category || !canExport(user, category.id, grantFor(category))) return []
-      return group.rows.map((row) => ({ row, category }))
-    })
-    if (exportable.length === 0) {
-      toast.error('No data to export')
-      return
-    }
-    const headers = ['Category', 'Date', 'Description', 'Amount']
-    const lines = exportable.map(({ row, category }) => [
-      category.name,
-      row.date,
-      row.description || row.vendor || row.employee_name || '',
-      row.cost || 0,
-    ].join(','))
-    const blob = new Blob([[headers.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `${activeProject?.jobNumber || 'costs'}_${focusCategory?.name || 'costs'}.csv`
-    link.click()
-    URL.revokeObjectURL(url)
-  }
-
   if (loading) return <div className="h-24 animate-pulse rounded-lg bg-muted" />
   if (!activeProject) return <EmptyState title="Choose a project" body="Costs are filed against the project selected in the top bar." />
   if (readable.length === 0) return <EmptyState title="No categories" body="A master can add a cost category in Settings." />
@@ -379,8 +356,40 @@ export default function CostsPage() {
   }
 
   const collapsedIds = collapsed || []
-  const groupIds = groups.map((group) => group.categoryId || 'uncategorized')
-  const visibleCount = groups.reduce((sum, group) => sum + group.rows.length, 0)
+  const collapsedSet = new Set(collapsedIds)
+  const groupIds = costGroupIds(groups)
+  const visibleCount = countCostEntries(groups)
+  const categoryNames = new Map(readable.map((category) => [category.id, category.name]))
+  const shown = visibleCostLines(groups, collapsedSet, categoryNames).filter((line) => {
+    if (!line.categoryId) return user?.role === 'master'
+    const category = readable.find((item) => item.id === line.categoryId)
+    return category ? canExport(user, category.id, grantFor(category)) : false
+  })
+  const shownTotal = shown.reduce((sum, line) => sum + line.amount, 0)
+  const changeOrderLabel = changeOrderId === 'base'
+    ? 'Base contract'
+    : changeOrderId
+      ? changeOrders.find((order) => order.id === changeOrderId)?.name || 'Change order'
+      : 'All change orders'
+  const exportSpec: ExportSpec = {
+    filename: `${activeProject.jobNumber || 'costs'}-${focusCategory?.name || 'costs'}`.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+    title: focusCategory ? `${focusCategory.name} costs` : 'Costs',
+    company: tenant?.name || 'Company',
+    project: `${activeProject.jobNumber} — ${activeProject.jobName}`,
+    filters: [
+      query.trim() ? `Search: ${query.trim()}` : 'Search: none',
+      `Sort: ${sortKey} ${sortDirection}`,
+      `Change order: ${changeOrderLabel}`,
+    ],
+    columns: ['Category', 'Date', 'Details', 'Amount'],
+    csvRows: shown.map((line) => line.kind === 'collapsed' || !line.row
+      ? [line.path, '', `${line.entryCount} entries`, line.amount]
+      : [line.path, line.row.date || '', costDetailText(line.row), Number(line.row.cost || 0)]),
+    pdfRows: shown.map((line) => line.kind === 'collapsed' || !line.row
+      ? [line.path, '', `${line.entryCount} entries`, formatCurrency(line.amount)]
+      : [line.path, line.row.date || '', costDetailText(line.row) || '—', formatCurrency(line.row.cost)]),
+    totals: [{ label: 'Shown total', value: formatCurrency(shownTotal) }],
+  }
   const addTarget = focusCategory && readable.some((category) => category.id === focusCategory.id)
     ? focusCategory
     : readable.find((category) => canAccessCategory(user, grantFor(category), 'write')) || null
@@ -395,7 +404,7 @@ export default function CostsPage() {
           <>
             <Button variant="outline" type="button" onClick={() => persistCollapsed([])}>Expand all</Button>
             <Button variant="outline" type="button" onClick={() => persistCollapsed(groupIds)}>Collapse all</Button>
-            <Button variant="outline" type="button" onClick={exportCsv}><Download className="h-4 w-4" /> CSV</Button>
+            <ExportMenu spec={exportSpec} />
             <Button
               type="button"
               onClick={() => addTarget && openNew(addTarget.id)}
@@ -428,104 +437,26 @@ export default function CostsPage() {
         <EmptyState title="No costs match" body="Try a different search, or add a cost to a category." />
       ) : (
         <div className="space-y-3">
-          {groups.map((group) => {
-            const category = readable.find((item) => item.id === group.categoryId) || null
-            const groupKey = group.categoryId || 'uncategorized'
-            const isOpen = !collapsedIds.includes(groupKey)
-            const canWrite = category ? canAccessCategory(user, grantFor(category), 'write') : false
-            const budget = category ? Number(budgets[category.id] || 0) : 0
-            const name = category?.name || 'Uncategorized'
-            const unassigned = category?.builtin_key === 'labor' && settings.labor_split_enabled
-            return (
-              <section key={groupKey} className="rounded-lg border border-border bg-card">
-                <div className="sticky top-0 z-10 flex flex-col gap-2 border-b border-border bg-card px-3 py-2 sm:flex-row sm:items-center">
-                  <button
-                    type="button"
-                    className="flex min-h-11 flex-1 items-center gap-2 text-left"
-                    aria-expanded={isOpen}
-                    onClick={() => persistCollapsed(isOpen ? [...collapsedIds, groupKey] : collapsedIds.filter((id) => id !== groupKey))}
-                  >
-                    {isOpen ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
-                    <span>
-                      <span className="font-medium">{name}</span>
-                      <span className="ml-2 text-xs text-muted-foreground">{group.rows.length} {group.rows.length === 1 ? 'entry' : 'entries'}</span>
-                    </span>
-                  </button>
-                  <BudgetMeter actual={group.total} budget={budget} />
-                  {category && !schemaPending && !isFallbackCategoryId(category.id) ? (
-                    <form
-                      className="flex items-center gap-2"
-                      onSubmit={(event) => {
-                        event.preventDefault()
-                        saveBudget(category)
-                      }}
-                    >
-                      <label className="sr-only" htmlFor={`budget-${category.id}`}>Budget for {name}</label>
-                      <Input
-                        id={`budget-${category.id}`}
-                        className="tabular h-9 w-28 min-h-9"
-                        inputMode="decimal"
-                        value={budgetDraft[category.id] ?? ''}
-                        onChange={(event) => setBudgetDraft((prev) => ({ ...prev, [category.id]: event.target.value }))}
-                        disabled={!canWrite}
-                        aria-label={`Budget for ${name}`}
-                      />
-                      <Button variant="outline" size="sm" type="submit" disabled={!canWrite}>Save</Button>
-                    </form>
-                  ) : null}
-                  {category ? (
-                    <Button type="button" size="sm" onClick={() => openNew(category.id)} disabled={!canWrite}>
-                      <Plus className="h-4 w-4" /> Add
-                    </Button>
-                  ) : null}
-                </div>
-                {isOpen ? (
-                  group.rows.length === 0 ? (
-                    <p className="px-3 py-4 text-sm text-muted-foreground">No entries in {name}.</p>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="responsive-cards w-full text-sm">
-                        <thead className="border-b border-border text-left text-muted-foreground">
-                          <tr>
-                            <th className="px-3 py-2 font-medium">Date</th>
-                            <th className="px-3 py-2 font-medium">Details</th>
-                            <th className="px-3 py-2 text-right font-medium">Amount</th>
-                            <th className="px-3 py-2" />
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {group.rows.map((row) => (
-                            <tr key={row.id} className="cost-row border-b border-border last:border-0">
-                              <td className="px-3 py-2" data-label="Date">{formatDate(row.date)}</td>
-                              <td className="px-3 py-2" data-label="Details">
-                                <div>{row.description || row.vendor || row.subcontractor_name || row.employee_name || '—'}</div>
-                                {category?.kind === 'labor' ? (
-                                  <div className="text-xs text-muted-foreground tabular">
-                                    ST {formatHours(row.st_hours)} · OT {formatHours(row.ot_hours)} · DT {formatHours(row.dt_hours)}
-                                    {unassigned && !row.category_id ? ' · Labor (unassigned)' : ''}
-                                  </div>
-                                ) : null}
-                              </td>
-                              <td className="px-3 py-2 text-right tabular" data-label="Amount">{formatCurrency(row.cost)}</td>
-                              <td className="px-3 py-2 text-right" data-label="Actions">
-                                {category ? (
-                                  <>
-                                    <Button variant="ghost" size="icon" type="button" aria-label="Duplicate" onClick={() => openEdit(row, category.id, true)} disabled={!canWrite}><Copy className="h-4 w-4" /></Button>
-                                    <Button variant="ghost" size="icon" type="button" aria-label="Edit" onClick={() => openEdit(row, category.id)} disabled={!canWrite}><Pencil className="h-4 w-4" /></Button>
-                                    <Button variant="ghost" size="icon" type="button" aria-label="Delete" onClick={() => remove(row, category)} disabled={!canWrite}><Trash2 className="h-4 w-4" /></Button>
-                                  </>
-                                ) : null}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )
-                ) : null}
-              </section>
-            )
-          })}
+          {groups.map((group) => (
+            <CostBranch
+              key={group.categoryId || 'uncategorized'}
+              group={group}
+              depth={0}
+              readable={readable}
+              collapsedIds={collapsedIds}
+              budgetRollup={budgetRollup}
+              budgetDraft={budgetDraft}
+              schemaPending={schemaPending}
+              laborSplit={settings.labor_split_enabled}
+              canWriteCategory={(category) => canAccessCategory(user, grantFor(category), 'write')}
+              onToggle={(id) => persistCollapsed(collapsedIds.includes(id) ? collapsedIds.filter((item) => item !== id) : [...collapsedIds, id])}
+              onBudgetDraft={(id, value) => setBudgetDraft((prev) => ({ ...prev, [id]: value }))}
+              onSaveBudget={saveBudget}
+              onAdd={openNew}
+              onEdit={openEdit}
+              onDelete={remove}
+            />
+          ))}
         </div>
       )}
 
@@ -593,6 +524,158 @@ export default function CostsPage() {
         ) : null}
       </Sheet>
     </div>
+  )
+}
+
+function CostBranch({
+  group,
+  depth,
+  readable,
+  collapsedIds,
+  budgetRollup,
+  budgetDraft,
+  schemaPending,
+  laborSplit,
+  canWriteCategory,
+  onToggle,
+  onBudgetDraft,
+  onSaveBudget,
+  onAdd,
+  onEdit,
+  onDelete,
+}: {
+  group: CostGroup<ProjectCost>
+  depth: number
+  readable: CostCategoryRecord[]
+  collapsedIds: string[]
+  budgetRollup: Record<string, { total: number }>
+  budgetDraft: Record<string, string>
+  schemaPending: boolean
+  laborSplit: boolean
+  canWriteCategory: (category: CostCategoryRecord) => boolean
+  onToggle: (id: string) => void
+  onBudgetDraft: (id: string, value: string) => void
+  onSaveBudget: (category: CostCategoryRecord) => void
+  onAdd: (categoryId: string) => void
+  onEdit: (row: ProjectCost, categoryId: string, duplicate?: boolean) => void
+  onDelete: (row: ProjectCost, category: CostCategoryRecord) => void
+}) {
+  const category = readable.find((item) => item.id === group.categoryId) || null
+  const groupKey = group.categoryId || 'uncategorized'
+  const isOpen = !collapsedIds.includes(groupKey)
+  const canWrite = category ? canWriteCategory(category) : false
+  const budget = category ? Number(budgetRollup[category.id]?.total || 0) : 0
+  const name = category?.name || 'Uncategorized'
+  const count = countCostEntries([group])
+  const unassigned = category?.builtin_key === 'labor' && laborSplit
+  return (
+    <section className={depth === 0 ? 'rounded-lg border border-border bg-card' : 'border-t border-border'}>
+      <div className={`sticky top-0 z-10 flex flex-col gap-2 border-b border-border bg-card px-3 py-2 sm:flex-row sm:items-center ${depth > 0 ? 'pl-8' : ''}`}>
+        <button
+          type="button"
+          className="flex min-h-11 flex-1 items-center gap-2 text-left"
+          aria-expanded={isOpen}
+          aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${name}`}
+          onClick={() => onToggle(groupKey)}
+        >
+          {isOpen ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
+          <span>
+            <span className="font-medium">{name}</span>
+            <span className="ml-2 text-xs text-muted-foreground">
+              {count} {count === 1 ? 'entry' : 'entries'}
+              {group.children.length > 0 ? ' · includes children' : ''}
+            </span>
+          </span>
+        </button>
+        <BudgetMeter actual={group.total} budget={budget} />
+        {category && !schemaPending && !isFallbackCategoryId(category.id) ? (
+          <form className="flex items-center gap-2" onSubmit={(event) => { event.preventDefault(); onSaveBudget(category) }}>
+            <label className="sr-only" htmlFor={`budget-${category.id}`}>Budget for {name}</label>
+            <Input
+              id={`budget-${category.id}`}
+              className="tabular h-9 w-28 min-h-9"
+              inputMode="decimal"
+              value={budgetDraft[category.id] ?? ''}
+              onChange={(event) => onBudgetDraft(category.id, event.target.value)}
+              disabled={!canWrite}
+              aria-label={`Budget for ${name}`}
+            />
+            <Button variant="outline" size="sm" type="submit" disabled={!canWrite}>Save</Button>
+          </form>
+        ) : null}
+        {category ? (
+          <Button type="button" size="sm" onClick={() => onAdd(category.id)} disabled={!canWrite}>
+            <Plus className="h-4 w-4" /> Add
+          </Button>
+        ) : null}
+      </div>
+      {isOpen ? (
+        <>
+          {group.rows.length === 0 && group.children.length === 0 ? (
+            <p className="px-3 py-4 text-sm text-muted-foreground">No entries in {name}.</p>
+          ) : group.rows.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="responsive-cards w-full text-sm">
+                <thead className="border-b border-border text-left text-muted-foreground">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">Date</th>
+                    <th className="px-3 py-2 font-medium">Details</th>
+                    <th className="px-3 py-2 text-right font-medium">Amount</th>
+                    <th className="px-3 py-2" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {group.rows.map((row) => (
+                    <tr key={row.id} className="cost-row border-b border-border last:border-0">
+                      <td className="px-3 py-2" data-label="Date">{formatDate(row.date)}</td>
+                      <td className="px-3 py-2" data-label="Details">
+                        <div>{row.description || row.vendor || row.subcontractor_name || row.employee_name || '—'}</div>
+                        {category?.kind === 'labor' ? (
+                          <div className="text-xs text-muted-foreground tabular">
+                            ST {formatHours(row.st_hours)} · OT {formatHours(row.ot_hours)} · DT {formatHours(row.dt_hours)}
+                            {unassigned && !row.category_id ? ' · Labor (unassigned)' : ''}
+                          </div>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular" data-label="Amount">{formatCurrency(row.cost)}</td>
+                      <td className="px-3 py-2 text-right" data-label="Actions">
+                        {category ? (
+                          <>
+                            <Button variant="ghost" size="icon" type="button" aria-label="Duplicate" onClick={() => onEdit(row, category.id, true)} disabled={!canWrite}><Copy className="h-4 w-4" /></Button>
+                            <Button variant="ghost" size="icon" type="button" aria-label="Edit" onClick={() => onEdit(row, category.id)} disabled={!canWrite}><Pencil className="h-4 w-4" /></Button>
+                            <Button variant="ghost" size="icon" type="button" aria-label="Delete" onClick={() => onDelete(row, category)} disabled={!canWrite}><Trash2 className="h-4 w-4" /></Button>
+                          </>
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+          {group.children.map((child) => (
+            <CostBranch
+              key={child.categoryId || 'child'}
+              group={child}
+              depth={depth + 1}
+              readable={readable}
+              collapsedIds={collapsedIds}
+              budgetRollup={budgetRollup}
+              budgetDraft={budgetDraft}
+              schemaPending={schemaPending}
+              laborSplit={laborSplit}
+              canWriteCategory={canWriteCategory}
+              onToggle={onToggle}
+              onBudgetDraft={onBudgetDraft}
+              onSaveBudget={onSaveBudget}
+              onAdd={onAdd}
+              onEdit={onEdit}
+              onDelete={onDelete}
+            />
+          ))}
+        </>
+      ) : null}
+    </section>
   )
 }
 

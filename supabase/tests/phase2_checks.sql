@@ -868,6 +868,16 @@ exception when others then
   insert into phase2_results values ('sync_block', 'FAIL', sqlerrm);
 end $$;
 
+insert into phase2_results
+select 'invoice_collected_column',
+  case when exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'customer_invoices'
+      and column_name = 'amount_collected'
+  ) then 'PASS' else 'FAIL' end,
+  'amount_collected';
+
 select status, check_name, detail
 from phase2_results
 order by status desc, check_name;

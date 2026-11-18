@@ -140,8 +140,10 @@ describe('labor fields and invites', () => {
   })
 
   it('treats missing settings as today\'s defaults', () => {
-    assert.deepEqual(readCompanySettings(undefined), { labor_split_enabled: false, project_visibility: 'all' })
+    assert.deepEqual(readCompanySettings(undefined), { labor_split_enabled: false, project_visibility: 'all', gp_goal_percent: null })
     assert.equal(readCompanySettings({ project_visibility: 'assigned' }).project_visibility, 'assigned')
+    assert.equal(readCompanySettings({ gp_goal_percent: 20 }).gp_goal_percent, 20)
+    assert.equal(readCompanySettings({ gp_goal_percent: 'high' }).gp_goal_percent, null)
   })
 
   it('recognizes a missing relation without treating every error as one', () => {

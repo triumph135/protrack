@@ -226,6 +226,7 @@ export interface CustomerInvoice {
   project_id: string
   invoice_number: string
   amount: number
+  amount_collected?: number
   date_billed: string
   change_order_id?: string
   in_system?: boolean

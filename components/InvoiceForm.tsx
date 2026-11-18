@@ -58,6 +58,7 @@ export default function InvoiceForm({
         project_id: activeProject?.id || '',
         invoice_number: '',
         amount: 0,
+        amount_collected: 0,
         date_billed: getTodayLocalDateString(),
         change_order_id: undefined,
         in_system: false,
@@ -109,6 +110,7 @@ export default function InvoiceForm({
     if (!selectedProjectId) next.project_id = 'Project is required'
     if (!formData.invoice_number?.trim()) next.invoice_number = 'Invoice number is required'
     if (!formData.amount || Number(formData.amount) <= 0) next.amount = 'Amount must be greater than 0'
+    if (formData.amount_collected != null && Number(formData.amount_collected) < 0) next.amount_collected = 'Collected amount cannot be negative'
     if (!formData.date_billed) next.date_billed = 'Date billed is required'
     setErrors(next)
     return Object.keys(next).length === 0
@@ -121,6 +123,7 @@ export default function InvoiceForm({
       project_id: selectedProjectId,
       invoice_number: formData.invoice_number!,
       amount: Number(formData.amount),
+      amount_collected: Number(formData.amount_collected || 0),
       date_billed: formData.date_billed!,
       change_order_id: formData.change_order_id || undefined,
       in_system: formData.in_system || false,
@@ -152,6 +155,9 @@ export default function InvoiceForm({
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Amount" htmlFor="invoice-amount" error={errors.amount}>
             <Input id="invoice-amount" className="tabular" inputMode="decimal" value={formData.amount || ''} onChange={(event) => handleInputChange('amount', event.target.value)} disabled={loading} />
+          </Field>
+          <Field label="Collected" htmlFor="invoice-collected" error={errors.amount_collected} hint="Cash received. Leave at 0 until the customer pays.">
+            <Input id="invoice-collected" className="tabular" inputMode="decimal" value={formData.amount_collected || ''} onChange={(event) => handleInputChange('amount_collected', event.target.value)} disabled={loading} />
           </Field>
           <Field label="Date billed" htmlFor="invoice-date" error={errors.date_billed}>
             <Input id="invoice-date" type="date" value={formData.date_billed || ''} onChange={(event) => handleInputChange('date_billed', event.target.value)} disabled={loading} />

@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { ChevronDown, ChevronRight, Download, Pencil, Plus, Trash2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
 import { useProjects } from '@/contexts/ProjectContext'
@@ -13,6 +13,7 @@ import { toast } from 'sonner'
 import type { ChangeOrder, Project } from '@/types/app.types'
 import { userCan } from '@/lib/permissions'
 import { formatCurrency } from '@/lib/format'
+import { ExportMenu, type ExportSpec } from '@/components/export/ExportMenu'
 import { Button } from '@/components/ui/button'
 import { Field, Input } from '@/components/ui/input'
 import { Badge, EmptyState, PageHeader, Skeleton } from '@/components/ui/feedback'
@@ -29,6 +30,7 @@ export default function ProjectsPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
+  const [orders, setOrders] = useState<ChangeOrder[]>([])
   const supabase = createClient()
   const canWrite = userCan(user, 'projects', 'write')
 
@@ -56,54 +58,51 @@ export default function ProjectsPage() {
     }
   }
 
-  const exportProjectsData = async () => {
-    if (filteredProjects.length === 0) {
-      toast.error('No projects to export')
-      return
+  useEffect(() => {
+    if (!tenant?.id) return
+    let cancelled = false
+    supabase.from('change_orders').select('*').eq('tenant_id', tenant.id).order('created_at', { ascending: false }).then(({ data }) => {
+      if (!cancelled) setOrders(data || [])
+    })
+    return () => {
+      cancelled = true
     }
-    let changeOrdersData: ChangeOrder[] = []
-    if (tenant?.id) {
-      try {
-        const { data, error } = await supabase
-          .from('change_orders')
-          .select('*')
-          .eq('tenant_id', tenant.id)
-          .order('created_at', { ascending: false })
-        if (error) throw error
-        changeOrdersData = data || []
-      } catch (error) {
-        console.error('Error loading change orders for export:', error)
+    // createClient is stable enough for this refresh; expandedProjects.size refetches after a row is opened.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant?.id, expandedProjects.size])
+
+  const exportSpec = useMemo<ExportSpec>(() => {
+    const csvRows: Array<Array<string | number>> = []
+    const pdfRows: string[][] = []
+    let contractTotal = 0
+    for (const project of filteredProjects) {
+      const projectOrders = orders.filter((order) => order.project_id === project.id)
+      const contract = (project.totalContractValue || 0) + projectOrders.reduce((sum, order) => sum + Number(order.additional_contract_value || 0), 0)
+      contractTotal += contract
+      const status = project.status || 'Active'
+      csvRows.push([project.jobNumber, project.jobName, project.customer, status, contract, '', '', ''])
+      pdfRows.push([project.jobNumber, project.jobName, project.customer, status, formatCurrency(contract), '', '', ''])
+      if (!expandedProjects.has(project.id)) continue
+      for (const order of projectOrders) {
+        csvRows.push([project.jobNumber, project.jobName, project.customer, '', '', order.name, Number(order.additional_contract_value || 0), order.description || ''])
+        pdfRows.push([project.jobNumber, '', '', '', '', order.name, formatCurrency(order.additional_contract_value || 0), order.description || ''])
       }
     }
-    const rows = [
-      ['Job Number', 'Job Name', 'Customer', 'Status', 'Base Contract Value', 'Change Orders Count', 'Total CO Value', 'Total Contract Value'],
-      ...filteredProjects.map((project) => {
-        const orders = changeOrdersData.filter((order) => order.project_id === project.id)
-        const coTotal = orders.reduce((total, order) => total + (order.additional_contract_value || 0), 0)
-        const baseContract = project.totalContractValue || 0
-        return [
-          project.jobNumber,
-          project.jobName,
-          project.customer,
-          project.status || 'Active',
-          baseContract.toLocaleString(),
-          String(orders.length),
-          coTotal.toLocaleString(),
-          (baseContract + coTotal).toLocaleString(),
-        ]
-      }),
-    ]
-    const csvContent = rows.map((row) => row.map((cell) => `"${cell.toString().replace(/"/g, '""')}"`).join(',')).join('\n')
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `projects_summary_${new Date().toLocaleDateString().replace(/\//g, '-')}.csv`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(url)
-  }
+    return {
+      filename: 'projects',
+      title: 'Projects',
+      company: tenant?.name || 'Company',
+      filters: [
+        searchTerm.trim() ? `Search: ${searchTerm.trim()}` : 'Search: none',
+        statusFilter === 'all' ? 'Status: all' : `Status: ${statusFilter}`,
+        'Change orders are included only for expanded jobs',
+      ],
+      columns: ['Job number', 'Job name', 'Customer', 'Status', 'Contract', 'Change order', 'Change order amount', 'Description'],
+      csvRows,
+      pdfRows,
+      totals: [{ label: 'Contract', value: formatCurrency(contractTotal) }],
+    }
+  }, [filteredProjects, orders, expandedProjects, tenant?.name, searchTerm, statusFilter])
 
   return (
     <div className="space-y-4">
@@ -112,7 +111,7 @@ export default function ProjectsPage() {
         description="Jobs, contract values, and change orders."
         action={
           <>
-            {filteredProjects.length > 0 ? <Button type="button" variant="outline" onClick={exportProjectsData}><Download className="h-4 w-4" /> Export CSV</Button> : null}
+            <ExportMenu spec={filteredProjects.length > 0 ? exportSpec : null} />
             {canWrite ? <Button type="button" onClick={() => { setEditingProject(null); setShowModal(true) }}><Plus className="h-4 w-4" /> Add project</Button> : null}
           </>
         }
