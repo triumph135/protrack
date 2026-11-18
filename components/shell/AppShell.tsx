@@ -38,7 +38,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const { user, signOut } = useAuth()
   const { tenant } = useTenant()
   const { projects, activeProject, setActiveProject } = useProjects()
-  const { tree, schemaPending, loading } = useCategories()
+  const { tree, schemaPending, correctionsPending, loading } = useCategories()
   const { changeOrderId, setChangeOrderId } = useWorkspace()
   const { changeOrders } = useChangeOrders(activeProject?.id)
   const pathname = usePathname()
@@ -294,6 +294,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div className="mx-auto flex max-w-6xl flex-col gap-4">
             {schemaPending ? (
               <Notice>Database update pending. Custom categories, team links, and company settings turn on after the Phase 2 database update. Existing costs still work.</Notice>
+            ) : correctionsPending ? (
+              <Notice>Database update pending. Reversals, category moves, and project rates turn on after the Phase 2b database update. Existing costs and invoices still work.</Notice>
             ) : null}
             {children}
           </div>

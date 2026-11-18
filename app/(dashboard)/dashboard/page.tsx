@@ -163,8 +163,8 @@ export default function DashboardPage() {
     filename: 'company-overview',
     title: 'Company overview',
     company: tenant?.name || 'Company',
-    filters: ['Scope: all projects'],
-    columns: ['Job number', 'Job name', 'Contract', 'Cost', 'Invoiced', 'Collected', 'Gross profit'],
+    filters: ['Scope: all projects', 'Gross profit is invoiced minus cost'],
+    columns: ['Job number', 'Job name', 'Contract', 'Cost', 'Invoiced', 'Collected', 'Gross profit (invoiced minus cost)'],
     csvRows: companyRows.map((row) => [row.project.jobNumber, row.project.jobName, row.value, row.cost, row.billed, row.received, row.profit]),
     pdfRows: companyRows.map((row) => [row.project.jobNumber, row.project.jobName, formatCurrency(row.value), formatCurrency(row.cost), formatCurrency(row.billed), formatCurrency(row.received), formatCurrency(row.profit)]),
     totals: [{ label: 'Projects', value: String(companyRows.length) }],
@@ -180,7 +180,7 @@ export default function DashboardPage() {
     title: 'Project overview',
     company: tenant?.name || 'Company',
     project: `${activeProject.jobNumber} — ${activeProject.jobName}`,
-    filters: ['Scope: this project'],
+    filters: ['Scope: this project', 'Gross profit is invoiced minus cost'],
     columns: ['Category', 'Budget', 'Actual', 'Remaining'],
     csvRows: [
       ['Contract', '', contract, ''],
@@ -188,7 +188,7 @@ export default function DashboardPage() {
       ['Budget', totalBudget, totalCosts, totalBudget - totalCosts],
       ['Invoiced', '', invoiced, ''],
       ['Collected', '', collected, ''],
-      ['Gross profit', '', profit, ''],
+      ['Gross profit (invoiced minus cost)', '', profit, ''],
       ...topLevel.flatMap((category) => {
         const children = category.children.filter((child) => visible.some((item) => item.id === child.id))
         return [
@@ -206,14 +206,14 @@ export default function DashboardPage() {
     }),
     totals: [
       { label: 'Contract', value: formatCurrency(contract) },
-      { label: 'Gross profit', value: `${formatCurrency(profit)}${margin == null ? '' : ` (${formatPercent(margin)})`}` },
+      { label: 'Gross profit (invoiced minus cost)', value: `${formatCurrency(profit)}${margin == null ? '' : ` (${formatPercent(margin)})`}` },
     ],
     visual: {
       kpis: [
         { label: 'Contract', value: formatCurrency(contract), detail: `${formatCurrency(baseContract)} base · ${formatCurrency(changeOrderTotal)} change orders` },
         { label: 'Cost to date', value: formatCurrency(totalCosts) },
         { label: 'Budget', value: formatCurrency(totalBudget), detail: `${formatCurrency(totalBudget - totalCosts)} remaining` },
-        { label: 'Gross profit', value: formatCurrency(profit), detail: margin == null ? 'No invoices yet' : `${formatPercent(margin)}${goal == null ? '' : ` · goal ${formatPercent(goal)}`}` },
+        { label: 'Gross profit', value: formatCurrency(profit), detail: margin == null ? 'Invoiced minus cost' : `Invoiced minus cost · ${formatPercent(margin)}${goal == null ? '' : ` · goal ${formatPercent(goal)}`}` },
         { label: 'Invoiced', value: formatCurrency(invoiced), detail: `${formatCurrency(contract - invoiced)} not billed` },
         { label: 'Collected', value: formatCurrency(collected), detail: `${formatCurrency(invoiced - collected)} outstanding` },
       ],
@@ -311,7 +311,7 @@ export default function DashboardPage() {
             <Metric label="Contract" value={formatCurrency(contract)} detail={`${formatCurrency(baseContract)} base · ${formatCurrency(changeOrderTotal)} change orders`} />
             <Metric label="Cost to date" value={formatCurrency(totalCosts)} detail="Category roll-up is on Costs" href="/costs" />
             <Metric label="Budget" value={formatCurrency(totalBudget)} detail={`${formatCurrency(totalBudget - totalCosts)} remaining`} href="/costs" />
-            <Metric label="Gross profit" value={formatCurrency(profit)} detail={margin == null ? 'No invoices yet' : `${formatPercent(margin)}${goal == null ? '' : ` · goal ${formatPercent(goal)}`}`} tone={margin == null ? undefined : goal != null && margin < goal ? 'bad' : profit >= 0 ? 'good' : 'bad'} />
+            <Metric label="Gross profit" value={formatCurrency(profit)} detail={margin == null ? 'Invoiced minus cost' : `Invoiced minus cost · ${formatPercent(margin)}${goal == null ? '' : ` · goal ${formatPercent(goal)}`}`} tone={margin == null ? undefined : goal != null && margin < goal ? 'bad' : profit >= 0 ? 'good' : 'bad'} />
             <Metric label="Invoiced" value={formatCurrency(invoiced)} detail={`${formatCurrency(contract - invoiced)} of the contract not billed`} href="/invoices" />
             <Metric label="Collected" value={formatCurrency(collected)} detail={`${formatCurrency(invoiced - collected)} still outstanding`} href="/invoices" />
           </section>

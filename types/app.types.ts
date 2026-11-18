@@ -118,6 +118,9 @@ export interface ProjectCost {
   
   description?: string
   change_order_id?: string
+  reversal_of_id?: string | null
+  reversed_at?: string | null
+  reversal_reason?: string | null
   created_at?: string
   updated_at?: string
 }
@@ -230,6 +233,9 @@ export interface CustomerInvoice {
   date_billed: string
   change_order_id?: string
   in_system?: boolean
+  reversal_of_id?: string | null
+  reversed_at?: string | null
+  reversal_reason?: string | null
   created_at?: string
   updated_at?: string
 }

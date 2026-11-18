@@ -6,17 +6,21 @@ import { useProjects } from '@/contexts/ProjectContext'
 import type { CustomerInvoice, Project } from '@/types/app.types'
 import { getTodayLocalDateString } from '@/lib/dateUtils'
 import FileAttachments from '@/components/FileAttachments'
+import { QueuedFilesField } from '@/components/QueuedFilesField'
+import { RecordHistory } from '@/components/RecordHistory'
+import { fileUploadService } from '@/lib/fileUploadService'
+import { uploadQueue } from '@/lib/uploads'
+import { toast } from 'sonner'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
 import { createClient } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Field, Input } from '@/components/ui/input'
-import { Notice } from '@/components/ui/feedback'
 import { Sheet } from '@/components/ui/sheet'
 
 interface InvoiceFormProps {
   open: boolean
-  onSave: (invoiceData: Omit<CustomerInvoice, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>) => Promise<void>
+  onSave: (invoiceData: Omit<CustomerInvoice, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>) => Promise<CustomerInvoice | void>
   onCancel: () => void
   editItem?: CustomerInvoice | null
   loading?: boolean
@@ -33,6 +37,8 @@ export default function InvoiceForm({
 }: InvoiceFormProps) {
   const [formData, setFormData] = useState<Partial<CustomerInvoice>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [queuedFiles, setQueuedFiles] = useState<File[]>([])
+  const [created, setCreated] = useState<CustomerInvoice | null>(null)
   const [selectedProjectId, setSelectedProjectId] = useState('')
   const [availableProjects, setAvailableProjects] = useState<Project[]>([])
   const { activeProject } = useProjects()
@@ -66,6 +72,8 @@ export default function InvoiceForm({
       setSelectedProjectId(activeProject?.id || '')
     }
     setErrors({})
+    setQueuedFiles([])
+    setCreated(null)
   }, [editItem, activeProject?.id, duplicateMode, open])
 
   useEffect(() => {
@@ -119,7 +127,7 @@ export default function InvoiceForm({
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!validateForm()) return
-    await onSave({
+    const saved = await onSave({
       project_id: selectedProjectId,
       invoice_number: formData.invoice_number!,
       amount: Number(formData.amount),
@@ -128,6 +136,19 @@ export default function InvoiceForm({
       change_order_id: formData.change_order_id || undefined,
       in_system: formData.in_system || false,
     })
+    const target = saved && 'id' in saved ? saved : editItem
+    const creating = !editItem || duplicateMode
+    if (creating && target?.id && queuedFiles.length && tenant && user) {
+      fileUploadService.setContext(tenant.id, user.id)
+      const uploaded = await uploadQueue(queuedFiles, (file) => fileUploadService.uploadFile(file, 'customer_invoice', target.id))
+      if (uploaded.error) {
+        setCreated(target)
+        setQueuedFiles(uploaded.failed)
+        toast.error(`Invoice saved. ${uploaded.error}`)
+        return
+      }
+    }
+    onCancel()
   }
 
   const title = duplicateMode ? 'Duplicate invoice' : editItem ? 'Edit invoice' : 'Add invoice'
@@ -187,19 +208,21 @@ export default function InvoiceForm({
           />
           Mark as processed in the system
         </label>
-        {editItem && !duplicateMode ? (
+        {(editItem && !duplicateMode) || created ? (
           <div className="space-y-2 border-t border-border pt-3">
             <p className="text-sm font-medium">Files</p>
             <FileAttachments
               entityType="customer_invoice"
-              entityId={editItem.id}
+              entityId={(created || editItem)!.id}
               tenantId={tenant?.id || ''}
               userId={user?.id || ''}
               canEdit
             />
+            <RecordHistory entityType="customer_invoice" entityId={(created || editItem)!.id} />
+            {queuedFiles.length > 0 ? <QueuedFilesField files={queuedFiles} onChange={setQueuedFiles} /> : null}
           </div>
         ) : (
-          <Notice tone="info">Save the invoice first, then open it again to attach files.</Notice>
+          <QueuedFilesField files={queuedFiles} onChange={setQueuedFiles} />
         )}
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>Cancel</Button>

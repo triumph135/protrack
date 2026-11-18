@@ -85,6 +85,11 @@ export function isMissingRelation(error: { code?: string; message?: string } | n
   )
 }
 
+/** The Phase 2b columns or RPCs are not on this database yet. */
+export function isSchemaPending(error: { code?: string; message?: string } | null | undefined): boolean {
+  return isMissingRelation(error) || isMissingColumnError(error) || isMissingRpc(error)
+}
+
 /** PostgREST / Postgres error when a selected column is not in the live schema. */
 export function isMissingColumnError(error: { code?: string; message?: string } | null | undefined): boolean {
   if (!error) return false

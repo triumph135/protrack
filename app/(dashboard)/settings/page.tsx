@@ -59,6 +59,7 @@ function CompanyForm({ tenant, refresh }: { tenant: { id: string; name: string; 
   const [email, setEmail] = useState(tenant.email)
   const [phone, setPhone] = useState(tenant.phone || '')
   const [goal, setGoal] = useState(current.gp_goal_percent == null ? '' : String(current.gp_goal_percent))
+  const [lockDate, setLockDate] = useState(current.books_lock_date || '')
   const supabase = createClient()
   return (
     <form className="max-w-md space-y-3" onSubmit={async (event) => {
@@ -72,7 +73,7 @@ function CompanyForm({ tenant, refresh }: { tenant: { id: string; name: string; 
         name,
         email,
         phone,
-        settings: { ...(tenant.settings || {}), gp_goal_percent: parsedGoal },
+        settings: { ...(tenant.settings || {}), gp_goal_percent: parsedGoal, books_lock_date: lockDate || null },
       }).eq('id', tenant.id)
       if (error) toast.error(error.message)
       else {
@@ -85,6 +86,9 @@ function CompanyForm({ tenant, refresh }: { tenant: { id: string; name: string; 
       <Field label="Phone" htmlFor="company-phone"><Input id="company-phone" value={phone} onChange={(event) => setPhone(event.target.value)} /></Field>
       <Field label="Gross profit goal (%)" htmlFor="company-goal" hint="Shown on the project overview next to the actual gross profit percent.">
         <Input id="company-goal" inputMode="decimal" value={goal} onChange={(event) => setGoal(event.target.value)} placeholder="20" />
+      </Field>
+      <Field label="Books lock date" htmlFor="books-lock" hint="Costs dated on or before this day, and invoices billed on or before it, can only be corrected with a reversal or credit memo. Leave blank to keep every date open.">
+        <Input id="books-lock" type="date" value={lockDate} onChange={(event) => setLockDate(event.target.value)} />
       </Field>
       <Button type="submit">Save company</Button>
     </form>

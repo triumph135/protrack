@@ -1,14 +1,18 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Logo from '@/components/ui/Logo'
 import { ThemeToggle } from '@/components/theme/ThemeToggle'
 import { PageHeader } from '@/components/ui/feedback'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/format'
 import { CategoryName } from '@/components/costs/CategoryName'
+import { ReverseSheet } from '@/components/ReverseSheet'
+import { MoveCostSheet } from '@/components/MoveCostSheet'
+import { QueuedFilesField } from '@/components/QueuedFilesField'
+import { ProjectRatesEditor } from '@/components/ProjectRatesEditor'
 
-const screens = ['Login', 'Forgot password', 'Overview', 'Projects', 'Costs', 'Category', 'Invoices', 'Employees', 'Team', 'Settings'] as const
+const screens = ['Login', 'Forgot password', 'Overview', 'Projects', 'Costs', 'Category', 'Invoices', 'Employees', 'Team', 'Settings', 'Reverse', 'Credit', 'Move', 'Attachments', 'Rates'] as const
 
 export default function PreviewGallery({
   initialScreen = 'Overview',
@@ -110,6 +114,11 @@ function AppFrame({ screen, mobile }: { screen: string; mobile: boolean }) {
         <div className="p-4">
           {screen === 'Overview' ? <Overview /> : null}
           {screen === 'Projects' ? <Projects /> : null}
+          {screen === 'Reverse' ? <ReversePreview /> : null}
+          {screen === 'Credit' ? <CreditPreview /> : null}
+          {screen === 'Move' ? <MovePreview /> : null}
+          {screen === 'Attachments' ? <AttachmentsPreview /> : null}
+          {screen === 'Rates' ? <RatesPreview /> : null}
           {screen === 'Costs' ? <Costs /> : null}
           {screen === 'Category' ? <CategoryPage /> : null}
           {screen === 'Invoices' ? <Invoices /> : null}
@@ -130,7 +139,7 @@ function Overview() {
         <Stat label="Contract" value={formatCurrency(112000)} />
         <Stat label="Cost to date" value={formatCurrency(4834.5)} />
         <Stat label="Budget" value={formatCurrency(38000)} />
-        <Stat label="Gross profit" value={formatCurrency(2300 - 4834.5)} />
+        <Stat label="Gross profit" value={formatCurrency(2300 - 4834.5)} detail="Invoiced minus cost" />
         <Stat label="Invoiced" value={formatCurrency(2300)} />
         <Stat label="Collected" value={formatCurrency(900)} />
       </div>
@@ -326,12 +335,92 @@ function LoginScreen() {
   )
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, detail }: { label: string; value: string; detail?: string }) {
   return (
     <div className="rounded-lg border border-border bg-card p-4">
       <p className="text-sm text-muted-foreground">{label}</p>
       <p className="mt-1 text-2xl font-semibold tabular">{value}</p>
+      {detail ? <p className="mt-1 text-sm text-muted-foreground">{detail}</p> : null}
     </div>
+  )
+}
+
+function ReversePreview() {
+  return (
+    <div className="space-y-4">
+      <PageHeader title="Materials" description="Net $0.00 after the reversal" />
+      <Table headers={['Date', 'Details', 'Amount']} rows={[
+        ['Jan 15, 2026', 'Steel  Reversed', '$250.00'],
+        ['Nov 18, 2026', 'Reversal · Steel', '−$250.00'],
+      ]} />
+      <p className="text-sm text-muted-foreground">Shown total {formatCurrency(0)}</p>
+      <ReverseSheet open title="Reverse this cost" noun="cost" remaining={250} onClose={() => undefined} onConfirm={async () => undefined} />
+    </div>
+  )
+}
+
+function CreditPreview() {
+  return (
+    <div className="space-y-4">
+      <PageHeader title="Invoices" description="Billed $1,800.00 after the credit memo" />
+      <Table headers={['Number', 'Amount', 'Collected']} rows={[
+        ['INV-A-002  Partially reversed', '$1,800.00', '$900.00'],
+        ['CM-INV-A-002  Credit memo', '−$500.00', '$0.00'],
+      ]} />
+      <ReverseSheet open title="Post a credit memo" noun="invoice" remaining={1800} dateLabel="Date billed" onClose={() => undefined} onConfirm={async () => undefined} />
+    </div>
+  )
+}
+
+function MovePreview() {
+  return (
+    <MoveCostSheet
+      open
+      categories={[
+        { id: 'labor', tenant_id: 't', builtin_key: 'labor', name: 'Labor', kind: 'labor', parent_id: null, sort_order: 1, is_hidden: false, is_builtin: true, gl_code: null },
+        { id: 'others', tenant_id: 't', builtin_key: 'others', name: 'Others', kind: 'standard', parent_id: null, sort_order: 2, is_hidden: false, is_builtin: true, gl_code: null },
+      ]}
+      currentCategoryId="labor"
+      currentKind="labor"
+      onClose={() => undefined}
+      onConfirm={async () => undefined}
+    />
+  )
+}
+
+function AttachmentsPreview() {
+  const [files, setFiles] = useState<File[]>([])
+  useEffect(() => {
+    setFiles([new File(['ticket'], 'steel-ticket.pdf', { type: 'application/pdf' })])
+  }, [])
+  return (
+    <div className="space-y-6">
+      <PageHeader title="Add Materials" description="Files upload when this entry is saved." />
+      <QueuedFilesField files={files} onChange={setFiles} />
+      <section className="rounded-lg border border-border bg-card p-4">
+        <p className="font-medium">JOB-A-001 — Acme Test Job</p>
+        <p className="text-sm text-muted-foreground">1 file on the project · 1 file on Added welding</p>
+      </section>
+    </div>
+  )
+}
+
+function RatesPreview() {
+  return (
+    <ProjectRatesEditor
+      employeeId="alex"
+      tenantId="acme"
+      projects={[{ id: 'job', jobNumber: 'JOB-A-001', jobName: 'Acme Test Job' }]}
+      previewRows={[{
+        id: 'rate-1',
+        project_id: 'job',
+        effective_date: '2026-06-01',
+        standard_rate: 99,
+        ot_rate: 100,
+        dt_rate: 101,
+        mob_rate: 10,
+      }]}
+    />
   )
 }
 

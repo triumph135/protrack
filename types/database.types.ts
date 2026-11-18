@@ -179,6 +179,9 @@ export interface Database {
           created_at: string | null
           updated_at: string | null
           change_order_id: string | null
+          reversal_of_id: string | null
+          reversed_at: string | null
+          reversal_reason: string | null
         }
         Insert: {
           id?: string
@@ -191,6 +194,9 @@ export interface Database {
           created_at?: string | null
           updated_at?: string | null
           change_order_id?: string | null
+          reversal_of_id?: string | null
+          reversed_at?: string | null
+          reversal_reason?: string | null
         }
         Update: {
           id?: string
@@ -203,6 +209,9 @@ export interface Database {
           created_at?: string | null
           updated_at?: string | null
           change_order_id?: string | null
+          reversal_of_id?: string | null
+          reversed_at?: string | null
+          reversal_reason?: string | null
         }
       }
       employees: {
@@ -361,6 +370,9 @@ export interface Database {
           mob: number | null
           mob_qty: number | null
           mob_rate: number | null
+          reversal_of_id: string | null
+          reversed_at: string | null
+          reversal_reason: string | null
         }
         Insert: {
           id?: string
@@ -391,6 +403,9 @@ export interface Database {
           mob?: number | null
           mob_qty?: number | null
           mob_rate?: number | null
+          reversal_of_id?: string | null
+          reversed_at?: string | null
+          reversal_reason?: string | null
         }
         Update: {
           id?: string
@@ -421,6 +436,9 @@ export interface Database {
           mob?: number | null
           mob_qty?: number | null
           mob_rate?: number | null
+          reversal_of_id?: string | null
+          reversed_at?: string | null
+          reversal_reason?: string | null
         }
       }
       user_invitations: {
@@ -707,6 +725,85 @@ export interface Database {
           updated_at?: string | null
         }
       }
+      record_events: {
+        Row: {
+          id: string
+          tenant_id: string
+          entity_type: string
+          entity_id: string
+          event_type: string
+          actor_id: string | null
+          reason: string | null
+          before_data: Json
+          after_data: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          tenant_id: string
+          entity_type: string
+          entity_id: string
+          event_type: string
+          actor_id?: string | null
+          reason?: string | null
+          before_data?: Json
+          after_data?: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          tenant_id?: string
+          entity_type?: string
+          entity_id?: string
+          event_type?: string
+          actor_id?: string | null
+          reason?: string | null
+          before_data?: Json
+          after_data?: Json
+          created_at?: string
+        }
+      }
+      employee_project_rates: {
+        Row: {
+          id: string
+          employee_id: string
+          project_id: string
+          tenant_id: string
+          effective_date: string
+          standard_rate: number
+          ot_rate: number
+          dt_rate: number
+          mob_rate: number | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          employee_id: string
+          project_id: string
+          tenant_id: string
+          effective_date: string
+          standard_rate: number
+          ot_rate: number
+          dt_rate: number
+          mob_rate?: number | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          employee_id?: string
+          project_id?: string
+          tenant_id?: string
+          effective_date?: string
+          standard_rate?: number
+          ot_rate?: number
+          dt_rate?: number
+          mob_rate?: number | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
     }
     Views: {
       [_ in never]: never
@@ -745,6 +842,47 @@ export interface Database {
           p_token: string
         }
         Returns: undefined
+      }
+      reverse_project_cost: {
+        Args: {
+          p_cost_id: string
+          p_reason: string
+          p_date: string
+          p_fields?: Json | null
+        }
+        Returns: string
+      }
+      reverse_customer_invoice: {
+        Args: {
+          p_invoice_id: string
+          p_reason: string
+          p_date: string
+          p_amount?: number | null
+        }
+        Returns: string
+      }
+      move_project_cost: {
+        Args: {
+          p_cost_id: string
+          p_category_id: string
+          p_reason: string
+        }
+        Returns: undefined
+      }
+      employee_rates_as_of: {
+        Args: {
+          p_employee_id: string
+          p_project_id: string
+          p_on: string
+        }
+        Returns: {
+          standard_rate: number
+          ot_rate: number
+          dt_rate: number
+          mob_rate: number | null
+          effective_date: string | null
+          source: string
+        }[]
       }
     }
     Enums: {

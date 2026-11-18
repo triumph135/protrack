@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireUserManager } from '@/lib/api-auth'
 import { createAdminClient } from '@/lib/supabase-admin'
+import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { sendInvitationEmail } from '@/lib/send-invitation'
-import { isValidInvitationToken } from '@/lib/security'
+import { isMissingRpc, isValidInvitationToken } from '@/lib/security'
 
 export async function POST(request: NextRequest) {
   try {
@@ -27,6 +28,16 @@ export async function POST(request: NextRequest) {
 
     if (error || !invitation) {
       return NextResponse.json({ error: 'Invitation not found' }, { status: 404 })
+    }
+
+    const supabase = await createServerSupabaseClient()
+    const registered = await supabase.rpc('register_invitation_send', { p_invitation_id: invitation.id })
+    if (registered.error) {
+      if (isMissingRpc(registered.error)) {
+        return NextResponse.json({ error: 'Invite sending is unavailable until the database update is applied.' }, { status: 503 })
+      }
+      const limited = /limit/i.test(registered.error.message)
+      return NextResponse.json({ error: registered.error.message }, { status: limited ? 429 : 400 })
     }
 
     const sent = await sendInvitationEmail(admin, invitation, request)

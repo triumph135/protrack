@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import type { Employee } from '@/types/app.types'
 import { useProjects } from '@/contexts/ProjectContext'
+import { useTenant } from '@/contexts/TenantContext'
+import { ProjectRatesEditor } from '@/components/ProjectRatesEditor'
 import { employeeProjectIdForSave, employeeScopeLabel } from '@/lib/employee-scope'
 import { Button } from '@/components/ui/button'
 import { Field, Input } from '@/components/ui/input'
@@ -97,6 +99,7 @@ export default function EmployeeModal({
     })
   }
 
+  const { tenant } = useTenant()
   const options = [...projects].sort((a, b) => a.jobNumber.localeCompare(b.jobNumber) || a.jobName.localeCompare(b.jobName))
   const selectedIsListed = !formData.project_id || options.some((project) => project.id === formData.project_id)
 
@@ -143,6 +146,9 @@ export default function EmployeeModal({
             ))}
           </select>
         </Field>
+        {employee?.id && tenant ? (
+          <ProjectRatesEditor employeeId={employee.id} tenantId={tenant.id} projects={options.map((project) => ({ id: project.id, jobNumber: project.jobNumber, jobName: project.jobName }))} />
+        ) : null}
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
           <Button type="submit" disabled={loading}>{loading ? 'Saving…' : employee ? 'Save employee' : 'Add employee'}</Button>

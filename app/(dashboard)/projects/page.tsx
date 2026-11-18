@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button'
 import { Field, Input } from '@/components/ui/input'
 import { Badge, EmptyState, PageHeader, Skeleton } from '@/components/ui/feedback'
 import { Sheet } from '@/components/ui/sheet'
+import FileAttachments from '@/components/FileAttachments'
 
 const emptyChangeOrder = { name: '', description: '', additional_contract_value: 0 }
 
@@ -223,6 +224,28 @@ function ProjectRows({
   const [form, setForm] = useState(emptyChangeOrder)
   const [saving, setSaving] = useState(false)
   const changeOrderTotal = changeOrders.reduce((sum, order) => sum + (order.additional_contract_value || 0), 0)
+  const { user: currentUser } = useAuth()
+  const { tenant } = useTenant()
+  const [fileCounts, setFileCounts] = useState<Record<string, number>>({})
+  useEffect(() => {
+    const client = createClient()
+    let active = true
+    void (async () => {
+      const projectFiles = await client.from('attachments').select('id', { count: 'exact', head: true }).eq('entity_type', 'project').eq('entity_id', project.id)
+      const next: Record<string, number> = { [project.id]: projectFiles.count || 0 }
+      const ids = changeOrders.map((order) => order.id)
+      if (ids.length > 0) {
+        const { data, error } = await client.from('attachments').select('entity_id').eq('entity_type', 'change_order').in('entity_id', ids)
+        if (!error) {
+          for (const row of data || []) next[row.entity_id] = (next[row.entity_id] || 0) + 1
+        }
+      }
+      if (active) setFileCounts(next)
+    })()
+    return () => { active = false }
+    // Counts refresh when the change-order list changes, not on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.id, changeOrders.map((order) => order.id).join(',')])
 
   const handleDeleteChangeOrder = async (order: ChangeOrder) => {
     const confirmed = await confirmAction({
@@ -249,7 +272,7 @@ function ProjectRows({
             {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
             <span>{project.jobNumber}</span>
           </button>
-          <p className="pl-6 text-muted-foreground">{project.jobName}</p>
+          <p className="pl-6 text-muted-foreground">{project.jobName}{(fileCounts[project.id] || 0) > 0 ? ` · ${fileCounts[project.id]} files` : ''}</p>
         </td>
         <td className="px-3 py-2" data-label="Customer">{project.customer}</td>
         <td className="px-3 py-2 text-right" data-label="Contract">
@@ -288,6 +311,7 @@ function ProjectRows({
                       <p className="text-sm text-muted-foreground">
                         <span className="tabular">{formatCurrency(order.additional_contract_value || 0)}</span>
                         {order.description ? ` · ${order.description}` : ''}
+                        {(fileCounts[order.id] || 0) > 0 ? ` · ${fileCounts[order.id]} files` : ''}
                       </p>
                     </div>
                     {canWrite ? (
@@ -309,6 +333,8 @@ function ProjectRows({
         form={form}
         setForm={setForm}
         saving={saving}
+        tenantId={tenant?.id}
+        userId={currentUser?.id}
         onClose={() => setSheetOpen(false)}
         onSave={async () => {
           if (!form.name.trim()) {
@@ -339,6 +365,8 @@ function ChangeOrderSheet({
   form,
   setForm,
   saving,
+  tenantId,
+  userId,
   onClose,
   onSave,
 }: {
@@ -347,6 +375,8 @@ function ChangeOrderSheet({
   form: typeof emptyChangeOrder
   setForm: (form: typeof emptyChangeOrder) => void
   saving: boolean
+  tenantId?: string
+  userId?: string
   onClose: () => void
   onSave: () => void
 }) {
@@ -362,6 +392,9 @@ function ChangeOrderSheet({
         <Field label="Description" htmlFor={`co-description-${editing?.id || 'new'}`}>
           <Input id={`co-description-${editing?.id || 'new'}`} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
         </Field>
+        {editing && tenantId && userId ? (
+          <FileAttachments entityType="change_order" entityId={editing.id} tenantId={tenantId} userId={userId} canEdit />
+        ) : null}
         <div className="flex justify-end gap-2">
           <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
           <Button type="button" onClick={onSave} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>

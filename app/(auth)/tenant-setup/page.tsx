@@ -7,8 +7,8 @@ import PendingInvites from '@/components/PendingInvites'
 import { createClient } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import AuthGuard from '@/components/auth/AuthGuard'
-import { ENTRY_PERMISSIONS, MASTER_PERMISSIONS } from '@/lib/permissions'
-import { isMissingRpc, isValidSubdomain } from '@/lib/security'
+import { ENTRY_PERMISSIONS } from '@/lib/permissions'
+import { isValidSubdomain } from '@/lib/security'
 
 export default function TenantSetupPage() {
   return (
@@ -26,7 +26,6 @@ function TenantSetupContent() {
     name: '',
     email: '',
     phone: '',
-    plan: 'professional'
   })
   
   const router = useRouter()
@@ -68,16 +67,6 @@ function TenantSetupContent() {
     return regex.test(subdomain)
   }
 
-  const checkSubdomainAvailable = async (subdomain: string) => {
-    const { data } = await supabase
-      .from('tenants')
-      .select('id')
-      .eq('subdomain', subdomain)
-      .single()
-    
-    return !data // If no data, subdomain is available
-  }
-
   const handleOrgNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const orgName = e.target.value
     const subdomain = orgName
@@ -110,47 +99,11 @@ function TenantSetupContent() {
         p_subdomain: subdomain,
         p_email: tenantData.email.trim(),
         p_phone: tenantData.phone || null,
-        p_plan: tenantData.plan,
+        p_plan: 'professional',
       })
 
-      if (rpcError && !isMissingRpc(rpcError)) {
+      if (rpcError) {
         throw new Error(rpcError.message)
-      }
-
-      if (isMissingRpc(rpcError)) {
-        const available = await checkSubdomainAvailable(subdomain)
-        if (!available) {
-          throw new Error('This subdomain is already taken')
-        }
-
-        const { data: newTenant, error: tenantError } = await supabase
-          .from('tenants')
-          .insert({
-            ...tenantData,
-            subdomain,
-            status: 'active'
-          })
-          .select()
-          .single()
-
-        if (tenantError) throw tenantError
-
-        const userId = user?.id || supabaseUser?.id
-        if (!userId) {
-          throw new Error('Unable to identify user for tenant setup')
-        }
-
-        const { error: updateError } = await supabase
-          .from('users')
-          .update({
-            tenant_id: newTenant.id,
-            role: 'master',
-            permissions: MASTER_PERMISSIONS
-          })
-          .eq('id', userId)
-          .is('tenant_id', null)
-
-        if (updateError) throw updateError
       }
 
       // Refresh user data
@@ -241,7 +194,7 @@ function TenantSetupContent() {
               />
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
-              This will be your unique workspace identifier: {tenantData.subdomain || 'your-company'}.protrack.com
+              This name tells companies apart. It is not a website address.
             </p>
           </div>
 
@@ -281,23 +234,6 @@ function TenantSetupContent() {
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <Phone className="h-5 w-5 text-muted-foreground" />
               </div>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-foreground">
-              Plan
-            </label>
-            <div className="mt-1">
-              <select
-                value={tenantData.plan}
-                onChange={(e) => setTenantData({ ...tenantData, plan: e.target.value })}
-                className="block w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-ring focus:border-ring"
-                disabled={loading}
-              >
-                <option value="professional">Professional - $35/month</option>
-                <option value="enterprise">Enterprise - $65/month</option>
-              </select>
             </div>
           </div>
 

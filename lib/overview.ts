@@ -9,6 +9,14 @@ export function categoryBudgetState(actual: number, budget: number): BudgetState
   return 'within'
 }
 
+/**
+ * Gross profit is billings minus cost, not contract and not cash collected.
+ * Cost to date is the sum of project_costs.cost, reversals included.
+ * Invoiced is the sum of customer_invoices.amount, credit memos included.
+ * Collected is amount_collected and is display only.
+ * Contract is projects.totalContractValue plus change-order additional value.
+ * GP = invoiced − cost. GP% = 100 × (invoiced − cost) / invoiced when invoiced > 0, else null.
+ */
 export function grossProfit(invoiced: number, cost: number): number {
   return invoiced - cost
 }

@@ -37,6 +37,8 @@ load "${ROOT}/supabase/migrations/20261118000100_team_invites.sql"
 load "${ROOT}/supabase/migrations/20261118000200_company_settings.sql"
 load "${ROOT}/supabase/migrations/20261118000300_baseline_access.sql"
 load "${ROOT}/supabase/migrations/20261118000400_invoice_collected.sql"
+load "${ROOT}/supabase/migrations/20261119000000_reversals_and_events.sql"
+load "${ROOT}/supabase/migrations/20261119000100_employee_project_rates.sql"
 if [[ "${SKIP_SEED:-}" != "1" ]]; then
   load "${ROOT}/supabase/seed/phase2_synthetic.sql"
 fi

@@ -1,13 +1,17 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Save, X, AlertCircle, Users, DollarSign, FileText } from 'lucide-react'
+import { Save, X, AlertCircle, Users, DollarSign } from 'lucide-react'
 import { useEmployees } from '@/hooks/useEmployees'
 import { useChangeOrders } from '@/hooks/useChangeOrders'
 import { useProjects } from '@/contexts/ProjectContext'
 import type { ProjectCost, ChangeOrder, Project } from '@/types/app.types'
 import type { CostCategory } from '@/hooks/useCosts'
 import FileAttachments from '@/components/FileAttachments'
+import { QueuedFilesField } from '@/components/QueuedFilesField'
+import { fileUploadService } from '@/lib/fileUploadService'
+import { uploadQueue } from '@/lib/uploads'
+import { toast } from 'sonner'
 import EmployeeModal from '@/components/EmployeeModal'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
@@ -17,7 +21,7 @@ import { createClient } from '@/lib/supabase'
 
 interface CostEntryFormProps {
   category: CostCategory
-  onSave: (costData: Omit<ProjectCost, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>) => Promise<void>
+  onSave: (costData: Omit<ProjectCost, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>) => Promise<ProjectCost | void>
   onCancel: () => void
   editItem?: ProjectCost | null
   loading?: boolean
@@ -43,6 +47,7 @@ export default function CostEntryForm({
   duplicateMode = false
 }: CostEntryFormProps) {
   const [formData, setFormData] = useState<Partial<ProjectCost>>({})
+  const [queuedFiles, setQueuedFiles] = useState<File[]>([])
   const [errors, setErrors] = useState<Record<string, string>>({})
   
   // Employee modal state
@@ -328,7 +333,17 @@ export default function CostEntryForm({
       // Ensure change_order_id is properly handled (undefined should become null in DB)
       finalFormData.change_order_id = formData.change_order_id || undefined
 
-      await onSave(finalFormData as Omit<ProjectCost, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>)
+      const saved = await onSave(finalFormData as Omit<ProjectCost, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>)
+      if ((!editItem || duplicateMode) && saved && 'id' in saved && queuedFiles.length && tenant && user) {
+        fileUploadService.setContext(tenant.id, user.id)
+        const uploaded = await uploadQueue(queuedFiles, (file) => fileUploadService.uploadFile(file, 'cost', saved.id))
+        if (uploaded.error) {
+          setQueuedFiles(uploaded.failed)
+          toast.error(`Entry saved. ${uploaded.error}`)
+        } else {
+          setQueuedFiles([])
+        }
+      }
     } catch (error) {
       console.error('Error saving cost:', error)
     }
@@ -585,15 +600,7 @@ export default function CostEntryForm({
 
         {(!editItem || duplicateMode) && (
           <div className="border-t pt-6">
-            <div className="bg-accent border border-border rounded-lg p-4">
-              <div className="flex items-center gap-2 text-primary">
-                <FileText className="w-5 h-5" />
-                <div>
-                  <p className="text-sm font-medium">File Attachments</p>
-                  <p className="text-sm">Save this entry first, then edit it to add file attachments</p>
-                </div>
-              </div>
-            </div>
+            <QueuedFilesField files={queuedFiles} onChange={setQueuedFiles} />
           </div>
         )}
 
