@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useEmployees } from '@/hooks/useEmployees'
+import { useProjects } from '@/contexts/ProjectContext'
+import { employeeScopeLabel } from '@/lib/employee-scope'
 import EmployeeModal from '@/components/EmployeeModal'
 import { confirmAction } from '@/components/ui/confirm-dialog'
 import { toast } from 'sonner'
@@ -35,6 +37,7 @@ export default function ProjectModal({ project, onSave, onCancel, open }: Projec
   const [showEmployeeModal, setShowEmployeeModal] = useState(false)
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
   const [employeeLoading, setEmployeeLoading] = useState(false)
+  const { projects } = useProjects()
   const { employees, loading: employeesLoading, createEmployee, updateEmployee, deleteEmployee } = useEmployees(project?.id)
 
   useEffect(() => {
@@ -106,7 +109,7 @@ export default function ProjectModal({ project, onSave, onCancel, open }: Projec
     try {
       setEmployeeLoading(true)
       if (editingEmployee) await updateEmployee(editingEmployee.id, employeeData)
-      else await createEmployee({ ...employeeData, project_id: project?.id || undefined })
+      else await createEmployee(employeeData)
       setShowEmployeeModal(false)
       setEditingEmployee(null)
     } finally {
@@ -176,6 +179,7 @@ export default function ProjectModal({ project, onSave, onCancel, open }: Projec
                       <p className="text-sm text-muted-foreground tabular">
                         ST {formatCurrency(employee.standard_rate)} · OT {formatCurrency(employee.ot_rate)} · DT {formatCurrency(employee.dt_rate)}
                       </p>
+                      <p className="text-xs text-muted-foreground">{employeeScopeLabel(employee.project_id, projects)}</p>
                     </div>
                     <div>
                       <Button variant="ghost" size="icon" type="button" aria-label={`Edit ${employee.name}`} onClick={() => { setEditingEmployee(employee); setShowEmployeeModal(true) }}><Pencil className="h-4 w-4" /></Button>
@@ -194,7 +198,7 @@ export default function ProjectModal({ project, onSave, onCancel, open }: Projec
         onSubmit={handleCreateEmployee}
         employee={editingEmployee}
         loading={employeeLoading}
-        projectId={project?.id}
+        defaultProjectId={project?.id}
       />
     </>
   )

@@ -63,7 +63,7 @@ export interface Employee {
   standard_rate: number
   ot_rate: number
   dt_rate: number
-  project_id?: string
+  project_id?: string | null
   mob?: number
   mob_rate?: number
   created_at?: string

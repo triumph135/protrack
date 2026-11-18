@@ -77,7 +77,9 @@ insert into public.employees (
   ('44444444-4444-4444-8444-4444444444a1', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',
    'Alex Rivera', 45, 67.50, 90, null, 25, 25),
   ('44444444-4444-4444-8444-4444444444a2', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',
-   'Jordan Lee', 40, 60, 80, '22222222-2222-4222-8222-2222222222a1', 0, 0)
+   'Jordan Lee', 40, 60, 80, '22222222-2222-4222-8222-2222222222a1', 0, 0),
+  ('44444444-4444-4444-8444-4444444444a3', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',
+   'Sam Patel', 38, 57, 76, '22222222-2222-4222-8222-2222222222a2', 0, 0)
 on conflict (id) do nothing;
 
 insert into public.change_orders (

@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
 import type { Employee } from '@/types/app.types'
+import { employeeProjectIdForSave } from '@/lib/employee-scope'
 
 export function useEmployees(projectId?: string) {
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -56,6 +57,7 @@ export function useEmployees(projectId?: string) {
 
       const newEmployee = {
         ...employeeData,
+        project_id: employeeProjectIdForSave(employeeData.project_id),
         tenant_id: tenant.id
       }
 
@@ -85,9 +87,14 @@ export function useEmployees(projectId?: string) {
     try {
       setLoading(true)
 
+      const payload: Partial<Employee> = { ...updates }
+      if ('project_id' in updates) {
+        payload.project_id = employeeProjectIdForSave(updates.project_id)
+      }
+
       const { data, error } = await supabase
         .from('employees')
-        .update(updates)
+        .update(payload)
         .eq('id', employeeId)
         .eq('tenant_id', tenant.id)
         .select()

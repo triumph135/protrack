@@ -9,9 +9,9 @@ export function Badge({
 }) {
   const tones = {
     neutral: 'bg-muted text-foreground',
-    success: 'bg-emerald-50 text-success',
-    warning: 'bg-amber-50 text-warning',
-    danger: 'bg-red-50 text-destructive',
+    success: 'bg-success/15 text-success',
+    warning: 'bg-warning/15 text-warning',
+    danger: 'bg-destructive/15 text-destructive',
   }
   return (
     <span className={cn('inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium', tones[tone])}>
@@ -67,7 +67,7 @@ export function Notice({ children, tone = 'warning' }: { children: React.ReactNo
     <div
       className={cn(
         'rounded-lg border px-3 py-2 text-sm',
-        tone === 'warning' ? 'border-amber-200 bg-amber-50 text-warning' : 'border-border bg-accent text-accent-foreground'
+        tone === 'warning' ? 'border-warning/40 bg-warning/15 text-warning' : 'border-border bg-accent text-accent-foreground'
       )}
     >
       {children}

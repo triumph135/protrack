@@ -260,12 +260,12 @@ export default function FileAttachments({
 
   const getFileIcon = (fileType: string) => {
     if (fileType.startsWith('image/')) {
-      return <ImageIcon className="w-4 h-4 text-blue-500" aria-hidden="true" />
+      return <ImageIcon className="w-4 h-4 text-primary" aria-hidden="true" />
     }
     if (fileType === 'application/pdf') {
-      return <FileText className="w-4 h-4 text-red-500" />
+      return <FileText className="w-4 h-4 text-destructive" />
     }
-    return <File className="w-4 h-4 text-gray-500" />
+    return <File className="w-4 h-4 text-muted-foreground" />
   }
 
   const formatFileSize = (bytes: number): string => {
@@ -279,14 +279,14 @@ export default function FileAttachments({
   return (
     <div className={`space-y-4 ${className}`}>
       <div className="flex justify-between items-center">
-        <h4 className="text-sm font-medium text-gray-700">
+        <h4 className="text-sm font-medium text-foreground">
           Attachments ({attachments.length})
         </h4>
       </div>
 
       {/* Success Message */}
       {success && (
-        <div className="bg-green-50 border border-green-200 text-green-700 px-3 py-2 rounded-md text-sm">
+        <div className="bg-success/10 border border-success/30 text-success px-3 py-2 rounded-md text-sm">
           <div className="flex items-start gap-2">
             <div className="w-4 h-4 mt-0.5 flex-shrink-0">
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
@@ -300,14 +300,14 @@ export default function FileAttachments({
 
       {/* Enhanced Error Message for Mobile */}
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-md text-sm">
+        <div className="bg-destructive/10 border border-destructive/30 text-destructive px-3 py-2 rounded-md text-sm">
           <div className="flex items-start gap-2">
             <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
             <div className="flex-1">
               <p className="font-medium">Error</p>
               <p className="text-xs mt-1 break-words">{error}</p>
               {error.includes('Download failed') && (
-                <p className="text-xs mt-2 text-red-600">
+                <p className="text-xs mt-2 text-destructive">
                   <strong>Mobile users:</strong> If download doesn&apos;t start automatically, the file will open in a new tab.
                   You can then save it using your browser&apos;s save/share options.
                 </p>
@@ -322,7 +322,7 @@ export default function FileAttachments({
     <div className="space-y-3">
         {/* Description Input */}
         <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-sm font-medium text-foreground mb-1">
             Description (optional)
         </label>
         <input
@@ -330,7 +330,7 @@ export default function FileAttachments({
             value={uploadDescription}
             onChange={(e) => setUploadDescription(e.target.value)}
             placeholder="Enter a description for the file..."
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-sm"
         />
         </div>
         
@@ -342,25 +342,25 @@ export default function FileAttachments({
         onClick={() => fileInputRef.current?.click()}
         className={`border-2 border-dashed rounded-lg p-4 sm:p-6 text-center cursor-pointer transition-colors touch-manipulation ${
             dragOver 
-            ? 'border-blue-400 bg-blue-50' 
-            : 'border-gray-300 hover:border-gray-400'
+            ? 'border-primary bg-accent' 
+            : 'border-input hover:border-border'
         } ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
         {uploading ? (
-            <div className="flex items-center justify-center gap-2 text-gray-600">
+            <div className="flex items-center justify-center gap-2 text-muted-foreground">
             <Loader2 className="w-5 h-5 animate-spin" />
             <span className="text-sm">Uploading...</span>
             </div>
         ) : (
-            <div className="text-gray-600">
+            <div className="text-muted-foreground">
             <Upload className="w-6 h-6 mx-auto mb-2" />
             <p className="text-sm font-medium">
                 Drop files here or tap to browse
             </p>
-            <p className="text-xs text-gray-500 mt-2">
+            <p className="text-xs text-muted-foreground mt-2">
                 JPG, PNG, GIF, WebP, PDF, TIFF (max 10MB)
             </p>
-            <p className="text-xs text-gray-400 mt-1 sm:hidden">
+            <p className="text-xs text-muted-foreground mt-1 sm:hidden">
                 Tip: On mobile, you can select files from your camera, photos, or file manager
             </p>
             </div>
@@ -381,18 +381,18 @@ export default function FileAttachments({
 
       {/* Attachments List */}
       {loading ? (
-        <div className="flex items-center justify-center py-4 text-gray-500">
+        <div className="flex items-center justify-center py-4 text-muted-foreground">
           <Loader2 className="w-5 h-5 animate-spin mr-2" />
           Loading attachments...
         </div>
       ) : attachments.length === 0 ? (
-        <div className="text-center py-4 text-gray-500 text-sm">
+        <div className="text-center py-4 text-muted-foreground text-sm">
           No attachments yet
         </div>
       ) : (
         <div className="space-y-2">
           {attachments.map((attachment) => (
-            <div key={attachment.id} className="border rounded-lg p-3 sm:p-4 bg-gray-50">
+            <div key={attachment.id} className="border rounded-lg p-3 sm:p-4 bg-muted">
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                 <div className="flex items-start gap-3 flex-1 min-w-0">
                   <div className="flex-shrink-0 mt-0.5">
@@ -400,10 +400,10 @@ export default function FileAttachments({
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                      <span className="text-sm font-medium text-gray-900 break-words">
+                      <span className="text-sm font-medium text-foreground break-words">
                         {attachment.file_name}
                       </span>
-                      <span className="text-xs text-gray-500">
+                      <span className="text-xs text-muted-foreground">
                         ({formatFileSize(attachment.file_size)})
                       </span>
                     </div>
@@ -438,7 +438,7 @@ export default function FileAttachments({
                               e.stopPropagation()
                               handleUpdateDescription(attachment.id)
                           }}
-                          className="p-1 text-green-600 hover:text-green-800 touch-manipulation"
+                          className="p-1 text-success hover:text-success touch-manipulation"
                           aria-label="Save description"
                         >
                           <Save className="w-4 h-4" />
@@ -451,7 +451,7 @@ export default function FileAttachments({
                               setEditingDescription(null)
                               setNewDescription('')
                           }}
-                          className="p-1 text-gray-500 hover:text-gray-700 touch-manipulation"
+                          className="p-1 text-muted-foreground hover:text-foreground touch-manipulation"
                           aria-label="Cancel editing"
                         >
                           <X className="w-4 h-4" />
@@ -461,11 +461,11 @@ export default function FileAttachments({
                     ) : (
                       <>
                         {attachment.description && (
-                          <p className="text-xs text-gray-600 mt-1 break-words">
+                          <p className="text-xs text-muted-foreground mt-1 break-words">
                             {attachment.description}
                           </p>
                         )}
-                        <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 mt-1 text-xs text-gray-500">
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 mt-1 text-xs text-muted-foreground">
                           <span>
                             Uploaded {new Date(attachment.created_at).toLocaleDateString()}
                           </span>
@@ -487,7 +487,7 @@ export default function FileAttachments({
                     e.stopPropagation()
                     handleDownload(attachment)
                     }}
-                    className="flex items-center gap-1 px-2 py-1 sm:p-1 text-xs sm:text-sm text-gray-500 hover:text-blue-600 bg-white sm:bg-transparent border sm:border-0 rounded sm:rounded-none touch-manipulation"
+                    className="flex items-center gap-1 px-2 py-1 sm:p-1 text-xs sm:text-sm text-muted-foreground hover:text-primary bg-card sm:bg-transparent border sm:border-0 rounded sm:rounded-none touch-manipulation"
                     title="Download"
                     aria-label={`Download ${attachment.file_name}`}
                 >
@@ -505,7 +505,7 @@ export default function FileAttachments({
                         setEditingDescription(attachment.id)
                         setNewDescription(attachment.description || '')
                         }}
-                        className="flex items-center gap-1 px-2 py-1 sm:p-1 text-xs sm:text-sm text-gray-500 hover:text-blue-600 bg-white sm:bg-transparent border sm:border-0 rounded sm:rounded-none touch-manipulation"
+                        className="flex items-center gap-1 px-2 py-1 sm:p-1 text-xs sm:text-sm text-muted-foreground hover:text-primary bg-card sm:bg-transparent border sm:border-0 rounded sm:rounded-none touch-manipulation"
                         title="Edit description"
                         aria-label={`Edit description for ${attachment.file_name}`}
                     >
@@ -520,7 +520,7 @@ export default function FileAttachments({
                         e.stopPropagation()
                         handleDelete(attachment.id)
                         }}
-                        className="flex items-center gap-1 px-2 py-1 sm:p-1 text-xs sm:text-sm text-gray-500 hover:text-red-600 bg-white sm:bg-transparent border sm:border-0 rounded sm:rounded-none touch-manipulation"
+                        className="flex items-center gap-1 px-2 py-1 sm:p-1 text-xs sm:text-sm text-muted-foreground hover:text-destructive bg-card sm:bg-transparent border sm:border-0 rounded sm:rounded-none touch-manipulation"
                         title="Delete"
                         aria-label={`Delete ${attachment.file_name}`}
                     >

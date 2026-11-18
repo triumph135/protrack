@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
-import { Copy, Download, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Copy, Download, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
 import { useProjects } from '@/contexts/ProjectContext'
@@ -15,7 +15,8 @@ import { useChangeOrders } from '@/hooks/useChangeOrders'
 import FileAttachments from '@/components/FileAttachments'
 import { createClient } from '@/lib/supabase'
 import { canAccessCategory, canExport } from '@/lib/permissions'
-import { builtinKeyFromSlug, isFallbackCategoryId, legacyCategoryText } from '@/lib/categories'
+import { builtinKeyFromSlug, flattenCategoryTree, isFallbackCategoryId, legacyCategoryText } from '@/lib/categories'
+import { groupCostEntries, type CostSortDirection, type CostSortKey } from '@/lib/cost-groups'
 import { calculateTotalCost, type CostCategory } from '@/lib/costs'
 import { enabledLaborFields, normalizeLaborFieldValue, validateLaborFieldValue } from '@/lib/labor-fields'
 import { readCompanySettings } from '@/lib/company-settings'
@@ -27,6 +28,7 @@ import { Field, Input, Textarea } from '@/components/ui/input'
 import { Sheet } from '@/components/ui/sheet'
 import { EmptyState, PageHeader } from '@/components/ui/feedback'
 import { confirmAction } from '@/components/ui/confirm-dialog'
+import type { CostCategoryRecord } from '@/lib/categories'
 import type { ProjectCost } from '@/types/app.types'
 
 type Draft = {
@@ -48,6 +50,16 @@ type Draft = {
   mob_qty: string
   mob_rate: string
   custom_fields: Record<string, string>
+}
+
+const BUDGET_COLUMNS: Record<string, string> = {
+  material: 'material_budget',
+  labor: 'labor_budget',
+  equipment: 'equipment_budget',
+  subcontractor: 'subcontractor_budget',
+  others: 'others_budget',
+  cap_leases: 'cap_leases_budget',
+  consumable: 'consumable_budget',
 }
 
 const emptyDraft = (): Draft => ({
@@ -77,93 +89,146 @@ export default function CostsPage() {
   const { user } = useAuth()
   const { tenant } = useTenant()
   const { activeProject } = useProjects()
-  const { categories, laborFields, schemaPending, loading } = useCategories()
+  const { categories, tree, laborFields, schemaPending, loading } = useCategories()
   const { changeOrderId } = useWorkspace()
   const { entries, createCost, updateCost, deleteCost } = useCosts(activeProject?.id, null)
   const { employees } = useEmployees(activeProject?.id)
   const { changeOrders } = useChangeOrders(activeProject?.id)
   const [draft, setDraft] = useState<Draft>(emptyDraft)
   const [editing, setEditing] = useState<ProjectCost | null>(null)
+  const [formCategoryId, setFormCategoryId] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [budget, setBudget] = useState('')
+  const [budgets, setBudgets] = useState<Record<string, number>>({})
+  const [budgetDraft, setBudgetDraft] = useState<Record<string, string>>({})
   const [query, setQuery] = useState('')
+  const [sortKey, setSortKey] = useState<CostSortKey>('date')
+  const [sortDirection, setSortDirection] = useState<CostSortDirection>('desc')
+  const [collapsed, setCollapsed] = useState<string[] | null>(null)
   const supabase = createClient()
 
   const requested = searchParams.get('category')
-  const category = useMemo(() => {
-    if (!requested) return categories.find((item) => !item.is_hidden) || null
+  const focusCategory = useMemo(() => {
+    if (!requested) return null
     const builtin = builtinKeyFromSlug(requested)
-    if (builtin) return categories.find((item) => item.builtin_key === builtin) || null
+    if (builtin) return categories.find((item) => item.builtin_key === builtin && !item.parent_id) || null
     return categories.find((item) => item.id === requested) || null
   }, [categories, requested])
 
   useEffect(() => {
-    if (!category || !requested) return
+    if (!focusCategory || !requested) return
     const builtin = builtinKeyFromSlug(requested)
-    if (builtin && category.id !== requested) {
-      router.replace(`/costs?category=${category.id}` as never)
+    if (builtin && focusCategory.id !== requested) {
+      router.replace(`/costs?category=${focusCategory.id}` as never)
     }
-  }, [category, requested, router])
-
-  useEffect(() => {
-    if (requested || !category) return
-    router.replace(`/costs?category=${category.id}` as never)
-  }, [requested, category, router])
+  }, [focusCategory, requested, router])
 
   const byId = useMemo(() => new Map(categories.map((item) => [item.id, item])), [categories])
-  const parent = category?.parent_id ? byId.get(category.parent_id) : null
-  const grant = category
-    ? { id: category.id, builtinKey: category.builtin_key, parentBuiltinKey: parent?.builtin_key ?? null }
-    : null
-  const canRead = grant ? canAccessCategory(user, grant, 'read') : false
-  const canWrite = grant ? canAccessCategory(user, grant, 'write') : false
-  const exportAllowed = grant ? canExport(user, category!.id, grant) : false
-  const settings = readCompanySettings(tenant?.settings)
-  const fields = category?.kind === 'labor' ? enabledLaborFields(laborFields) : []
+  const ordered = useMemo(() => flattenCategoryTree(tree).filter((category) => !category.is_hidden), [tree])
 
-  const rows = useMemo(() => {
-    if (!category) return []
-    return entries.filter((row) => {
-      const sameCategory = row.category_id
-        ? row.category_id === category.id
-        : row.category === (category.builtin_key || (category.kind === 'labor' ? 'labor' : 'others'))
-      if (!sameCategory) return false
-      if (changeOrderId === 'base') return !row.change_order_id
-      if (changeOrderId) return row.change_order_id === changeOrderId
-      return true
-    }).filter((row) => {
-      const haystack = `${row.description || ''} ${row.vendor || ''} ${row.employee_name || ''} ${row.subcontractor_name || ''}`.toLowerCase()
-      return haystack.includes(query.toLowerCase())
-    })
-  }, [entries, category, changeOrderId, query])
+  const grantFor = (category: CostCategoryRecord) => {
+    const parent = category.parent_id ? byId.get(category.parent_id) : null
+    return {
+      id: category.id,
+      builtinKey: category.builtin_key,
+      parentBuiltinKey: parent?.builtin_key ?? null,
+    }
+  }
+
+  const readable = useMemo(
+    () => ordered.filter((category) => {
+      const parent = category.parent_id ? byId.get(category.parent_id) : null
+      return canAccessCategory(user, {
+        id: category.id,
+        builtinKey: category.builtin_key,
+        parentBuiltinKey: parent?.builtin_key ?? null,
+      }, 'read')
+    }),
+    [ordered, user, byId],
+  )
+
+  const groups = useMemo(() => groupCostEntries({
+    entries,
+    categories: readable,
+    query,
+    changeOrderId,
+    sortKey,
+    sortDirection,
+    focusCategoryId: focusCategory && readable.some((category) => category.id === focusCategory.id) ? focusCategory.id : null,
+  }), [entries, readable, query, changeOrderId, sortKey, sortDirection, focusCategory])
+
+  const storageKey = activeProject?.id ? `protrack-cost-groups:${activeProject.id}` : ''
+  useEffect(() => {
+    if (!storageKey) return
+    try {
+      const raw = localStorage.getItem(storageKey)
+      const parsed = raw ? JSON.parse(raw) : []
+      setCollapsed(Array.isArray(parsed) ? parsed.filter((item) => typeof item === 'string') : [])
+    } catch {
+      setCollapsed([])
+    }
+  }, [storageKey])
+
+  const persistCollapsed = (next: string[]) => {
+    setCollapsed(next)
+    if (!storageKey) return
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(next))
+    } catch {
+      // The groups still collapse for this visit.
+    }
+  }
 
   useEffect(() => {
-    if (!category || !activeProject?.id || isFallbackCategoryId(category.id)) return
+    if (!activeProject?.id) return
     let cancelled = false
     ;(async () => {
-      const { data, error } = await supabase
+      const categoryBudgets = await supabase
         .from('project_category_budgets')
-        .select('amount')
+        .select('category_id, amount')
         .eq('project_id', activeProject.id)
-        .eq('category_id', category.id)
-        .maybeSingle()
       if (cancelled) return
-      if (error && isMissingRelation(error)) return
-      setBudget(data ? String(data.amount) : '')
+      if (!categoryBudgets.error && categoryBudgets.data) {
+        const next: Record<string, number> = {}
+        for (const row of categoryBudgets.data) next[row.category_id] = Number(row.amount || 0)
+        setBudgets(next)
+        setBudgetDraft(Object.fromEntries(Object.entries(next).map(([id, amount]) => [id, String(amount)])))
+        return
+      }
+      if (categoryBudgets.error && !isMissingRelation(categoryBudgets.error)) {
+        console.error(categoryBudgets.error)
+      }
+      const legacy = await supabase.from('project_budgets').select('*').eq('project_id', activeProject.id).maybeSingle()
+      if (cancelled || !legacy.data) return
+      const next: Record<string, number> = {}
+      for (const category of categories) {
+        const column = category.builtin_key ? BUDGET_COLUMNS[category.builtin_key] : null
+        if (column) next[category.id] = Number((legacy.data as Record<string, number | null>)[column] || 0)
+      }
+      setBudgets(next)
+      setBudgetDraft(Object.fromEntries(Object.entries(next).map(([id, amount]) => [id, String(amount)])))
     })()
     return () => {
       cancelled = true
     }
-  }, [category, activeProject?.id, supabase])
+  }, [activeProject?.id, supabase, categories])
 
-  const openNew = () => {
+  const formCategory = categories.find((item) => item.id === formCategoryId) || null
+  const formParent = formCategory?.parent_id ? byId.get(formCategory.parent_id) : null
+  const formGrant = formCategory ? grantFor(formCategory) : null
+  const formCanWrite = formGrant ? canAccessCategory(user, formGrant, 'write') : false
+  const settings = readCompanySettings(tenant?.settings)
+  const fields = formCategory?.kind === 'labor' ? enabledLaborFields(laborFields) : []
+
+  const openNew = (categoryId: string) => {
+    setFormCategoryId(categoryId)
     setEditing(null)
     setDraft(emptyDraft())
     setOpen(true)
   }
 
-  const openEdit = (row: ProjectCost, duplicate = false) => {
+  const openEdit = (row: ProjectCost, categoryId: string, duplicate = false) => {
+    setFormCategoryId(categoryId)
     setEditing(duplicate ? null : row)
     setDraft({
       ...emptyDraft(),
@@ -190,7 +255,7 @@ export default function CostsPage() {
   }
 
   const save = async () => {
-    if (!category || !activeProject || !canWrite) return
+    if (!formCategory || !activeProject || !formCanWrite) return
     for (const field of fields) {
       const message = validateLaborFieldValue(field, draft.custom_fields[field.id])
       if (message) {
@@ -202,7 +267,7 @@ export default function CostsPage() {
     const numeric = (value: string) => (value === '' ? null : Number(value))
     const payload: Omit<ProjectCost, 'id' | 'tenant_id' | 'created_at' | 'updated_at'> = {
       project_id: activeProject.id,
-      category: (legacyCategoryText(category, byId) || 'others') as ProjectCost['category'],
+      category: (legacyCategoryText(formCategory, byId) || 'others') as ProjectCost['category'],
       date: draft.date,
       description: draft.description || undefined,
       vendor: draft.vendor || undefined,
@@ -226,11 +291,11 @@ export default function CostsPage() {
     }
     setSaving(true)
     try {
-      const legacy = (category.builtin_key || (category.kind === 'labor' ? 'labor' : 'others')) as CostCategory
+      const legacy = (formCategory.builtin_key || (formCategory.kind === 'labor' ? 'labor' : 'others')) as CostCategory
       if (editing) {
-        await updateCost(legacy, editing.id, payload, { kind: category.kind })
+        await updateCost(legacy, editing.id, payload, { kind: formCategory.kind })
       } else {
-        await createCost(legacy, payload, { categoryId: category.id, kind: category.kind })
+        await createCost(legacy, payload, { categoryId: formCategory.id, kind: formCategory.kind })
       }
       setOpen(false)
       toast.success(editing ? 'Cost updated' : 'Cost added')
@@ -241,9 +306,10 @@ export default function CostsPage() {
     }
   }
 
-  const saveBudget = async () => {
-    if (!category || !activeProject || !tenant || isFallbackCategoryId(category.id)) return
-    const amount = Number(budget)
+  const saveBudget = async (category: CostCategoryRecord) => {
+    if (!activeProject || !tenant || isFallbackCategoryId(category.id)) return
+    if (!canAccessCategory(user, grantFor(category), 'write')) return
+    const amount = Number(budgetDraft[category.id] ?? '')
     if (!Number.isFinite(amount) || amount < 0) {
       toast.error('Enter a budget of zero or more')
       return
@@ -256,17 +322,20 @@ export default function CostsPage() {
       updated_by: user?.id,
     }, { onConflict: 'project_id,category_id' })
     if (error) toast.error(error.message)
-    else toast.success('Budget saved')
+    else {
+      setBudgets((prev) => ({ ...prev, [category.id]: amount }))
+      toast.success('Budget saved')
+    }
   }
 
-  const remove = async (row: ProjectCost) => {
+  const remove = async (row: ProjectCost, category: CostCategoryRecord) => {
     const ok = await confirmAction({
       title: 'Delete this cost?',
       description: 'This removes the entry from the project. Attached files are left in storage.',
       confirmLabel: 'Delete',
       destructive: true,
     })
-    if (!ok || !category) return
+    if (!ok) return
     try {
       const legacy = (category.builtin_key || 'others') as CostCategory
       await deleteCost(legacy, row.id)
@@ -277,169 +346,268 @@ export default function CostsPage() {
   }
 
   const exportCsv = () => {
-    if (!exportAllowed) {
-      toast.error('You do not have export access for this category')
-      return
-    }
-    if (rows.length === 0) {
+    const exportable = groups.flatMap((group) => {
+      const category = readable.find((item) => item.id === group.categoryId)
+      if (!category || !canExport(user, category.id, grantFor(category))) return []
+      return group.rows.map((row) => ({ row, category }))
+    })
+    if (exportable.length === 0) {
       toast.error('No data to export')
       return
     }
-    const headers = ['Date', 'Description', 'Amount', ...fields.map((field) => field.label)]
-    const lines = rows.map((row) => [
+    const headers = ['Category', 'Date', 'Description', 'Amount']
+    const lines = exportable.map(({ row, category }) => [
+      category.name,
       row.date,
       row.description || row.vendor || row.employee_name || '',
       row.cost || 0,
-      ...fields.map((field) => row.custom_fields?.[field.id] ?? ''),
     ].join(','))
     const blob = new Blob([[headers.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `${activeProject?.jobNumber || 'costs'}_${category?.name || 'category'}.csv`
+    link.download = `${activeProject?.jobNumber || 'costs'}_${focusCategory?.name || 'costs'}.csv`
     link.click()
     URL.revokeObjectURL(url)
   }
 
   if (loading) return <div className="h-24 animate-pulse rounded-lg bg-muted" />
   if (!activeProject) return <EmptyState title="Choose a project" body="Costs are filed against the project selected in the top bar." />
-  if (!category) return <EmptyState title="No categories" body="A master can add a cost category in Settings." />
-  if (!canRead) return <EmptyState title="No access" body={`You cannot view ${category.name}.`} />
+  if (readable.length === 0) return <EmptyState title="No categories" body="A master can add a cost category in Settings." />
+  if (requested && focusCategory && !readable.some((category) => category.id === focusCategory.id)) {
+    return <EmptyState title="No access" body={`You cannot view ${focusCategory.name}.`} />
+  }
 
-  const total = rows.reduce((sum, row) => sum + Number(row.cost || 0), 0)
-  const unassigned = category.builtin_key === 'labor' && settings.labor_split_enabled
+  const collapsedIds = collapsed || []
+  const groupIds = groups.map((group) => group.categoryId || 'uncategorized')
+  const visibleCount = groups.reduce((sum, group) => sum + group.rows.length, 0)
+  const addTarget = focusCategory && readable.some((category) => category.id === focusCategory.id)
+    ? focusCategory
+    : readable.find((category) => canAccessCategory(user, grantFor(category), 'write')) || null
+  const addTargetWritable = addTarget ? canAccessCategory(user, grantFor(addTarget), 'write') : false
 
   return (
     <div className="space-y-4">
       <PageHeader
-        title={category.name}
-        description={unassigned ? 'Entries filed before the split stay here as Labor (unassigned).' : `${rows.length} entries in this view`}
+        title={focusCategory ? focusCategory.name : 'Costs'}
+        description={focusCategory ? `${visibleCount} entries in this category` : `${visibleCount} entries across ${groups.length} categories`}
         action={
           <>
-            {exportAllowed ? (
-              <Button variant="outline" type="button" onClick={exportCsv}><Download className="h-4 w-4" /> CSV</Button>
-            ) : null}
-            <Button type="button" onClick={openNew} disabled={!canWrite} title={canWrite ? undefined : 'You have view-only access'}>
+            <Button variant="outline" type="button" onClick={() => persistCollapsed([])}>Expand all</Button>
+            <Button variant="outline" type="button" onClick={() => persistCollapsed(groupIds)}>Collapse all</Button>
+            <Button variant="outline" type="button" onClick={exportCsv}><Download className="h-4 w-4" /> CSV</Button>
+            <Button
+              type="button"
+              onClick={() => addTarget && openNew(addTarget.id)}
+              disabled={!addTargetWritable}
+            >
               <Plus className="h-4 w-4" /> Add cost
             </Button>
           </>
         }
       />
 
-      {!schemaPending && !isFallbackCategoryId(category.id) ? (
-        <div className="flex flex-wrap items-end gap-2 rounded-lg border border-border bg-card p-3">
-          <Field label="Budget for this category">
-            <Input className="tabular w-40" inputMode="decimal" value={budget} onChange={(event) => setBudget(event.target.value)} disabled={!canWrite} />
-          </Field>
-          <Button variant="outline" type="button" onClick={saveBudget} disabled={!canWrite}>Save budget</Button>
-          <p className="ml-auto text-sm text-muted-foreground">Spent <span className="tabular text-foreground">{formatCurrency(total)}</span></p>
-        </div>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <Input className="flex-1" placeholder="Search costs" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search costs" />
+        <select
+          className="h-11 rounded-lg border border-input bg-card px-3 text-sm sm:w-40"
+          aria-label="Sort costs"
+          value={sortKey}
+          onChange={(event) => setSortKey(event.target.value as CostSortKey)}
+        >
+          <option value="date">Date</option>
+          <option value="amount">Amount</option>
+          <option value="details">Details</option>
+        </select>
+        <Button variant="outline" type="button" onClick={() => setSortDirection((value) => value === 'asc' ? 'desc' : 'asc')}>
+          {sortDirection === 'asc' ? 'Ascending' : 'Descending'}
+        </Button>
+      </div>
+
+      {groups.length === 0 ? (
+        <EmptyState title="No costs match" body="Try a different search, or add a cost to a category." />
       ) : (
-        <p className="text-sm text-muted-foreground">Spent <span className="tabular text-foreground">{formatCurrency(total)}</span></p>
-      )}
-
-      <Input placeholder="Search this category" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search costs" />
-
-      {rows.length === 0 ? (
-        <EmptyState title={`No costs yet in ${category.name}.`} body="Add the first one." action={canWrite ? <Button onClick={openNew}>Add cost</Button> : null} />
-      ) : (
-        <div className="overflow-hidden rounded-lg border border-border bg-card">
-          <table className="responsive-cards w-full text-sm">
-            <thead className="border-b border-border text-left text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2 font-medium">Date</th>
-                <th className="px-3 py-2 font-medium">Details</th>
-                <th className="px-3 py-2 text-right font-medium">Amount</th>
-                <th className="px-3 py-2" />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.id} className="border-b border-border last:border-0">
-                  <td className="px-3 py-2" data-label="Date">{formatDate(row.date)}</td>
-                  <td className="px-3 py-2" data-label="Details">
-                    <div>{row.description || row.vendor || row.subcontractor_name || row.employee_name || '—'}</div>
-                    {category.kind === 'labor' ? (
-                      <div className="text-xs text-muted-foreground tabular">
-                        ST {formatHours(row.st_hours)} · OT {formatHours(row.ot_hours)} · DT {formatHours(row.dt_hours)}
-                        {unassigned && !row.category_id ? ' · Labor (unassigned)' : ''}
-                      </div>
-                    ) : null}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular" data-label="Amount">{formatCurrency(row.cost)}</td>
-                  <td className="px-3 py-2 text-right" data-label="Actions">
-                    <Button variant="ghost" size="icon" type="button" aria-label="Duplicate" onClick={() => openEdit(row, true)} disabled={!canWrite}><Copy className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" type="button" aria-label="Edit" onClick={() => openEdit(row)} disabled={!canWrite}><Pencil className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" type="button" aria-label="Delete" onClick={() => remove(row)} disabled={!canWrite}><Trash2 className="h-4 w-4" /></Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      <Sheet open={open} onOpenChange={setOpen} title={editing ? `Edit ${category.name}` : `Add ${category.name}`} description="Amounts use the category type. Labor is hours times rates.">
         <div className="space-y-3">
-          <Field label="Date" htmlFor="cost-date">
-            <Input id="cost-date" type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} />
-          </Field>
-          {category.kind === 'labor' ? <LaborFields draft={draft} setDraft={setDraft} employees={employees} /> : null}
-          {category.kind === 'named' ? (
-            <Field label={category.builtin_key === 'equipment' || parent?.builtin_key === 'equipment' ? 'Equipment name' : 'Name'} htmlFor="named">
-              <Input id="named" value={draft.subcontractor_name} onChange={(event) => setDraft({ ...draft, subcontractor_name: event.target.value })} />
-            </Field>
-          ) : null}
-          {category.kind !== 'labor' ? (
-            <>
-              <Field label="Vendor" htmlFor="vendor"><Input id="vendor" value={draft.vendor} onChange={(event) => setDraft({ ...draft, vendor: event.target.value })} /></Field>
-              <Field label="Invoice number" htmlFor="invoice"><Input id="invoice" value={draft.invoice_number} onChange={(event) => setDraft({ ...draft, invoice_number: event.target.value })} /></Field>
-              <Field label="Cost" htmlFor="amount"><Input id="amount" className="tabular" inputMode="decimal" value={draft.cost} onChange={(event) => setDraft({ ...draft, cost: event.target.value })} /></Field>
-              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.in_system} onChange={(event) => setDraft({ ...draft, in_system: event.target.checked })} /> In the accounting system</label>
-            </>
-          ) : (
-            <p className="text-sm text-muted-foreground">Total <span className="tabular text-foreground">{formatCurrency(calculateTotalCost('labor', {
-              st_hours: Number(draft.st_hours || 0),
-              st_rate: Number(draft.st_rate || 0),
-              ot_hours: Number(draft.ot_hours || 0),
-              ot_rate: Number(draft.ot_rate || 0),
-              dt_hours: Number(draft.dt_hours || 0),
-              dt_rate: Number(draft.dt_rate || 0),
-              per_diem: Number(draft.per_diem || 0),
-              mob_qty: Number(draft.mob_qty || 0),
-              mob_rate: Number(draft.mob_rate || 0),
-            }))}</span></p>
-          )}
-          <Field label="Description" htmlFor="description">
-            <Textarea id="description" value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} />
-          </Field>
-          {fields.map((field) => (
-            <Field key={field.id} label={field.label} htmlFor={field.id}>
-              {field.field_type === 'boolean' ? (
-                <select id={field.id} className="h-11 w-full rounded-lg border border-input bg-card px-3 text-sm" value={draft.custom_fields[field.id] || ''} onChange={(event) => setDraft({ ...draft, custom_fields: { ...draft.custom_fields, [field.id]: event.target.value } })}>
-                  <option value="">—</option>
-                  <option value="true">Yes</option>
-                  <option value="false">No</option>
-                </select>
-              ) : field.field_type === 'select' ? (
-                <select id={field.id} className="h-11 w-full rounded-lg border border-input bg-card px-3 text-sm" value={draft.custom_fields[field.id] || ''} onChange={(event) => setDraft({ ...draft, custom_fields: { ...draft.custom_fields, [field.id]: event.target.value } })}>
-                  <option value="">—</option>
-                  {field.options.map((option) => <option key={option} value={option}>{option}</option>)}
-                </select>
-              ) : (
-                <Input id={field.id} inputMode={field.field_type === 'number' ? 'decimal' : undefined} value={draft.custom_fields[field.id] || ''} onChange={(event) => setDraft({ ...draft, custom_fields: { ...draft.custom_fields, [field.id]: event.target.value } })} />
-              )}
-            </Field>
-          ))}
-          {changeOrders.length > 0 ? (
-            <p className="text-xs text-muted-foreground">This entry is filed to {changeOrderId && changeOrderId !== 'base' ? changeOrders.find((order) => order.id === changeOrderId)?.name : 'the base contract'}.</p>
-          ) : null}
-          {editing && tenant && user ? (
-            <FileAttachments entityType="cost" entityId={editing.id} tenantId={tenant.id} userId={user.id} canEdit={canWrite} />
-          ) : null}
-          <Button type="button" onClick={save} disabled={saving || !canWrite}>{saving ? 'Saving…' : 'Save'}</Button>
+          {groups.map((group) => {
+            const category = readable.find((item) => item.id === group.categoryId) || null
+            const groupKey = group.categoryId || 'uncategorized'
+            const isOpen = !collapsedIds.includes(groupKey)
+            const canWrite = category ? canAccessCategory(user, grantFor(category), 'write') : false
+            const budget = category ? Number(budgets[category.id] || 0) : 0
+            const name = category?.name || 'Uncategorized'
+            const unassigned = category?.builtin_key === 'labor' && settings.labor_split_enabled
+            return (
+              <section key={groupKey} className="rounded-lg border border-border bg-card">
+                <div className="sticky top-0 z-10 flex flex-col gap-2 border-b border-border bg-card px-3 py-2 sm:flex-row sm:items-center">
+                  <button
+                    type="button"
+                    className="flex min-h-11 flex-1 items-center gap-2 text-left"
+                    aria-expanded={isOpen}
+                    onClick={() => persistCollapsed(isOpen ? [...collapsedIds, groupKey] : collapsedIds.filter((id) => id !== groupKey))}
+                  >
+                    {isOpen ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
+                    <span>
+                      <span className="font-medium">{name}</span>
+                      <span className="ml-2 text-xs text-muted-foreground">{group.rows.length} {group.rows.length === 1 ? 'entry' : 'entries'}</span>
+                    </span>
+                  </button>
+                  <BudgetMeter actual={group.total} budget={budget} />
+                  {category && !schemaPending && !isFallbackCategoryId(category.id) ? (
+                    <form
+                      className="flex items-center gap-2"
+                      onSubmit={(event) => {
+                        event.preventDefault()
+                        saveBudget(category)
+                      }}
+                    >
+                      <label className="sr-only" htmlFor={`budget-${category.id}`}>Budget for {name}</label>
+                      <Input
+                        id={`budget-${category.id}`}
+                        className="tabular h-9 w-28 min-h-9"
+                        inputMode="decimal"
+                        value={budgetDraft[category.id] ?? ''}
+                        onChange={(event) => setBudgetDraft((prev) => ({ ...prev, [category.id]: event.target.value }))}
+                        disabled={!canWrite}
+                        aria-label={`Budget for ${name}`}
+                      />
+                      <Button variant="outline" size="sm" type="submit" disabled={!canWrite}>Save</Button>
+                    </form>
+                  ) : null}
+                  {category ? (
+                    <Button type="button" size="sm" onClick={() => openNew(category.id)} disabled={!canWrite}>
+                      <Plus className="h-4 w-4" /> Add
+                    </Button>
+                  ) : null}
+                </div>
+                {isOpen ? (
+                  group.rows.length === 0 ? (
+                    <p className="px-3 py-4 text-sm text-muted-foreground">No entries in {name}.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="responsive-cards w-full text-sm">
+                        <thead className="border-b border-border text-left text-muted-foreground">
+                          <tr>
+                            <th className="px-3 py-2 font-medium">Date</th>
+                            <th className="px-3 py-2 font-medium">Details</th>
+                            <th className="px-3 py-2 text-right font-medium">Amount</th>
+                            <th className="px-3 py-2" />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {group.rows.map((row) => (
+                            <tr key={row.id} className="cost-row border-b border-border last:border-0">
+                              <td className="px-3 py-2" data-label="Date">{formatDate(row.date)}</td>
+                              <td className="px-3 py-2" data-label="Details">
+                                <div>{row.description || row.vendor || row.subcontractor_name || row.employee_name || '—'}</div>
+                                {category?.kind === 'labor' ? (
+                                  <div className="text-xs text-muted-foreground tabular">
+                                    ST {formatHours(row.st_hours)} · OT {formatHours(row.ot_hours)} · DT {formatHours(row.dt_hours)}
+                                    {unassigned && !row.category_id ? ' · Labor (unassigned)' : ''}
+                                  </div>
+                                ) : null}
+                              </td>
+                              <td className="px-3 py-2 text-right tabular" data-label="Amount">{formatCurrency(row.cost)}</td>
+                              <td className="px-3 py-2 text-right" data-label="Actions">
+                                {category ? (
+                                  <>
+                                    <Button variant="ghost" size="icon" type="button" aria-label="Duplicate" onClick={() => openEdit(row, category.id, true)} disabled={!canWrite}><Copy className="h-4 w-4" /></Button>
+                                    <Button variant="ghost" size="icon" type="button" aria-label="Edit" onClick={() => openEdit(row, category.id)} disabled={!canWrite}><Pencil className="h-4 w-4" /></Button>
+                                    <Button variant="ghost" size="icon" type="button" aria-label="Delete" onClick={() => remove(row, category)} disabled={!canWrite}><Trash2 className="h-4 w-4" /></Button>
+                                  </>
+                                ) : null}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )
+                ) : null}
+              </section>
+            )
+          })}
         </div>
+      )}
+
+      <Sheet open={open} onOpenChange={setOpen} title={formCategory ? (editing ? `Edit ${formCategory.name}` : `Add ${formCategory.name}`) : 'Cost'} description="Amounts use the category type. Labor is hours times rates.">
+        {formCategory ? (
+          <div className="space-y-3">
+            <Field label="Date" htmlFor="cost-date">
+              <Input id="cost-date" type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} />
+            </Field>
+            {formCategory.kind === 'labor' ? <LaborFields draft={draft} setDraft={setDraft} employees={employees} /> : null}
+            {formCategory.kind === 'named' ? (
+              <Field label={formCategory.builtin_key === 'equipment' || formParent?.builtin_key === 'equipment' ? 'Equipment name' : 'Name'} htmlFor="named">
+                <Input id="named" value={draft.subcontractor_name} onChange={(event) => setDraft({ ...draft, subcontractor_name: event.target.value })} />
+              </Field>
+            ) : null}
+            {formCategory.kind !== 'labor' ? (
+              <>
+                <Field label="Vendor" htmlFor="vendor"><Input id="vendor" value={draft.vendor} onChange={(event) => setDraft({ ...draft, vendor: event.target.value })} /></Field>
+                <Field label="Invoice number" htmlFor="invoice"><Input id="invoice" value={draft.invoice_number} onChange={(event) => setDraft({ ...draft, invoice_number: event.target.value })} /></Field>
+                <Field label="Cost" htmlFor="amount"><Input id="amount" className="tabular" inputMode="decimal" value={draft.cost} onChange={(event) => setDraft({ ...draft, cost: event.target.value })} /></Field>
+                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.in_system} onChange={(event) => setDraft({ ...draft, in_system: event.target.checked })} /> In the accounting system</label>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">Total <span className="tabular text-foreground">{formatCurrency(calculateTotalCost('labor', {
+                st_hours: Number(draft.st_hours || 0),
+                st_rate: Number(draft.st_rate || 0),
+                ot_hours: Number(draft.ot_hours || 0),
+                ot_rate: Number(draft.ot_rate || 0),
+                dt_hours: Number(draft.dt_hours || 0),
+                dt_rate: Number(draft.dt_rate || 0),
+                per_diem: Number(draft.per_diem || 0),
+                mob_qty: Number(draft.mob_qty || 0),
+                mob_rate: Number(draft.mob_rate || 0),
+              }))}</span></p>
+            )}
+            <Field label="Description" htmlFor="description">
+              <Textarea id="description" value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} />
+            </Field>
+            {fields.map((field) => (
+              <Field key={field.id} label={field.label} htmlFor={field.id}>
+                {field.field_type === 'boolean' ? (
+                  <select id={field.id} className="h-11 w-full rounded-lg border border-input bg-card px-3 text-sm" value={draft.custom_fields[field.id] || ''} onChange={(event) => setDraft({ ...draft, custom_fields: { ...draft.custom_fields, [field.id]: event.target.value } })}>
+                    <option value="">—</option>
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
+                  </select>
+                ) : field.field_type === 'select' ? (
+                  <select id={field.id} className="h-11 w-full rounded-lg border border-input bg-card px-3 text-sm" value={draft.custom_fields[field.id] || ''} onChange={(event) => setDraft({ ...draft, custom_fields: { ...draft.custom_fields, [field.id]: event.target.value } })}>
+                    <option value="">—</option>
+                    {field.options.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                ) : (
+                  <Input id={field.id} inputMode={field.field_type === 'number' ? 'decimal' : undefined} value={draft.custom_fields[field.id] || ''} onChange={(event) => setDraft({ ...draft, custom_fields: { ...draft.custom_fields, [field.id]: event.target.value } })} />
+                )}
+              </Field>
+            ))}
+            {changeOrders.length > 0 ? (
+              <p className="text-xs text-muted-foreground">This entry is filed to {changeOrderId && changeOrderId !== 'base' ? changeOrders.find((order) => order.id === changeOrderId)?.name : 'the base contract'}.</p>
+            ) : null}
+            {editing && tenant && user ? (
+              <FileAttachments entityType="cost" entityId={editing.id} tenantId={tenant.id} userId={user.id} canEdit={formCanWrite} />
+            ) : null}
+            <Button type="button" onClick={save} disabled={saving || !formCanWrite}>{saving ? 'Saving…' : 'Save'}</Button>
+          </div>
+        ) : null}
       </Sheet>
+    </div>
+  )
+}
+
+function BudgetMeter({ actual, budget }: { actual: number; budget: number }) {
+  const set = budget > 0
+  const ratio = set ? Math.min(actual / budget, 1) : 0
+  const over = set && actual > budget
+  return (
+    <div className="flex items-center gap-2">
+      <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted" aria-hidden>
+        <div className={`h-full ${over ? 'bg-destructive' : 'bg-primary'}`} style={{ width: `${Math.round(ratio * 100)}%` }} />
+      </div>
+      <span className={`text-xs tabular ${over ? 'text-destructive' : 'text-muted-foreground'}`}>
+        {formatCurrency(actual)} / {set ? formatCurrency(budget) : 'No budget'}
+      </span>
     </div>
   )
 }

@@ -110,12 +110,12 @@ export default function ChangeOrderManagement({ projectId, canWrite = false }: C
 
   if (loading) {
     return (
-      <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="bg-card rounded-lg shadow-md p-6">
         <div className="animate-pulse">
-          <div className="h-4 bg-gray-200 rounded w-1/4 mb-4"></div>
+          <div className="h-4 bg-muted rounded w-1/4 mb-4"></div>
           <div className="space-y-3">
-            <div className="h-4 bg-gray-200 rounded"></div>
-            <div className="h-4 bg-gray-200 rounded w-5/6"></div>
+            <div className="h-4 bg-muted rounded"></div>
+            <div className="h-4 bg-muted rounded w-5/6"></div>
           </div>
         </div>
       </div>
@@ -125,19 +125,19 @@ export default function ChangeOrderManagement({ projectId, canWrite = false }: C
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="bg-card rounded-lg shadow-md p-6">
         <div className="flex justify-between items-center mb-4">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+            <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">
               <FileText className="w-6 h-6" />
               Change Orders
             </h2>
-            <p className="text-gray-600 mt-1">Manage project change orders and contract modifications</p>
+            <p className="text-muted-foreground mt-1">Manage project change orders and contract modifications</p>
           </div>
           {canWrite && (
             <button
               onClick={() => setShowForm(true)}
-              className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center gap-2 transition-colors"
+              className="bg-primary text-primary-foreground px-4 py-2 rounded-md hover:bg-primary/90 flex items-center gap-2 transition-colors"
             >
               <Plus className="w-4 h-4" />
               Add Change Order
@@ -147,17 +147,17 @@ export default function ChangeOrderManagement({ projectId, canWrite = false }: C
 
         {/* Summary Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="bg-blue-50 p-4 rounded-lg">
-            <div className="text-sm font-medium text-blue-600">Total Change Orders</div>
-            <div className="text-2xl font-bold text-blue-900">{changeOrders.length}</div>
+          <div className="bg-accent p-4 rounded-lg">
+            <div className="text-sm font-medium text-primary">Total Change Orders</div>
+            <div className="text-2xl font-bold text-foreground">{changeOrders.length}</div>
           </div>
-          <div className="bg-green-50 p-4 rounded-lg">
-            <div className="text-sm font-medium text-green-600">Additional Contract Value</div>
-            <div className="text-2xl font-bold text-green-900">{formatCurrency(getTotalAdditionalValue())}</div>
+          <div className="bg-success/10 p-4 rounded-lg">
+            <div className="text-sm font-medium text-success">Additional Contract Value</div>
+            <div className="text-2xl font-bold text-success">{formatCurrency(getTotalAdditionalValue())}</div>
           </div>
-          <div className="bg-gray-50 p-4 rounded-lg">
-            <div className="text-sm font-medium text-gray-600">Average Value</div>
-            <div className="text-2xl font-bold text-gray-900">
+          <div className="bg-muted p-4 rounded-lg">
+            <div className="text-sm font-medium text-muted-foreground">Average Value</div>
+            <div className="text-2xl font-bold text-foreground">
               {changeOrders.length > 0 ? formatCurrency(getTotalAdditionalValue() / changeOrders.length) : '$0.00'}
             </div>
           </div>
@@ -166,38 +166,38 @@ export default function ChangeOrderManagement({ projectId, canWrite = false }: C
 
       {/* Add/Edit Form */}
       {showForm && (
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
+        <div className="bg-card rounded-lg shadow-md p-6">
+          <h3 className="text-lg font-semibold text-foreground mb-4">
             {editingChangeOrder ? 'Edit Change Order' : 'Add New Change Order'}
           </h3>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Name */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-foreground mb-1">
                 Change Order Name *
               </label>
               <input
                 type="text"
                 value={formData.name}
                 onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                  formErrors.name ? 'border-red-300' : 'border-gray-300'
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring ${
+                  formErrors.name ? 'border-destructive' : 'border-input'
                 }`}
                 placeholder="e.g., CO-001 - Additional Electrical Work"
               />
               {formErrors.name && (
-                <p className="text-red-600 text-sm mt-1">{formErrors.name}</p>
+                <p className="text-destructive text-sm mt-1">{formErrors.name}</p>
               )}
             </div>
 
             {/* Additional Contract Value */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-foreground mb-1">
                 Additional Contract Value
               </label>
               <div className="relative">
-                <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
                 <input
                   type="number"
                   value={formData.additional_contract_value}
@@ -205,8 +205,8 @@ export default function ChangeOrderManagement({ projectId, canWrite = false }: C
                     ...prev, 
                     additional_contract_value: parseFloat(e.target.value) || 0 
                   }))}
-                  className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 ${
-                    formErrors.additional_contract_value ? 'border-red-300' : 'border-gray-300'
+                  className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-foreground ${
+                    formErrors.additional_contract_value ? 'border-destructive' : 'border-input'
                   }`}
                   placeholder="0.00"
                   step="0.01"
@@ -214,19 +214,19 @@ export default function ChangeOrderManagement({ projectId, canWrite = false }: C
                 />
               </div>
               {formErrors.additional_contract_value && (
-                <p className="text-red-600 text-sm mt-1">{formErrors.additional_contract_value}</p>
+                <p className="text-destructive text-sm mt-1">{formErrors.additional_contract_value}</p>
               )}
             </div>
 
             {/* Description */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-foreground mb-1">
                 Description
               </label>
               <textarea
                 value={formData.description}
                 onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-foreground"
                 rows={3}
                 placeholder="Describe the scope of work for this change order..."
               />
@@ -237,14 +237,14 @@ export default function ChangeOrderManagement({ projectId, canWrite = false }: C
               <button
                 type="button"
                 onClick={resetForm}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+                className="px-4 py-2 text-sm font-medium text-foreground bg-muted hover:bg-muted rounded-md transition-colors"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={submitting}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                className="px-4 py-2 text-sm font-medium text-primary-foreground bg-primary hover:bg-primary/90 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 <Save className="w-4 h-4" />
                 {submitting ? 'Saving...' : 'Save Change Order'}
@@ -255,18 +255,18 @@ export default function ChangeOrderManagement({ projectId, canWrite = false }: C
       )}
 
       {/* Change Orders List */}
-      <div className="bg-white rounded-lg shadow-md overflow-hidden">
+      <div className="bg-card rounded-lg shadow-md overflow-hidden">
         {changeOrders.length === 0 ? (
           <div className="p-8 text-center">
-            <FileText className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No Change Orders</h3>
-            <p className="text-gray-600 mb-4">
+            <FileText className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+            <h3 className="text-lg font-medium text-foreground mb-2">No Change Orders</h3>
+            <p className="text-muted-foreground mb-4">
               Get started by adding your first change order to track contract modifications.
             </p>
             {canWrite && (
               <button
                 onClick={() => setShowForm(true)}
-                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center gap-2 mx-auto transition-colors"
+                className="bg-primary text-primary-foreground px-4 py-2 rounded-md hover:bg-primary/90 flex items-center gap-2 mx-auto transition-colors"
               >
                 <Plus className="w-4 h-4" />
                 Add First Change Order
@@ -275,46 +275,46 @@ export default function ChangeOrderManagement({ projectId, canWrite = false }: C
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+            <table className="min-w-full divide-y divide-border">
+              <thead className="bg-muted">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Name
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Additional Value
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Description
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Created
                   </th>
                   {canWrite && (
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
                       Actions
                     </th>
                   )}
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="bg-card divide-y divide-border">
                 {changeOrders.map((changeOrder) => (
-                  <tr key={changeOrder.id} className="hover:bg-gray-50">
+                  <tr key={changeOrder.id} className="hover:bg-muted">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{changeOrder.name}</div>
+                      <div className="text-sm font-medium text-foreground">{changeOrder.name}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">
+                      <div className="text-sm text-foreground">
                         {formatCurrency(changeOrder.additional_contract_value || 0)}
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="text-sm text-gray-900 max-w-xs truncate">
+                      <div className="text-sm text-foreground max-w-xs truncate">
                         {changeOrder.description || 'No description'}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-500">
+                      <div className="text-sm text-muted-foreground">
                         {changeOrder.created_at ? new Date(changeOrder.created_at).toLocaleDateString() : 'N/A'}
                       </div>
                     </td>
@@ -323,14 +323,14 @@ export default function ChangeOrderManagement({ projectId, canWrite = false }: C
                         <div className="flex justify-end space-x-2">
                           <button
                             onClick={() => handleEdit(changeOrder)}
-                            className="text-blue-600 hover:text-blue-900 p-1 rounded transition-colors"
+                            className="text-primary hover:text-primary p-1 rounded transition-colors"
                             title="Edit change order"
                           >
                             <Edit className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleDelete(changeOrder.id)}
-                            className="text-red-600 hover:text-red-900 p-1 rounded transition-colors"
+                            className="text-destructive hover:text-destructive p-1 rounded transition-colors"
                             title="Delete change order"
                           >
                             <Trash2 className="w-4 h-4" />

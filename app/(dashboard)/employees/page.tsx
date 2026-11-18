@@ -9,6 +9,7 @@ import EmployeeModal from '@/components/EmployeeModal'
 import { confirmAction } from '@/components/ui/confirm-dialog'
 import { toast } from 'sonner'
 import { userCan } from '@/lib/permissions'
+import { employeeScopeLabel } from '@/lib/employee-scope'
 import { formatCurrency } from '@/lib/format'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,7 +18,7 @@ import type { Employee } from '@/types/app.types'
 
 export default function EmployeesPage() {
   const { user } = useAuth()
-  const { activeProject } = useProjects()
+  const { activeProject, projects } = useProjects()
   const { employees, loading, createEmployee, updateEmployee, deleteEmployee } = useEmployees()
   const [showModal, setShowModal] = useState(false)
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
@@ -76,7 +77,7 @@ export default function EmployeesPage() {
 
       <section className="grid gap-3 sm:grid-cols-3">
         <Stat label="Total" value={String(employees.length)} />
-        <Stat label="Company-wide" value={String(employees.filter((employee) => !employee.project_id).length)} />
+        <Stat label="Global" value={String(employees.filter((employee) => !employee.project_id).length)} />
         <Stat label="This project" value={String(employees.filter((employee) => employee.project_id === activeProject?.id).length)} />
       </section>
 
@@ -89,7 +90,7 @@ export default function EmployeesPage() {
           onChange={(event) => setProjectFilter(event.target.value as 'all' | 'global' | 'project')}
         >
           <option value="all">All employees</option>
-          <option value="global">Company-wide only</option>
+          <option value="global">Global only</option>
           <option value="project">Current project only</option>
         </select>
       </div>
@@ -123,7 +124,7 @@ export default function EmployeesPage() {
                   <td className="px-3 py-2 text-right tabular" data-label="DT">{formatCurrency(employee.dt_rate)}</td>
                   <td className="px-3 py-2 text-right tabular" data-label="Mob">{employee.mob_rate ? formatCurrency(employee.mob_rate) : '—'}</td>
                   <td className="px-3 py-2" data-label="Scope">
-                    <Badge tone={employee.project_id ? 'neutral' : 'success'}>{employee.project_id ? 'This project' : 'Company-wide'}</Badge>
+                    <Badge tone={employee.project_id ? 'neutral' : 'success'}>{employeeScopeLabel(employee.project_id, projects)}</Badge>
                   </td>
                   {canWrite ? (
                     <td className="px-3 py-2 text-right" data-label="Actions">
@@ -143,7 +144,6 @@ export default function EmployeesPage() {
         onClose={() => { setShowModal(false); setEditingEmployee(null) }}
         onSubmit={handleSubmitEmployee}
         employee={editingEmployee}
-        projectId={activeProject?.id}
       />
     </div>
   )

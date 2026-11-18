@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Logo from '@/components/ui/Logo'
+import { ThemeToggle } from '@/components/theme/ThemeToggle'
 import { PageHeader } from '@/components/ui/feedback'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/format'
@@ -22,7 +23,7 @@ export default function PreviewGallery({
   const [mobile, setMobile] = useState(initialMobile)
 
   return (
-    <div className={bare ? 'min-h-screen bg-background' : 'min-h-screen bg-zinc-200 p-4'}>
+    <div className={bare ? 'min-h-screen bg-background' : 'min-h-screen bg-background p-4'}>
       {bare ? null : <div className="mb-3 flex flex-wrap gap-2">
         {screens.map((item) => (
           <Button key={item} type="button" size="sm" variant={screen === item ? 'primary' : 'outline'} onClick={() => setScreen(item)}>
@@ -48,7 +49,7 @@ function AppFrame({ screen, mobile }: { screen: string; mobile: boolean }) {
           <Logo size="sm" />
           <nav className="mt-4 space-y-1 text-sm">
             {['Overview', 'Projects', 'Costs', 'Material', 'Labor', 'Invoices', 'Employees', 'Team', 'Settings'].map((item) => (
-              <div key={item} className={`rounded-lg px-2 py-2 ${item === screen || (screen === 'Costs' && item === 'Material') ? 'bg-accent font-medium text-accent-foreground' : ''} ${item === 'Material' || item === 'Labor' ? 'pl-6' : ''}`}>
+              <div key={item} className={`rounded-lg px-2 py-2 ${item === screen ? 'bg-accent font-medium text-accent-foreground' : ''} ${item === 'Material' || item === 'Labor' ? 'pl-6' : ''}`}>
                 {item}
               </div>
             ))}
@@ -60,6 +61,7 @@ function AppFrame({ screen, mobile }: { screen: string; mobile: boolean }) {
           <span className="rounded-lg border border-border px-2 py-2">JOB-A-001 — Acme Test Job</span>
           <span className="hidden rounded-lg border border-border px-2 py-2 sm:inline">All change orders</span>
           <span className="ml-auto text-right text-xs text-muted-foreground">Ada Master<br />Master · Acme Test</span>
+          <ThemeToggle />
         </header>
         <div className="p-4">
           {screen === 'Overview' ? <Overview /> : null}
@@ -109,8 +111,31 @@ function Projects() {
 function Costs() {
   return (
     <div className="space-y-4">
-      <PageHeader title="Material" description="1 entry in this view" action={<Button type="button">Add cost</Button>} />
-      <Table headers={['Date', 'Details', 'Amount']} rows={[['Jan 15, 2026', 'Synthetic cost A', '$250.00']]} />
+      <PageHeader title="Costs" description="Grouped by category" action={<><Button variant="outline" type="button">Expand all</Button><Button variant="outline" type="button">Collapse all</Button></>} />
+      <section className="rounded-lg border border-border bg-card">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
+          <div>
+            <p className="font-medium">Material</p>
+            <p className="text-xs text-muted-foreground">1 entry</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted" aria-hidden>
+              <div className="h-full bg-primary" style={{ width: '3%' }} />
+            </div>
+            <span className="text-xs tabular text-muted-foreground">$250.00 / $10,000.00</span>
+          </div>
+        </div>
+        <Table headers={['Date', 'Details', 'Amount']} rows={[['Jan 15, 2026', 'Synthetic cost A', '$250.00']]} />
+      </section>
+      <section className="rounded-lg border border-border bg-card">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+          <div>
+            <p className="font-medium">Labor</p>
+            <p className="text-xs text-muted-foreground">1 entry · collapsed</p>
+          </div>
+          <span className="text-xs tabular text-muted-foreground">$650.00 / $20,000.00</span>
+        </div>
+      </section>
     </div>
   )
 }
@@ -133,13 +158,14 @@ function Employees() {
     <div className="space-y-4">
       <PageHeader title="Employees" description="Rates used when someone enters labor." action={<Button type="button">Add employee</Button>} />
       <div className="grid gap-3 sm:grid-cols-3">
-        <Stat label="Total" value="2" />
-        <Stat label="Company-wide" value="2" />
-        <Stat label="This project" value="0" />
+        <Stat label="Total" value="3" />
+        <Stat label="Global" value="1" />
+        <Stat label="This project" value="1" />
       </div>
       <Table headers={['Name', 'ST', 'OT', 'DT', 'Mob', 'Scope']} rows={[
-        ['Alex Rivera', '$45.00', '$67.50', '$90.00', '—', 'Company-wide'],
-        ['Jordan Lee', '$40.00', '$60.00', '$80.00', '$25.00', 'Company-wide'],
+        ['Alex Rivera', '$45.00', '$67.50', '$90.00', '—', 'Global'],
+        ['Jordan Lee', '$40.00', '$60.00', '$80.00', '$25.00', 'JOB-A-001 — Acme Test Job'],
+        ['Sam Patel', '$38.00', '$57.00', '$76.00', '—', 'JOB-A-002 — Acme Shop Job'],
       ]} />
     </div>
   )

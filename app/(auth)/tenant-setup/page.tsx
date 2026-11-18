@@ -168,17 +168,17 @@ function TenantSetupContent() {
   if (user?.tenant_id) {
     return (
       <>
-        <h2 className="text-3xl font-extrabold text-gray-900 text-center">
+        <h2 className="text-3xl font-extrabold text-foreground text-center">
           Your workspace is ready
         </h2>
-        <p className="mt-2 text-center text-gray-600">
+        <p className="mt-2 text-center text-muted-foreground">
           This account already belongs to an organization.
         </p>
         <div className="mt-8">
           <button
             type="button"
             onClick={() => router.push('/dashboard')}
-            className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
+            className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-primary-foreground bg-primary hover:bg-primary/90"
           >
             Go to dashboard
           </button>
@@ -190,23 +190,23 @@ function TenantSetupContent() {
   return (
     <>
       <PendingInvites />
-      <h2 className="text-3xl font-extrabold text-gray-900 text-center">
+      <h2 className="text-3xl font-extrabold text-foreground text-center">
         Set up your ProTrack workspace
       </h2>
-      <p className="mt-2 text-center text-gray-600">
+      <p className="mt-2 text-center text-muted-foreground">
         Create your organization&apos;s project tracking environment
       </p>
 
-      <div className="mt-8 bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
+      <div className="mt-8 bg-card py-8 px-4 shadow sm:rounded-lg sm:px-10">
         {error && (
-          <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md">
+          <div className="mb-4 bg-destructive/10 border border-destructive/30 text-destructive px-4 py-3 rounded-md">
             {error}
           </div>
         )}
         
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
-            <label className="block text-sm font-medium text-gray-700">
+            <label className="block text-sm font-medium text-foreground">
               Organization Name
             </label>
             <div className="mt-1 relative">
@@ -215,18 +215,18 @@ function TenantSetupContent() {
                 required
                 value={tenantData.name}
                 onChange={handleOrgNameChange}
-                className="appearance-none block w-full px-3 py-2 pl-10 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                className="appearance-none block w-full px-3 py-2 pl-10 border border-input rounded-md focus:outline-none focus:ring-ring focus:border-ring"
                 placeholder="Your Company Name"
                 disabled={loading}
               />
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Building className="h-5 w-5 text-gray-400" />
+                <Building className="h-5 w-5 text-muted-foreground" />
               </div>
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">
+            <label className="block text-sm font-medium text-foreground">
               Subdomain
             </label>
             <div className="mt-1 relative">
@@ -235,18 +235,18 @@ function TenantSetupContent() {
                 required
                 value={tenantData.subdomain}
                 onChange={(e) => setTenantData({ ...tenantData, subdomain: e.target.value })}
-                className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                className="appearance-none block w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-ring focus:border-ring"
                 placeholder="your-company"
                 disabled={loading}
               />
             </div>
-            <p className="mt-1 text-sm text-gray-500">
+            <p className="mt-1 text-sm text-muted-foreground">
               This will be your unique workspace identifier: {tenantData.subdomain || 'your-company'}.protrack.com
             </p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">
+            <label className="block text-sm font-medium text-foreground">
               Contact Email
             </label>
             <div className="mt-1 relative">
@@ -255,18 +255,18 @@ function TenantSetupContent() {
                 required
                 value={tenantData.email}
                 onChange={(e) => setTenantData({ ...tenantData, email: e.target.value })}
-                className="appearance-none block w-full px-3 py-2 pl-10 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                className="appearance-none block w-full px-3 py-2 pl-10 border border-input rounded-md focus:outline-none focus:ring-ring focus:border-ring"
                 placeholder="contact@yourcompany.com"
                 disabled={loading}
               />
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Mail className="h-5 w-5 text-gray-400" />
+                <Mail className="h-5 w-5 text-muted-foreground" />
               </div>
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">
+            <label className="block text-sm font-medium text-foreground">
               Phone Number
             </label>
             <div className="mt-1 relative">
@@ -274,25 +274,25 @@ function TenantSetupContent() {
                 type="tel"
                 value={tenantData.phone}
                 onChange={(e) => setTenantData({ ...tenantData, phone: e.target.value })}
-                className="appearance-none block w-full px-3 py-2 pl-10 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                className="appearance-none block w-full px-3 py-2 pl-10 border border-input rounded-md focus:outline-none focus:ring-ring focus:border-ring"
                 placeholder="+1 (555) 123-4567"
                 disabled={loading}
               />
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Phone className="h-5 w-5 text-gray-400" />
+                <Phone className="h-5 w-5 text-muted-foreground" />
               </div>
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">
+            <label className="block text-sm font-medium text-foreground">
               Plan
             </label>
             <div className="mt-1">
               <select
                 value={tenantData.plan}
                 onChange={(e) => setTenantData({ ...tenantData, plan: e.target.value })}
-                className="block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                className="block w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-ring focus:border-ring"
                 disabled={loading}
               >
                 <option value="professional">Professional - $35/month</option>
@@ -305,7 +305,7 @@ function TenantSetupContent() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-primary-foreground bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? (
                 <Loader2 className="animate-spin h-5 w-5" />

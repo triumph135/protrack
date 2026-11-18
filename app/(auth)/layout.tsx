@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation'
 import AuthGuard from '@/components/auth/AuthGuard'
 import Logo from '@/components/ui/Logo'
+import { ThemeToggle } from '@/components/theme/ThemeToggle'
 
 export default function AuthLayout({
   children,
@@ -18,7 +19,10 @@ export default function AuthLayout({
   const isForgotPassword = pathname === '/forgot-password'
 
   const content = (
-    <div className="min-h-screen bg-background flex items-center justify-center px-4 py-10">
+    <div className="relative min-h-screen bg-background flex items-center justify-center px-4 py-10">
+      <div className="absolute right-4 top-4">
+        <ThemeToggle />
+      </div>
       <div className="max-w-md w-full space-y-8">
         <div className="text-center">
           <div className="flex justify-center items-center mb-6">

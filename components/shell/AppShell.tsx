@@ -25,6 +25,7 @@ import { canAccessCategory, userCan } from '@/lib/permissions'
 import { flattenCategoryTree } from '@/lib/categories'
 import { roleLabel } from '@/lib/invites'
 import Logo from '@/components/ui/Logo'
+import { ThemeToggle } from '@/components/theme/ThemeToggle'
 import { Button } from '@/components/ui/button'
 import { Sheet } from '@/components/ui/sheet'
 import { Notice } from '@/components/ui/feedback'
@@ -190,6 +191,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <p className="text-sm font-medium leading-tight">{user?.name}</p>
               <p className="text-xs text-muted-foreground">{roleLabel(user?.role)} · {tenant?.name}</p>
             </div>
+            <ThemeToggle />
             <Button variant="ghost" size="icon" type="button" onClick={signOutNow} aria-label="Sign out">
               <LogOut className="h-4 w-4" />
             </Button>

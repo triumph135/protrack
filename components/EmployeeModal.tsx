@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import type { Employee } from '@/types/app.types'
+import { useProjects } from '@/contexts/ProjectContext'
+import { employeeProjectIdForSave, employeeScopeLabel } from '@/lib/employee-scope'
 import { Button } from '@/components/ui/button'
 import { Field, Input } from '@/components/ui/input'
 import { Sheet } from '@/components/ui/sheet'
@@ -12,7 +14,7 @@ interface EmployeeModalProps {
   onSubmit: (employeeData: Omit<Employee, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>) => Promise<void>
   employee?: Employee | null
   loading?: boolean
-  projectId?: string
+  defaultProjectId?: string
 }
 
 export default function EmployeeModal({
@@ -21,8 +23,9 @@ export default function EmployeeModal({
   onSubmit,
   employee,
   loading = false,
-  projectId,
+  defaultProjectId,
 }: EmployeeModalProps) {
+  const { projects } = useProjects()
   const [formData, setFormData] = useState({
     name: '',
     standard_rate: '',
@@ -30,7 +33,7 @@ export default function EmployeeModal({
     dt_rate: '',
     mob: '',
     mob_rate: '',
-    project_id: projectId || '',
+    project_id: '',
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
 
@@ -54,11 +57,11 @@ export default function EmployeeModal({
         dt_rate: '',
         mob: '',
         mob_rate: '',
-        project_id: projectId || '',
+        project_id: defaultProjectId || '',
       })
     }
     setErrors({})
-  }, [isOpen, employee, projectId])
+  }, [isOpen, employee, defaultProjectId])
 
   const setField = (name: string, value: string) => {
     setFormData((prev) => ({ ...prev, [name]: value }))
@@ -90,9 +93,12 @@ export default function EmployeeModal({
       dt_rate: Number(formData.dt_rate),
       mob: formData.mob ? Number(formData.mob) : undefined,
       mob_rate: formData.mob_rate ? Number(formData.mob_rate) : undefined,
-      project_id: formData.project_id || undefined,
+      project_id: employeeProjectIdForSave(formData.project_id),
     })
   }
+
+  const options = [...projects].sort((a, b) => a.jobNumber.localeCompare(b.jobNumber) || a.jobName.localeCompare(b.jobName))
+  const selectedIsListed = !formData.project_id || options.some((project) => project.id === formData.project_id)
 
   return (
     <Sheet
@@ -124,10 +130,17 @@ export default function EmployeeModal({
             <Input id="mob-rate" className="tabular" inputMode="decimal" value={formData.mob_rate} onChange={(event) => setField('mob_rate', event.target.value)} />
           </Field>
         </div>
-        <Field label="Assignment" htmlFor="assignment" hint="Company-wide people can be used on any project.">
+        <Field label="Scope" htmlFor="assignment" hint="Global people can be used on any project. A project limits them to that job.">
           <select id="assignment" className="h-11 w-full rounded-lg border border-input bg-card px-3 text-sm" value={formData.project_id} onChange={(event) => setField('project_id', event.target.value)}>
-            <option value="">Company-wide</option>
-            {projectId ? <option value={projectId}>Current project only</option> : null}
+            <option value="">Global</option>
+            {selectedIsListed ? null : (
+              <option value={formData.project_id}>{employeeScopeLabel(formData.project_id, projects)}</option>
+            )}
+            {options.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.jobNumber} — {project.jobName}
+              </option>
+            ))}
           </select>
         </Field>
         <div className="flex justify-end gap-2 pt-2">
