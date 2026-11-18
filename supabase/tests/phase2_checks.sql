@@ -29,6 +29,29 @@ where tenant_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2' and category = 'materia
 
 insert into phase2_results
 select
+  'baseline_has_deny_policy',
+  case when count(*) = 1 then 'PASS' else 'FAIL' end,
+  count(*)::text || ' policies'
+from pg_policies
+where schemaname = 'public'
+  and tablename = 'phase2_cost_baseline'
+  and policyname = 'phase2_cost_baseline_no_access';
+
+insert into phase2_results
+select
+  'baseline_api_roles_revoked',
+  case
+    when not has_table_privilege('anon', 'public.phase2_cost_baseline', 'SELECT')
+     and not has_table_privilege('authenticated', 'public.phase2_cost_baseline', 'SELECT')
+     and not has_table_privilege('service_role', 'public.phase2_cost_baseline', 'SELECT')
+    then 'PASS' else 'FAIL'
+  end,
+  'anon=' || has_table_privilege('anon', 'public.phase2_cost_baseline', 'SELECT')::text
+    || ' authenticated=' || has_table_privilege('authenticated', 'public.phase2_cost_baseline', 'SELECT')::text
+    || ' service_role=' || has_table_privilege('service_role', 'public.phase2_cost_baseline', 'SELECT')::text;
+
+insert into phase2_results
+select
   'no_null_category_id',
   case when count(*) = 0 then 'PASS' else 'FAIL' end,
   count(*)::text || ' nulls'

@@ -35,6 +35,7 @@ load "${ROOT}/supabase/migrations/20261117235751_storage_rls.sql"
 load "${ROOT}/supabase/migrations/20261118000000_cost_categories.sql"
 load "${ROOT}/supabase/migrations/20261118000100_team_invites.sql"
 load "${ROOT}/supabase/migrations/20261118000200_company_settings.sql"
+load "${ROOT}/supabase/migrations/20261118000300_baseline_access.sql"
 if [[ "${SKIP_SEED:-}" != "1" ]]; then
   load "${ROOT}/supabase/seed/phase2_synthetic.sql"
 fi

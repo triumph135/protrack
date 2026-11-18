@@ -43,8 +43,9 @@ The app filters queries by `tenant_id`, but that is not enough on its own. Apply
 3. `supabase/migrations/20261118000000_cost_categories.sql`
 4. `supabase/migrations/20261118000100_team_invites.sql`
 5. `supabase/migrations/20261118000200_company_settings.sql`
+6. `supabase/migrations/20261118000300_baseline_access.sql` — denies API access to the cost baseline table
 
-Apply those three before deploying the Phase 2 app. They keep the previous app working. Rollbacks live in `supabase/rollback/` and run in reverse order.
+Apply the category, team, and settings files before deploying the Phase 2 app. They keep the previous app working. The baseline file can follow; it only locks an internal table. Rollbacks live in `supabase/rollback/` and run in reverse order.
 
 Local Postgres, with no connection to production:
 
