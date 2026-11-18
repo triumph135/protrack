@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Download } from 'lucide-react'
 import { toCsv, type CsvCell } from '@/lib/csv'
+import type { PdfVisual } from '@/lib/pdf-report'
 import { Button } from '@/components/ui/button'
 
 export interface ExportSpec {
@@ -16,6 +17,7 @@ export interface ExportSpec {
   csvRows: CsvCell[][]
   pdfRows: string[][]
   totals: Array<{ label: string; value: string }>
+  visual?: PdfVisual
 }
 
 function download(filename: string, blob: Blob) {
@@ -44,7 +46,7 @@ export function ExportMenu({ spec, disabled = false }: { spec: ExportSpec | null
   }, [open])
 
   const run = async (kind: 'csv' | 'pdf') => {
-    if (!spec || spec.csvRows.length === 0) {
+    if (!spec || (kind === 'csv' && spec.csvRows.length === 0) || (kind === 'pdf' && spec.pdfRows.length === 0 && !spec.visual)) {
       toast.error('Nothing on this page to export')
       return
     }
@@ -64,6 +66,7 @@ export function ExportMenu({ spec, disabled = false }: { spec: ExportSpec | null
           columns: spec.columns,
           rows: spec.pdfRows,
           totals: spec.totals,
+          visual: spec.visual,
         })
         download(`${spec.filename}.pdf`, new Blob([Uint8Array.from(bytes)], { type: 'application/pdf' }))
       }

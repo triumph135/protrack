@@ -166,6 +166,13 @@ export default function DashboardPage() {
     csvRows: companyRows.map((row) => [row.project.jobNumber, row.project.jobName, row.value, row.cost, row.billed, row.received, row.profit]),
     pdfRows: companyRows.map((row) => [row.project.jobNumber, row.project.jobName, formatCurrency(row.value), formatCurrency(row.cost), formatCurrency(row.billed), formatCurrency(row.received), formatCurrency(row.profit)]),
     totals: [{ label: 'Projects', value: String(companyRows.length) }],
+    visual: {
+      kpis: [
+        { label: 'Projects', value: String(companyRows.length) },
+        { label: 'Contract', value: formatCurrency(companyRows.reduce((sum, row) => sum + row.value, 0)) },
+        { label: 'Cost', value: formatCurrency(companyRows.reduce((sum, row) => sum + row.cost, 0)) },
+      ],
+    },
   } : {
     filename: `${activeProject.jobNumber}-overview`,
     title: 'Project overview',
@@ -199,6 +206,35 @@ export default function DashboardPage() {
       { label: 'Contract', value: formatCurrency(contract) },
       { label: 'Gross profit', value: `${formatCurrency(profit)}${margin == null ? '' : ` (${formatPercent(margin)})`}` },
     ],
+    visual: {
+      kpis: [
+        { label: 'Contract', value: formatCurrency(contract), detail: `${formatCurrency(baseContract)} base · ${formatCurrency(changeOrderTotal)} change orders` },
+        { label: 'Cost to date', value: formatCurrency(totalCosts) },
+        { label: 'Budget', value: formatCurrency(totalBudget), detail: `${formatCurrency(totalBudget - totalCosts)} remaining` },
+        { label: 'Gross profit', value: formatCurrency(profit), detail: margin == null ? 'No invoices yet' : `${formatPercent(margin)}${goal == null ? '' : ` · goal ${formatPercent(goal)}`}` },
+        { label: 'Invoiced', value: formatCurrency(invoiced), detail: `${formatCurrency(contract - invoiced)} not billed` },
+        { label: 'Collected', value: formatCurrency(collected), detail: `${formatCurrency(invoiced - collected)} outstanding` },
+      ],
+      alerts: alerts.map((alert) => `${alert.name} is ${alert.state === 'over' ? 'over budget' : 'nearing its budget'} (${formatCurrency(alert.actual)} of ${formatCurrency(alert.budget)}).`),
+      bars: {
+        title: 'Budget versus actual',
+        items: topLevel.map((category) => ({
+          label: category.name,
+          actual: rollup[category.id]?.total || 0,
+          budget: budgetRollup[category.id]?.total || 0,
+          caption: `${formatCurrency(rollup[category.id]?.total || 0)} / ${formatCurrency(budgetRollup[category.id]?.total || 0)}`,
+        })),
+      },
+      series: {
+        title: 'Cost trend',
+        points: burn.map((point) => ({ label: point.month.slice(5), value: point.cumulative })),
+      },
+      activity: [
+        { title: 'Latest costs', lines: recentCosts.map((row) => `${formatDate(row.date)}  ${row.description || row.vendor || row.employee_name || 'Cost'}  ${formatCurrency(row.cost)}`) },
+        { title: 'Latest invoices', lines: recentInvoices.map((row) => `${formatDate(row.date_billed)}  ${row.invoice_number}  ${formatCurrency(row.amount)}`) },
+        { title: 'Change orders', lines: recentOrders.map((row) => `${row.name}  ${formatCurrency(row.additional_contract_value)}`) },
+      ],
+    },
   }
 
   if (projectsLoading || (scope === 'project' && costsLoading)) {
@@ -258,7 +294,7 @@ export default function DashboardPage() {
         <>
           <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <Metric label="Contract" value={formatCurrency(contract)} detail={`${formatCurrency(baseContract)} base · ${formatCurrency(changeOrderTotal)} change orders`} />
-            <Metric label="Cost to date" value={formatCurrency(totalCosts)} detail="Open Costs for the entries" href="/costs" />
+            <Metric label="Cost to date" value={formatCurrency(totalCosts)} detail="Category roll-up is on Costs" href="/costs" />
             <Metric label="Budget" value={formatCurrency(totalBudget)} detail={`${formatCurrency(totalBudget - totalCosts)} remaining`} href="/costs" />
             <Metric label="Gross profit" value={formatCurrency(profit)} detail={margin == null ? 'No invoices yet' : `${formatPercent(margin)}${goal == null ? '' : ` · goal ${formatPercent(goal)}`}`} tone={margin == null ? undefined : goal != null && margin < goal ? 'bad' : profit >= 0 ? 'good' : 'bad'} />
             <Metric label="Invoiced" value={formatCurrency(invoiced)} detail={`${formatCurrency(contract - invoiced)} of the contract not billed`} href="/invoices" />
@@ -357,7 +393,7 @@ export default function DashboardPage() {
           </section>
 
           <section className="grid gap-4 lg:grid-cols-3">
-            <Activity title="Latest costs" empty="No costs yet" rows={recentCosts.map((row) => ({ id: row.id, primary: row.description || row.vendor || row.employee_name || 'Cost', secondary: formatDate(row.date), amount: formatCurrency(row.cost), href: '/costs' }))} />
+            <Activity title="Latest costs" empty="No costs yet" rows={recentCosts.map((row) => ({ id: row.id, primary: row.description || row.vendor || row.employee_name || 'Cost', secondary: formatDate(row.date), amount: formatCurrency(row.cost), href: row.category_id ? `/costs?category=${row.category_id}` : '/costs' }))} />
             <Activity title="Latest invoices" empty="No invoices yet" rows={recentInvoices.map((row) => ({ id: row.id, primary: row.invoice_number, secondary: formatDate(row.date_billed), amount: formatCurrency(row.amount), href: '/invoices' }))} />
             <Activity title="Change orders" empty="No change orders" rows={recentOrders.map((row) => ({ id: row.id, primary: row.name, secondary: row.description || 'Change order', amount: formatCurrency(row.additional_contract_value), href: '/projects' }))} />
           </section>

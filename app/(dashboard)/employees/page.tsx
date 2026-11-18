@@ -91,6 +91,13 @@ export default function EmployeesPage() {
       employeeScopeLabel(employee.project_id, projects),
     ]),
     totals: [{ label: 'Employees', value: String(filteredEmployees.length) }],
+    visual: {
+      kpis: [
+        { label: 'Total', value: String(employees.length) },
+        { label: 'Global', value: String(employees.filter((employee) => !employee.project_id).length) },
+        { label: 'This project', value: String(employees.filter((employee) => employee.project_id === activeProject?.id).length) },
+      ],
+    },
   }
 
   if (!canRead) {

@@ -55,17 +55,41 @@ describe('overview math', () => {
 })
 
 describe('pdf export', () => {
-  it('writes a PDF document', async () => {
-    const bytes = await renderReportPdf({
+  it('writes a vector report with the dashboard sections and no embedded image', async () => {
+    const plain = await renderReportPdf({
       title: 'Costs',
       company: 'Acme Test',
-      project: 'JOB-A-001 — Acme Test Job',
+      project: 'JOB-A-001 - Acme Test Job',
       generatedOn: '2026-11-18',
       filters: ['Search: none'],
       columns: ['Category', 'Amount'],
       rows: [['Material', '250.00']],
       totals: [{ label: 'Total', value: '250.00' }],
     })
+    const bytes = await renderReportPdf({
+      title: 'Project overview',
+      company: 'Acme Test',
+      project: 'JOB-A-001 - Acme Test Job',
+      generatedOn: '2026-11-18',
+      filters: ['Scope: this project'],
+      columns: ['Category', 'Budget', 'Actual', 'Remaining'],
+      rows: [['Material', '$10,000.00', '$250.00', '$9,750.00']],
+      totals: [{ label: 'Contract', value: '$112,000.00' }],
+      visual: {
+        kpis: [
+          { label: 'Contract', value: '$112,000.00', detail: '$100,000.00 base' },
+          { label: 'Cost to date', value: '$4,834.50' },
+          { label: 'Collected', value: '$900.00' },
+        ],
+        alerts: ['Subcontractor is nearing its budget ($2,200.00 of $8,000.00).'],
+        bars: { title: 'Budget versus actual', items: [{ label: 'Material', actual: 250, budget: 10000, caption: '$250.00 / $10,000.00' }] },
+        series: { title: 'Cost trend', points: [{ label: '01', value: 300 }, { label: '02', value: 400 }] },
+        activity: [{ title: 'Latest costs', lines: ['2026-02-07 Grinding discs $64.50'] }],
+      },
+    })
     assert.equal(Buffer.from(bytes.subarray(0, 5)).toString(), '%PDF-')
+    assert.equal(Buffer.from(bytes).includes('/Subtype /Image'), false)
+    assert.equal(Buffer.from(bytes).includes('/DCTDecode'), false)
+    assert.ok(bytes.length > plain.length)
   })
 })

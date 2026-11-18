@@ -7,7 +7,7 @@ import { PageHeader } from '@/components/ui/feedback'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/format'
 
-const screens = ['Login', 'Forgot password', 'Overview', 'Projects', 'Costs', 'Invoices', 'Employees', 'Team', 'Settings'] as const
+const screens = ['Login', 'Forgot password', 'Overview', 'Projects', 'Costs', 'Category', 'Invoices', 'Employees', 'Team', 'Settings'] as const
 
 export default function PreviewGallery({
   initialScreen = 'Overview',
@@ -41,21 +41,57 @@ export default function PreviewGallery({
   )
 }
 
-function AppFrame({ screen, mobile }: { screen: string; mobile: boolean }) {
+function NavTree({ screen }: { screen: string }) {
+  const costsOpen = screen === 'Costs' || screen === 'Category'
+  const materialsOpen = screen === 'Category'
+  const row = (label: string, active: boolean, indent = '') => (
+    <div className={`flex min-h-11 items-center rounded-lg px-2 ${indent} ${active ? 'bg-accent font-medium text-accent-foreground' : ''}`}>{label}</div>
+  )
   return (
-    <div className={mobile ? 'flex flex-col' : 'flex min-h-[760px]'}>
+    <nav className="mt-4 space-y-0.5 text-sm">
+      {row('Overview', screen === 'Overview')}
+      {row('Projects', screen === 'Projects')}
+      <div className="flex items-center">
+        <span className="inline-flex h-11 w-8 items-center justify-center" aria-hidden>{costsOpen ? '▾' : '▸'}</span>
+        {row('Costs', screen === 'Costs')}
+      </div>
+      {costsOpen ? (
+        <>
+          <div className="flex items-center pl-2">
+            <span className="inline-flex h-11 w-8 items-center justify-center" aria-hidden>{materialsOpen ? '▾' : '▸'}</span>
+            {row('Materials', screen === 'Category')}
+          </div>
+          {materialsOpen ? row('Lumber', false, 'ml-10') : null}
+          <div className="flex items-center pl-2">
+            <span className="inline-flex h-11 w-8 items-center justify-center" aria-hidden>▸</span>
+            {row('Labor', false)}
+          </div>
+        </>
+      ) : null}
+      {row('Invoices', screen === 'Invoices')}
+      {row('Employees', screen === 'Employees')}
+      {row('Team', screen === 'Team')}
+      {row('Settings', screen === 'Settings')}
+    </nav>
+  )
+}
+
+function AppFrame({ screen, mobile }: { screen: string; mobile: boolean }) {
+  const showDrawer = mobile && (screen === 'Costs' || screen === 'Category')
+  return (
+    <div className={mobile ? 'relative flex min-h-[760px] flex-col' : 'flex min-h-[760px]'}>
       {mobile ? null : (
         <aside className="w-60 border-r border-border bg-sidebar p-3">
           <Logo size="sm" />
-          <nav className="mt-4 space-y-1 text-sm">
-            {['Overview', 'Projects', 'Costs', 'Invoices', 'Employees', 'Team', 'Settings'].map((item) => (
-              <div key={item} className={`rounded-lg px-2 py-2 ${item === screen ? 'bg-accent font-medium text-accent-foreground' : ''}`}>
-                {item}
-              </div>
-            ))}
-          </nav>
+          <NavTree screen={screen} />
         </aside>
       )}
+      {showDrawer ? (
+        <aside className="absolute inset-y-0 left-0 z-10 w-64 border-r border-border bg-sidebar p-3 shadow-[var(--shadow)]">
+          <Logo size="sm" />
+          <NavTree screen={screen} />
+        </aside>
+      ) : null}
       <div className="min-w-0 flex-1">
         <header className="flex h-14 items-center gap-2 border-b border-border px-3 text-sm">
           <span className="rounded-lg border border-border px-2 py-2">JOB-A-001 — Acme Test Job</span>
@@ -67,6 +103,7 @@ function AppFrame({ screen, mobile }: { screen: string; mobile: boolean }) {
           {screen === 'Overview' ? <Overview /> : null}
           {screen === 'Projects' ? <Projects /> : null}
           {screen === 'Costs' ? <Costs /> : null}
+          {screen === 'Category' ? <CategoryPage /> : null}
           {screen === 'Invoices' ? <Invoices /> : null}
           {screen === 'Employees' ? <Employees /> : null}
           {screen === 'Team' ? <Team /> : null}
@@ -124,30 +161,45 @@ function Projects() {
 function Costs() {
   return (
     <div className="space-y-4">
-      <PageHeader title="Costs" description="Grouped by category" action={<><Button variant="outline" type="button">Expand all</Button><Button variant="outline" type="button">Collapse all</Button><Button variant="outline" type="button">Export</Button></>} />
+      <PageHeader title="Costs" description="JOB-A-001 · All change orders. Open a category for its entries." action={<Button variant="outline" type="button">Export</Button>} />
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Stat label="Cost to date" value={formatCurrency(4834.5)} />
+        <Stat label="Budget" value={formatCurrency(38000)} />
+        <Stat label="Remaining" value={formatCurrency(38000 - 4834.5)} />
+      </div>
+      <div className="rounded-lg border border-border bg-card p-4">
+        <p className="text-sm font-medium">Budget versus actual</p>
+        {[['Materials', 4], ['Labor', 8], ['Subcontractor', 28]].map(([name, width]) => (
+          <div key={String(name)} className="mt-3">
+            <div className="mb-1 flex justify-between text-sm"><span className="text-primary">{name}</span><span className="tabular text-muted-foreground">{width === 4 ? '$410 / $10,000' : width === 8 ? '$650 / $20,000' : '$2,200 / $8,000'}</span></div>
+            <div className="h-2 rounded-full bg-muted"><div className="h-2 rounded-full bg-primary" style={{ width: `${width}%` }} /></div>
+          </div>
+        ))}
+      </div>
+      <Table headers={['Category', 'Entries', 'Budget', 'Actual', 'Remaining']} rows={[
+        ['Materials', '2', '$10,000.00', '$410.00', '$9,590.00'],
+        ['Lumber', '1', '$4,000.00', '$160.00', '$3,840.00'],
+        ['Labor', '2', '$20,000.00', '$650.00', '$19,350.00'],
+      ]} />
+    </div>
+  )
+}
+
+function CategoryPage() {
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-primary">Costs</p>
+      <PageHeader title="Materials" description="2 entries · All change orders" action={<><Button variant="outline" type="button">Expand all</Button><Button variant="outline" type="button">Collapse all</Button><Button variant="outline" type="button">Export</Button><Button type="button">Add cost</Button></>} />
       <section className="rounded-lg border border-border bg-card">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
-          <div>
-            <p className="font-medium">▾ Materials</p>
-            <p className="text-xs text-muted-foreground">2 entries · includes children</p>
-          </div>
+          <p className="font-medium">▾ Materials · 2 entries · includes children</p>
           <span className="text-xs tabular text-muted-foreground">$410.00 / $10,000.00</span>
         </div>
         <Table headers={['Date', 'Details', 'Amount']} rows={[['Jan 15, 2026', 'Steel', '$250.00']]} />
         <div className="border-t border-border px-3 py-2 pl-8">
-          <p className="font-medium">▾ Lumber</p>
-          <p className="text-xs text-muted-foreground">1 entry</p>
+          <p className="font-medium">▾ Lumber · 1 entry</p>
         </div>
         <Table headers={['Date', 'Details', 'Amount']} rows={[['Jan 16, 2026', 'Framing', '$160.00']]} />
-      </section>
-      <section className="rounded-lg border border-border bg-card">
-        <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
-          <div>
-            <p className="font-medium">▸ Labor</p>
-            <p className="text-xs text-muted-foreground">2 entries · includes children</p>
-          </div>
-          <span className="text-xs tabular text-muted-foreground">$650.00 / $20,000.00</span>
-        </div>
       </section>
     </div>
   )

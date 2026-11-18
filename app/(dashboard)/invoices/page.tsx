@@ -166,6 +166,13 @@ export default function InvoicesPage() {
       { label: 'Billed', value: formatCurrency(filteredTotal) },
       { label: 'Collected', value: formatCurrency(collectedTotal) },
     ],
+    visual: {
+      kpis: [
+        { label: 'Invoices', value: String(filteredInvoices.length) },
+        { label: 'Billed', value: formatCurrency(filteredTotal) },
+        { label: 'Collected', value: formatCurrency(collectedTotal), detail: `${formatCurrency(filteredTotal - collectedTotal)} outstanding` },
+      ],
+    },
   }
 
   useEffect(() => {

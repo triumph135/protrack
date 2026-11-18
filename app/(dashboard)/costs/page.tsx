@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { ChevronDown, ChevronRight, Copy, Pencil, Plus, Trash2 } from 'lucide-react'
@@ -15,8 +16,9 @@ import { useChangeOrders } from '@/hooks/useChangeOrders'
 import FileAttachments from '@/components/FileAttachments'
 import { createClient } from '@/lib/supabase'
 import { canAccessCategory, canExport } from '@/lib/permissions'
-import { builtinKeyFromSlug, flattenCategoryTree, isFallbackCategoryId, legacyCategoryText, rollupCategoryAmounts } from '@/lib/categories'
-import { costDetailText, costGroupIds, countCostEntries, groupCostEntries, visibleCostLines, type CostGroup, type CostSortDirection, type CostSortKey } from '@/lib/cost-groups'
+import { builtinKeyFromSlug, flattenCategoryTree, isFallbackCategoryId, legacyCategoryText, ownAmountsByCategory, rollupCategoryAmounts } from '@/lib/categories'
+import { costDetailText, costGroupIds, countCostEntries, groupCostEntries, resolveEntryCategoryId, visibleCostLines, type CostGroup, type CostSortDirection, type CostSortKey } from '@/lib/cost-groups'
+import { categoryBudgetState } from '@/lib/overview'
 import { ExportMenu, type ExportSpec } from '@/components/export/ExportMenu'
 import { calculateTotalCost, type CostCategory } from '@/lib/costs'
 import { enabledLaborFields, normalizeLaborFieldValue, validateLaborFieldValue } from '@/lib/labor-fields'
@@ -148,15 +150,16 @@ export default function CostsPage() {
     [ordered, user, byId],
   )
 
+  const uncategorizedView = requested === 'uncategorized'
   const groups = useMemo(() => groupCostEntries({
-    entries,
+    entries: uncategorizedView ? entries.filter((row) => resolveEntryCategoryId(row, readable) == null) : entries,
     categories: readable,
     query,
     changeOrderId,
     sortKey,
     sortDirection,
-    focusCategoryId: focusCategory && readable.some((category) => category.id === focusCategory.id) ? focusCategory.id : null,
-  }), [entries, readable, query, changeOrderId, sortKey, sortDirection, focusCategory])
+    focusCategoryId: !uncategorizedView && focusCategory && readable.some((category) => category.id === focusCategory.id) ? focusCategory.id : null,
+  }), [entries, readable, query, changeOrderId, sortKey, sortDirection, focusCategory, uncategorizedView])
 
   const budgetRollup = useMemo(() => rollupCategoryAmounts(categories, budgets), [categories, budgets])
 
@@ -354,6 +357,141 @@ export default function CostsPage() {
   if (requested && focusCategory && !readable.some((category) => category.id === focusCategory.id)) {
     return <EmptyState title="No access" body={`You cannot view ${focusCategory.name}.`} />
   }
+  if (uncategorizedView && user?.role !== 'master') {
+    return <EmptyState title="No access" body="Uncategorized costs are visible to a master." />
+  }
+
+  const summaryEntries = entries.filter((row) => {
+    if (changeOrderId === 'base') return !row.change_order_id
+    if (changeOrderId) return row.change_order_id === changeOrderId
+    return true
+  })
+  const summaryChangeOrder = changeOrderId === 'base'
+    ? 'Base contract'
+    : changeOrderId
+      ? changeOrders.find((order) => order.id === changeOrderId)?.name || 'Change order'
+      : 'All change orders'
+
+  if (!focusCategory && !uncategorizedView) {
+    const own = ownAmountsByCategory(summaryEntries, categories)
+    const actualRollup = rollupCategoryAmounts(categories, own)
+    const countRollup = rollupCategoryAmounts(categories, summaryEntries.reduce<Record<string, number>>((counts, row) => {
+      const id = resolveEntryCategoryId(row, readable)
+      if (!id || id === 'hidden') return counts
+      counts[id] = (counts[id] || 0) + 1
+      return counts
+    }, {}))
+    const parents = tree.flatMap((node) => {
+      const children = node.children.filter((child) => readable.some((item) => item.id === child.id))
+      if (readable.some((item) => item.id === node.id)) return [{ node, children }]
+      return children.map((child) => ({ node: child, children: [] as typeof children }))
+    })
+    const uncategorizedCount = summaryEntries.filter((row) => resolveEntryCategoryId(row, readable) == null).length
+    const totalActual = parents.reduce((sum, item) => sum + (actualRollup[item.node.id]?.total || 0), 0)
+    const totalBudget = parents.reduce((sum, item) => sum + (budgetRollup[item.node.id]?.total || 0), 0)
+    const summaryRows = parents.flatMap(({ node, children }) => [
+      { id: node.id, name: node.name, depth: 0, actual: actualRollup[node.id]?.total || 0, budget: budgetRollup[node.id]?.total || 0, count: countRollup[node.id]?.total || 0 },
+      ...children.map((child) => ({ id: child.id, name: child.name, depth: 1, actual: actualRollup[child.id]?.own || 0, budget: budgets[child.id] || 0, count: countRollup[child.id]?.own || 0 })),
+    ])
+    const summarySpec: ExportSpec = {
+      filename: `${activeProject.jobNumber || 'costs'}-summary`.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      title: 'Costs',
+      company: tenant?.name || 'Company',
+      project: `${activeProject.jobNumber} — ${activeProject.jobName}`,
+      filters: [`Change order: ${summaryChangeOrder}`],
+      columns: ['Category', 'Entries', 'Budget', 'Actual', 'Remaining'],
+      csvRows: summaryRows.map((row) => [row.depth ? `  ${row.name}` : row.name, row.count, row.budget, row.actual, row.budget - row.actual]),
+      pdfRows: summaryRows.map((row) => [`${row.depth ? '  ' : ''}${row.name}`, String(row.count), formatCurrency(row.budget), formatCurrency(row.actual), formatCurrency(row.budget - row.actual)]),
+      totals: [{ label: 'Cost to date', value: formatCurrency(totalActual) }, { label: 'Budget', value: formatCurrency(totalBudget) }],
+      visual: {
+        kpis: [
+          { label: 'Cost to date', value: formatCurrency(totalActual) },
+          { label: 'Budget', value: formatCurrency(totalBudget) },
+          { label: 'Remaining', value: formatCurrency(totalBudget - totalActual) },
+        ],
+        alerts: summaryRows.filter((row) => categoryBudgetState(row.actual, row.budget) === 'over' || categoryBudgetState(row.actual, row.budget) === 'near').map((row) => `${row.name} is ${categoryBudgetState(row.actual, row.budget) === 'over' ? 'over' : 'nearing'} its budget (${formatCurrency(row.actual)} of ${formatCurrency(row.budget)}).`),
+        bars: {
+          title: 'Budget versus actual',
+          items: parents.map(({ node }) => ({
+            label: node.name,
+            actual: actualRollup[node.id]?.total || 0,
+            budget: budgetRollup[node.id]?.total || 0,
+            caption: `${formatCurrency(actualRollup[node.id]?.total || 0)} / ${formatCurrency(budgetRollup[node.id]?.total || 0)}`,
+          })),
+        },
+      },
+    }
+    return (
+      <div className="space-y-4">
+        <PageHeader
+          title="Costs"
+          description={`${activeProject.jobNumber} · ${summaryChangeOrder}. Open a category for its entries.`}
+          action={<ExportMenu spec={summaryRows.length > 0 ? summarySpec : null} />}
+        />
+        <section className="grid gap-3 sm:grid-cols-3">
+          <SummaryStat label="Cost to date" value={formatCurrency(totalActual)} />
+          <SummaryStat label="Budget" value={formatCurrency(totalBudget)} />
+          <SummaryStat label="Remaining" value={formatCurrency(totalBudget - totalActual)} />
+        </section>
+        <section className="rounded-lg border border-border bg-card p-4">
+          <h2 className="text-sm font-medium">Budget versus actual</h2>
+          <div className="mt-3 space-y-3">
+            {parents.map(({ node }) => {
+              const actual = actualRollup[node.id]?.total || 0
+              const budget = budgetRollup[node.id]?.total || 0
+              const max = Math.max(actual, budget, 1)
+              return (
+                <Link key={node.id} href={`/costs?category=${node.id}` as never} className="block rounded-md px-1 py-1 hover:bg-muted">
+                  <div className="mb-1 flex justify-between gap-3 text-sm">
+                    <span>{node.name}</span>
+                    <span className="tabular text-muted-foreground">{formatCurrency(actual)} / {budget > 0 ? formatCurrency(budget) : 'No budget'}</span>
+                  </div>
+                  <div className="relative h-2 overflow-hidden rounded-full bg-muted">
+                    <div className={`absolute inset-y-0 left-0 ${actual > budget && budget > 0 ? 'bg-destructive' : 'bg-primary'}`} style={{ width: `${Math.min(100, (actual / max) * 100)}%` }} />
+                  </div>
+                </Link>
+              )
+            })}
+          </div>
+        </section>
+        <section className="overflow-hidden rounded-lg border border-border bg-card">
+          <table className="responsive-cards w-full text-sm">
+            <thead className="border-b border-border text-left text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 font-medium">Category</th>
+                <th className="px-3 py-2 text-right font-medium">Entries</th>
+                <th className="px-3 py-2 text-right font-medium">Budget</th>
+                <th className="px-3 py-2 text-right font-medium">Actual</th>
+                <th className="px-3 py-2 text-right font-medium">Remaining</th>
+              </tr>
+            </thead>
+            <tbody>
+              {summaryRows.map((row) => (
+                <tr key={row.id} className="border-b border-border last:border-0">
+                  <td className={row.depth ? 'px-3 py-2 pl-8' : 'px-3 py-2'} data-label="Category">
+                    <Link className="font-medium text-primary" href={`/costs?category=${row.id}` as never}>{row.name}</Link>
+                  </td>
+                  <td className="px-3 py-2 text-right tabular" data-label="Entries">{row.count}</td>
+                  <td className="px-3 py-2 text-right tabular" data-label="Budget">{formatCurrency(row.budget)}</td>
+                  <td className="px-3 py-2 text-right tabular" data-label="Actual">{formatCurrency(row.actual)}</td>
+                  <td className="px-3 py-2 text-right tabular" data-label="Remaining">{formatCurrency(row.budget - row.actual)}</td>
+                </tr>
+              ))}
+              {user?.role === 'master' && uncategorizedCount > 0 ? (
+                <tr>
+                  <td className="px-3 py-2" data-label="Category"><Link className="text-primary" href={'/costs?category=uncategorized' as never}>Uncategorized</Link></td>
+                  <td className="px-3 py-2 text-right tabular" data-label="Entries">{uncategorizedCount}</td>
+                  <td className="px-3 py-2 text-right" data-label="Budget">—</td>
+                  <td className="px-3 py-2 text-right tabular" data-label="Actual">{formatCurrency(summaryEntries.filter((row) => resolveEntryCategoryId(row, readable) == null).reduce((sum, row) => sum + Number(row.cost || 0), 0))}</td>
+                  <td className="px-3 py-2" />
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </section>
+      </div>
+    )
+  }
 
   const collapsedIds = collapsed || []
   const collapsedSet = new Set(collapsedIds)
@@ -371,6 +509,28 @@ export default function CostsPage() {
     : changeOrderId
       ? changeOrders.find((order) => order.id === changeOrderId)?.name || 'Change order'
       : 'All change orders'
+  const focusBudget = focusCategory ? budgetRollup[focusCategory.id]?.total || 0 : 0
+  const focusChildren = focusCategory
+    ? (tree.find((node) => node.id === focusCategory.id)?.children || []).filter((child) => readable.some((item) => item.id === child.id))
+    : []
+  const focusBars = [
+    {
+      label: focusCategory?.name || 'Uncategorized',
+      actual: groups[0]?.total || shownTotal,
+      budget: focusBudget,
+      caption: `${formatCurrency(groups[0]?.total || shownTotal)} / ${focusBudget > 0 ? formatCurrency(focusBudget) : 'No budget'}`,
+    },
+    ...focusChildren.map((child) => {
+      const actual = groups[0]?.children.find((group) => group.categoryId === child.id)?.total || 0
+      const budget = budgets[child.id] || 0
+      return {
+        label: child.name,
+        actual,
+        budget,
+        caption: `${formatCurrency(actual)} / ${budget > 0 ? formatCurrency(budget) : 'No budget'}`,
+      }
+    }),
+  ]
   const exportSpec: ExportSpec = {
     filename: `${activeProject.jobNumber || 'costs'}-${focusCategory?.name || 'costs'}`.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
     title: focusCategory ? `${focusCategory.name} costs` : 'Costs',
@@ -389,17 +549,31 @@ export default function CostsPage() {
       ? [line.path, '', `${line.entryCount} entries`, formatCurrency(line.amount)]
       : [line.path, line.row.date || '', costDetailText(line.row) || '—', formatCurrency(line.row.cost)]),
     totals: [{ label: 'Shown total', value: formatCurrency(shownTotal) }],
+    visual: {
+      kpis: [
+        { label: focusCategory?.name || 'Uncategorized', value: formatCurrency(shownTotal) },
+        { label: 'Budget', value: formatCurrency(focusBudget) },
+        { label: 'Remaining', value: formatCurrency(focusBudget - shownTotal) },
+        { label: 'Entries', value: String(visibleCount) },
+      ],
+      bars: { title: 'Budget versus actual', items: focusBars },
+    },
   }
   const addTarget = focusCategory && readable.some((category) => category.id === focusCategory.id)
     ? focusCategory
     : readable.find((category) => canAccessCategory(user, grantFor(category), 'write')) || null
   const addTargetWritable = addTarget ? canAccessCategory(user, grantFor(addTarget), 'write') : false
 
+  const parentName = focusCategory?.parent_id ? byId.get(focusCategory.parent_id)?.name : null
   return (
     <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        <Link className="text-primary" href="/costs">Costs</Link>
+        {parentName ? <span> / <Link className="text-primary" href={`/costs?category=${focusCategory?.parent_id}` as never}>{parentName}</Link></span> : null}
+      </p>
       <PageHeader
-        title={focusCategory ? focusCategory.name : 'Costs'}
-        description={focusCategory ? `${visibleCount} entries in this category` : `${visibleCount} entries across ${groups.length} categories`}
+        title={focusCategory ? focusCategory.name : 'Uncategorized'}
+        description={`${visibleCount} entries · ${summaryChangeOrder}`}
         action={
           <>
             <Button variant="outline" type="button" onClick={() => persistCollapsed([])}>Expand all</Button>
@@ -523,6 +697,15 @@ export default function CostsPage() {
           </div>
         ) : null}
       </Sheet>
+    </div>
+  )
+}
+
+function SummaryStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <p className="text-sm text-muted-foreground">{label}</p>
+      <p className="mt-1 text-2xl font-semibold tabular">{value}</p>
     </div>
   )
 }
