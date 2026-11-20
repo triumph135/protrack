@@ -3,7 +3,9 @@ import { describe, it } from 'node:test'
 import { toCsv } from '../lib/csv.ts'
 import { categoryBudgetState, grossProfitPercent, monthlyBurn } from '../lib/overview.ts'
 import { rollupCategoryAmounts, type CostCategoryRecord } from '../lib/categories.ts'
+import { PDFDocument } from 'pdf-lib'
 import { renderReportPdf } from '../lib/pdf-report.ts'
+import { overviewPdfFixture } from './overview-pdf-fixture.ts'
 
 describe('csv export', () => {
   it('writes one header row, raw numbers, and ISO dates', () => {
@@ -91,5 +93,16 @@ describe('pdf export', () => {
     assert.equal(Buffer.from(bytes).includes('/Subtype /Image'), false)
     assert.equal(Buffer.from(bytes).includes('/DCTDecode'), false)
     assert.ok(bytes.length > plain.length)
+  })
+
+  it('fits a 7-category overview on one letter page and keeps a 20-category overview readable', async () => {
+    const seven = await renderReportPdf(overviewPdfFixture(7))
+    const twenty = await renderReportPdf(overviewPdfFixture(20))
+    const sevenPages = (await PDFDocument.load(seven)).getPageCount()
+    const twentyPages = (await PDFDocument.load(twenty)).getPageCount()
+    assert.equal(sevenPages, 1)
+    assert.equal(twentyPages, 1)
+    const overflow = await renderReportPdf(overviewPdfFixture(60))
+    assert.ok((await PDFDocument.load(overflow)).getPageCount() >= 2)
   })
 })

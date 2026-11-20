@@ -19,6 +19,7 @@ export interface ExportSpec {
   rowDepth?: number[]
   totals: Array<{ label: string; value: string }>
   visual?: PdfVisual
+  overview?: boolean
 }
 
 function download(filename: string, blob: Blob) {
@@ -69,6 +70,7 @@ export function ExportMenu({ spec, disabled = false }: { spec: ExportSpec | null
           rowDepth: spec.rowDepth,
           totals: spec.totals,
           visual: spec.visual,
+          overview: spec.overview,
         })
         download(`${spec.filename}.pdf`, new Blob([Uint8Array.from(bytes)], { type: 'application/pdf' }))
       }

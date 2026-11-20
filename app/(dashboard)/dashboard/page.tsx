@@ -168,6 +168,7 @@ export default function DashboardPage() {
     csvRows: companyRows.map((row) => [row.project.jobNumber, row.project.jobName, row.value, row.cost, row.billed, row.received, row.profit]),
     pdfRows: companyRows.map((row) => [row.project.jobNumber, row.project.jobName, formatCurrency(row.value), formatCurrency(row.cost), formatCurrency(row.billed), formatCurrency(row.received), formatCurrency(row.profit)]),
     totals: [{ label: 'Projects', value: String(companyRows.length) }],
+    overview: true,
     visual: {
       kpis: [
         { label: 'Projects', value: String(companyRows.length) },
@@ -208,6 +209,7 @@ export default function DashboardPage() {
       { label: 'Contract', value: formatCurrency(contract) },
       { label: 'Gross profit (invoiced minus cost)', value: `${formatCurrency(profit)}${margin == null ? '' : ` (${formatPercent(margin)})`}` },
     ],
+    overview: true,
     visual: {
       kpis: [
         { label: 'Contract', value: formatCurrency(contract), detail: `${formatCurrency(baseContract)} base · ${formatCurrency(changeOrderTotal)} change orders` },
