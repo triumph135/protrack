@@ -35,8 +35,15 @@ for f in supabase/migrations/*.sql; do
   "${RUN[@]}" "${PSQL[@]}" -d "${DB_NAME}" -f "${f}" >/dev/null
 done
 
-echo "Rollback Phase 2b and Phase 2, then reapply"
+echo "Phase 2c seed"
+"${RUN[@]}" "${PSQL[@]}" -d "${DB_NAME}" -f supabase/seed/phase2c_synthetic.sql >/dev/null
+echo "Phase 2c checks"
+"${RUN[@]}" "${PSQL[@]}" -d "${DB_NAME}" -f supabase/tests/phase2c_checks.sql >/tmp/protrack-phase2c.txt
+grep -E 'NOTICE|FAIL' /tmp/protrack-phase2c.txt || true
+
+echo "Rollback Phase 2c, Phase 2b, and Phase 2, then reapply"
 for f in \
+  supabase/rollback/20261121000000_reporting_center_rollback.sql \
   supabase/rollback/20261120000100_employee_job_role_rollback.sql \
   supabase/rollback/20261120000000_reversal_positive_amounts_rollback.sql \
   supabase/rollback/20261119000100_employee_project_rates_rollback.sql \
@@ -59,7 +66,8 @@ for f in \
   supabase/migrations/20261119000000_reversals_and_events.sql \
   supabase/migrations/20261119000100_employee_project_rates.sql \
   supabase/migrations/20261120000000_reversal_positive_amounts.sql \
-  supabase/migrations/20261120000100_employee_job_role.sql
+  supabase/migrations/20261120000100_employee_job_role.sql \
+  supabase/migrations/20261121000000_reporting_center.sql
 do
   echo "  -> ${f}"
   "${RUN[@]}" "${PSQL[@]}" -d "${DB_NAME}" -f "${f}" >/dev/null

@@ -11,6 +11,7 @@ import { useTenant } from '@/contexts/TenantContext'
 import { useCategories } from '@/contexts/CategoryContext'
 import { createClient } from '@/lib/supabase'
 import { readCompanySettings } from '@/lib/company-settings'
+import { timeZoneChoices } from '@/lib/reports/date-range'
 import { VISIBLE_CATEGORY_LIMIT, type CostCategoryRecord } from '@/lib/categories'
 import { LABOR_PRESETS, type LaborFieldDefinition } from '@/lib/labor-fields'
 import { Button } from '@/components/ui/button'
@@ -60,6 +61,7 @@ function CompanyForm({ tenant, refresh }: { tenant: { id: string; name: string; 
   const [phone, setPhone] = useState(tenant.phone || '')
   const [goal, setGoal] = useState(current.gp_goal_percent == null ? '' : String(current.gp_goal_percent))
   const [lockDate, setLockDate] = useState(current.books_lock_date || '')
+  const [timezone, setTimezone] = useState(current.timezone)
   const supabase = createClient()
   return (
     <form className="max-w-md space-y-3" onSubmit={async (event) => {
@@ -73,7 +75,7 @@ function CompanyForm({ tenant, refresh }: { tenant: { id: string; name: string; 
         name,
         email,
         phone,
-        settings: { ...(tenant.settings || {}), gp_goal_percent: parsedGoal, books_lock_date: lockDate || null },
+        settings: { ...(tenant.settings || {}), gp_goal_percent: parsedGoal, books_lock_date: lockDate || null, timezone },
       }).eq('id', tenant.id)
       if (error) toast.error(error.message)
       else {
@@ -89,6 +91,11 @@ function CompanyForm({ tenant, refresh }: { tenant: { id: string; name: string; 
       </Field>
       <Field label="Books lock date" htmlFor="books-lock" hint="Costs dated on or before this day, and invoices billed on or before it, can only be corrected with a reversal or credit memo. Leave blank to keep every date open.">
         <Input id="books-lock" type="date" value={lockDate} onChange={(event) => setLockDate(event.target.value)} />
+      </Field>
+      <Field label="Company timezone" htmlFor="company-timezone" hint="Report date ranges and scheduled send times use this zone.">
+        <select id="company-timezone" className="h-11 w-full rounded-lg border border-input bg-card px-2 text-sm" value={timezone} onChange={(event) => setTimezone(event.target.value)}>
+          {timeZoneChoices().map((zone) => <option key={zone} value={zone}>{zone.replaceAll('_', ' ')}</option>)}
+        </select>
       </Field>
       <Button type="submit">Save company</Button>
     </form>

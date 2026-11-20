@@ -42,6 +42,7 @@ const nextConfig = {
   
   // Production optimizations
   output: 'standalone',
+  serverExternalPackages: ['exceljs'],
   
   // Security headers
   async headers() {
