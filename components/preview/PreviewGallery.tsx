@@ -11,8 +11,9 @@ import { ReverseSheet } from '@/components/ReverseSheet'
 import { MoveCostSheet } from '@/components/MoveCostSheet'
 import { QueuedFilesField } from '@/components/QueuedFilesField'
 import { ProjectRatesEditor } from '@/components/ProjectRatesEditor'
+import { ReportsPreview } from '@/components/reports/preview-data'
 
-const screens = ['Login', 'Forgot password', 'Overview', 'Projects', 'Costs', 'Category', 'Invoices', 'Employees', 'Team', 'Settings', 'Reverse', 'Credit', 'Move', 'Attachments', 'Rates'] as const
+const screens = ['Login', 'Forgot password', 'Overview', 'Projects', 'Costs', 'Category', 'Invoices', 'Reports', 'Activity', 'Job cost', 'Vendor', 'Builder', 'Schedule', 'History', 'Unsubscribe', 'Employees', 'Team', 'Settings', 'Reverse', 'Credit', 'Move', 'Attachments', 'Rates'] as const
 
 export default function PreviewGallery({
   initialScreen = 'Overview',
@@ -40,7 +41,7 @@ export default function PreviewGallery({
         </Button>
       </div>}
       <div className={bare ? 'bg-background' : mobile ? 'mx-auto w-[390px] overflow-hidden rounded-lg border border-border bg-background shadow-none' : 'overflow-hidden rounded-lg border border-border bg-background'}>
-        {screen === 'Login' ? <LoginScreen /> : screen === 'Forgot password' ? <ForgotScreen /> : <AppFrame mobile={mobile} screen={screen} />}
+        {screen === 'Login' ? <LoginScreen /> : screen === 'Forgot password' ? <ForgotScreen /> : screen === 'Unsubscribe' ? <div className="bg-background p-4"><ReportsPreview screen="Unsubscribe" /></div> : <AppFrame mobile={mobile} screen={screen} />}
       </div>
     </div>
   )
@@ -81,6 +82,7 @@ function NavTree({ screen }: { screen: string }) {
         </>
       ) : null}
       {row('Invoices', screen === 'Invoices')}
+      {row('Reports', screen === 'Reports' || screen === 'Activity' || screen === 'Job cost' || screen === 'Vendor' || screen === 'Builder')}
       {row('Employees', screen === 'Employees')}
       {row('Team', screen === 'Team')}
       {row('Settings', screen === 'Settings')}
@@ -122,6 +124,7 @@ function AppFrame({ screen, mobile }: { screen: string; mobile: boolean }) {
           {screen === 'Costs' ? <Costs /> : null}
           {screen === 'Category' ? <CategoryPage /> : null}
           {screen === 'Invoices' ? <Invoices /> : null}
+          {['Reports', 'Activity', 'Job cost', 'Vendor', 'Builder', 'Schedule', 'History'].includes(screen) ? <ReportsPreview screen={screen} /> : null}
           {screen === 'Employees' ? <Employees /> : null}
           {screen === 'Team' ? <Team /> : null}
           {screen === 'Settings' ? <Settings /> : null}

@@ -41,8 +41,10 @@ load "${ROOT}/supabase/migrations/20261119000000_reversals_and_events.sql"
 load "${ROOT}/supabase/migrations/20261119000100_employee_project_rates.sql"
 load "${ROOT}/supabase/migrations/20261120000000_reversal_positive_amounts.sql"
 load "${ROOT}/supabase/migrations/20261120000100_employee_job_role.sql"
+load "${ROOT}/supabase/migrations/20261121000000_reporting_center.sql"
 if [[ "${SKIP_SEED:-}" != "1" ]]; then
   load "${ROOT}/supabase/seed/phase2_synthetic.sql"
+  load "${ROOT}/supabase/seed/phase2c_synthetic.sql"
 fi
 
 echo "Local database ${DB_NAME} is ready."

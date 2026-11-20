@@ -118,6 +118,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   ]
   const linksAfter = [
     ...(userCan(user, 'invoices', 'read') ? [{ href: '/invoices', label: 'Invoices', icon: 'invoices' as const }] : []),
+    ...(user?.tenant_id ? [{ href: '/reports', label: 'Reports', icon: 'reports' as const }] : []),
     ...(userCan(user, 'employees', 'read') ? [{ href: '/employees', label: 'Employees', icon: 'employees' as const }] : []),
     ...(userCan(user, 'users', 'write') ? [{ href: '/team', label: 'Team', icon: 'team' as const }] : []),
     ...(user?.role === 'master' ? [{ href: '/settings', label: 'Settings', icon: 'settings' as const }] : []),
@@ -141,7 +142,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const navList = (rail: boolean) => (
     <nav className="space-y-0.5" aria-label="Main">
       {linksBefore.map((item) => (
-        <Link key={item.href} href={item.href as never} onClick={go} title={item.label} className={cn(itemClass(pathname === item.href), rail && 'justify-center px-0')}>
+        <Link key={item.href} href={item.href as never} onClick={go} title={item.label} className={cn(itemClass(pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(`${item.href}/`))), rail && 'justify-center px-0')}>
           <NavIcon name={item.icon} />
           {rail ? null : <span className="truncate">{item.label}</span>}
         </Link>
@@ -208,7 +209,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       ) : null}
       {linksAfter.map((item) => (
-        <Link key={item.href} href={item.href as never} onClick={go} title={item.label} className={cn(itemClass(pathname === item.href), rail && 'justify-center px-0')}>
+        <Link key={item.href} href={item.href as never} onClick={go} title={item.label} className={cn(itemClass(pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(`${item.href}/`))), rail && 'justify-center px-0')}>
           <NavIcon name={item.icon} />
           {rail ? null : <span className="truncate">{item.label}</span>}
         </Link>
@@ -318,6 +319,7 @@ function NavIcon({ name }: { name?: string }) {
   if (name === 'costs') return <Layers className={className} />
   if (name === 'projects') return <Building2 className={className} />
   if (name === 'invoices') return <Receipt className={className} />
+  if (name === 'reports') return <BarChart3 className={className} />
   if (name === 'employees') return <Users className={className} />
   if (name === 'team') return <Users className={className} />
   if (name === 'settings') return <Settings className={className} />
