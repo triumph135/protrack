@@ -167,6 +167,71 @@ begin
     );
   end;
 
+  insert into public.project_costs (tenant_id, project_id, category_id, category, date, cost, description)
+  values (v_tenant, v_project, v_material, 'material', '2026-11-06', 1000, 'phase2b positive full')
+  returning id into v_id;
+  v_rev := public.reverse_project_cost(v_id, 'Full positive amount', '2026-11-18', '{"cost": 1000}'::jsonb);
+  select coalesce(sum(cost), 0), max(reversed_at) filter (where id = v_id)
+    into v_sum, v_stamp
+  from public.project_costs
+  where id = v_id or reversal_of_id = v_id;
+  insert into phase2b_results values (
+    'positive_full_reversal_nets_to_zero',
+    case when v_sum = 0 and v_stamp is not null and v_rev is not null then 'PASS' else 'FAIL' end,
+    'sum=' || v_sum::text || ' stamped=' || coalesce(v_stamp::text, 'null')
+  );
+
+  insert into public.project_costs (tenant_id, project_id, category_id, category, date, cost, description)
+  values (v_tenant, v_project, v_material, 'material', '2026-11-07', 1000, 'phase2b positive partial')
+  returning id into v_partial;
+  perform public.reverse_project_cost(v_partial, 'Positive four hundred', '2026-11-18', '{"cost": 400}'::jsonb);
+  select coalesce(pc.cost, 0) + coalesce((
+    select sum(child.cost) from public.project_costs child where child.reversal_of_id = pc.id
+  ), 0), pc.reversed_at
+    into v_sum, v_stamp
+  from public.project_costs pc
+  where pc.id = v_partial;
+  insert into phase2b_results values (
+    'positive_partial_leaves_remainder',
+    case when v_sum = 600 and v_stamp is null then 'PASS' else 'FAIL' end,
+    'remaining=' || coalesce(v_sum::text, 'null')
+  );
+  perform public.reverse_project_cost(v_partial, 'Positive remainder to zero', '2026-11-18', '{"cost": 600}'::jsonb);
+  select coalesce(sum(cost), 0) into v_sum
+  from public.project_costs
+  where id = v_partial or reversal_of_id = v_partial;
+  select reversed_at into v_stamp from public.project_costs where id = v_partial;
+  insert into phase2b_results values (
+    'positive_remainder_reaches_exactly_zero',
+    case when v_sum = 0 and v_stamp is not null then 'PASS' else 'FAIL' end,
+    'sum=' || v_sum::text
+  );
+
+  insert into public.project_costs (tenant_id, project_id, category_id, category, date, cost, description)
+  values (v_tenant, v_project, v_material, 'material', '2026-11-08', 1000, 'phase2b positive oversize')
+  returning id into v_over;
+  begin
+    perform public.reverse_project_cost(v_over, 'One cent over', '2026-11-18', '{"cost": 1000.01}'::jsonb);
+    insert into phase2b_results values ('positive_oversize_rejected', 'FAIL', 'oversize succeeded');
+  exception when others then
+    insert into phase2b_results values (
+      'positive_oversize_rejected',
+      case when sqlerrm ilike '%past zero%' then 'PASS' else 'FAIL' end,
+      sqlerrm
+    );
+  end;
+
+  begin
+    perform public.reverse_project_cost(v_over, 'Zero amount', '2026-11-18', '{"cost": 0}'::jsonb);
+    insert into phase2b_results values ('zero_reversal_rejected', 'FAIL', 'zero succeeded');
+  exception when others then
+    insert into phase2b_results values (
+      'zero_reversal_rejected',
+      case when sqlerrm ilike '%greater than zero%' or sqlerrm ilike '%past zero%' then 'PASS' else 'FAIL' end,
+      sqlerrm
+    );
+  end;
+
   execute 'reset role';
 exception when others then
   execute 'reset role';
@@ -217,6 +282,64 @@ begin
     insert into phase2b_results values (
       'second_full_credit_rejected',
       case when sqlerrm ilike '%nothing left%' or sqlerrm ilike '%past zero%' then 'PASS' else 'FAIL' end,
+      sqlerrm
+    );
+  end;
+
+  insert into public.customer_invoices (
+    tenant_id, project_id, invoice_number, amount, amount_collected, date_billed
+  ) values (v_tenant, v_project, 'INV-P2B-POS', 1000, 0, '2026-11-06')
+  returning id into v_id;
+  perform public.reverse_customer_invoice(v_id, 'Full positive credit', '2026-11-18', 1000);
+  select coalesce(sum(amount), 0) into v_sum
+  from public.customer_invoices
+  where id = v_id or reversal_of_id = v_id;
+  insert into phase2b_results values (
+    'positive_full_credit_nets_to_zero',
+    case when v_sum = 0 and exists (
+      select 1 from public.customer_invoices where id = v_id and reversed_at is not null
+    ) then 'PASS' else 'FAIL' end,
+    'sum=' || v_sum::text
+  );
+
+  insert into public.customer_invoices (
+    tenant_id, project_id, invoice_number, amount, amount_collected, date_billed
+  ) values (v_tenant, v_project, 'INV-P2B-PART', 1000, 0, '2026-11-07')
+  returning id into v_id;
+  perform public.reverse_customer_invoice(v_id, 'Partial positive credit', '2026-11-18', 250);
+  select coalesce(parent.amount, 0) + coalesce((
+    select sum(child.amount) from public.customer_invoices child where child.reversal_of_id = parent.id
+  ), 0) into v_sum
+  from public.customer_invoices parent
+  where parent.id = v_id;
+  insert into phase2b_results values (
+    'positive_partial_credit_leaves_remainder',
+    case when v_sum = 750 then 'PASS' else 'FAIL' end,
+    'remaining=' || coalesce(v_sum::text, 'null')
+  );
+  perform public.reverse_customer_invoice(v_id, 'Credit the rest', '2026-11-18', 750);
+  select coalesce(sum(amount), 0) into v_sum
+  from public.customer_invoices
+  where id = v_id or reversal_of_id = v_id;
+  insert into phase2b_results values (
+    'positive_credit_reaches_exactly_zero',
+    case when v_sum = 0 and exists (
+      select 1 from public.customer_invoices where id = v_id and reversed_at is not null
+    ) then 'PASS' else 'FAIL' end,
+    'sum=' || v_sum::text
+  );
+
+  insert into public.customer_invoices (
+    tenant_id, project_id, invoice_number, amount, amount_collected, date_billed
+  ) values (v_tenant, v_project, 'INV-P2B-OVER', 1000, 0, '2026-11-08')
+  returning id into v_id;
+  begin
+    perform public.reverse_customer_invoice(v_id, 'Credit too much', '2026-11-18', 1000.01);
+    insert into phase2b_results values ('positive_oversize_credit_rejected', 'FAIL', 'oversize credit succeeded');
+  exception when others then
+    insert into phase2b_results values (
+      'positive_oversize_credit_rejected',
+      case when sqlerrm ilike '%past zero%' then 'PASS' else 'FAIL' end,
       sqlerrm
     );
   end;
@@ -412,6 +535,15 @@ begin
   ) values
     (v_emp, v_project, v_tenant, '2026-06-01', 99, 100, 101, 10),
     (v_emp, v_project, v_tenant, '2026-07-01', 120, 130, 140, 11);
+
+  begin
+    insert into public.employee_project_rates (
+      employee_id, project_id, tenant_id, effective_date, standard_rate, ot_rate, dt_rate
+    ) values (v_emp, v_project, v_tenant, '2026-06-01', 1, 1, 1);
+    insert into phase2b_results values ('duplicate_project_rate_rejected', 'FAIL', 'second rate inserted');
+  exception when unique_violation then
+    insert into phase2b_results values ('duplicate_project_rate_rejected', 'PASS', 'unique');
+  end;
 
   perform set_config(
     'request.jwt.claims',
@@ -622,6 +754,23 @@ begin
 exception when others then
   execute 'reset role';
   insert into phase2b_results values ('main_compat_block', 'FAIL', sqlerrm);
+end $$;
+
+do $$
+begin
+  update public.employees
+  set job_role = 'Foreman'
+  where id = '44444444-4444-4444-8444-4444444444a1';
+  insert into phase2b_results values (
+    'employee_job_role_column',
+    case when (
+      select job_role from public.employees
+      where id = '44444444-4444-4444-8444-4444444444a1'
+    ) = 'Foreman' then 'PASS' else 'FAIL' end,
+    'job_role'
+  );
+exception when others then
+  insert into phase2b_results values ('employee_job_role_column', 'FAIL', sqlerrm);
 end $$;
 
 select status, check_name, detail

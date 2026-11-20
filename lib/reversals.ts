@@ -4,24 +4,48 @@ export function directRemaining(amount: number, childAmounts: number[]): number 
 }
 
 /**
- * The amount stored on a reversal. Null means a full offset of what is left.
- * The result stays on the opposite side of the remaining balance and cannot cross zero.
+ * The amount stored on a reversal. The person types a positive amount, up to
+ * the remaining balance. Null means the full remaining amount. A value that
+ * already has the opposite sign of the balance is kept as the stored offset.
+ * The stored amount cannot cross zero. Landing on exactly zero is allowed.
  */
 export function reversalProposal(remaining: number, proposed?: number | null): number {
-  const value = proposed == null || Number.isNaN(Number(proposed)) ? money(-remaining) : money(Number(proposed))
-  if (money(remaining) === 0) {
-    if (proposed == null) throw new Error('Nothing left to reverse')
-    if (value === 0) return 0
-    throw new Error('Nothing left to reverse')
-  }
-  if (remaining > 0) {
-    if (value >= 0 || money(remaining + value) < 0) {
+  const left = money(remaining)
+  if (left === 0) throw new Error('Nothing left to reverse')
+  if (proposed == null || Number.isNaN(Number(proposed))) return money(-left)
+  const typed = money(Number(proposed))
+  if (typed === 0) throw new Error('Enter an amount greater than zero')
+  const signed = left > 0 && typed > 0 ? money(-typed) : left < 0 && typed < 0 ? money(-typed) : typed
+  if (left > 0) {
+    if (signed >= 0 || money(left + signed) < 0) {
       throw new Error('That amount would push the remaining balance past zero')
     }
-  } else if (value <= 0 || money(remaining + value) > 0) {
+  } else if (signed <= 0 || money(left + signed) > 0) {
     throw new Error('That amount would push the remaining balance past zero')
   }
-  return value
+  return signed
+}
+
+export function reversalPreview(remaining: number, entered: string): { signed: number | null; netted: number; left: number; error: string | null } {
+  const trimmed = entered.trim()
+  const typed = Number(trimmed)
+  if (!trimmed || !Number.isFinite(typed)) {
+    return { signed: null, netted: 0, left: money(remaining), error: 'Enter an amount greater than zero' }
+  }
+  try {
+    const signed = reversalProposal(remaining, typed)
+    const statement = reversalStatement(remaining, signed)
+    return { signed, netted: statement.netted, left: statement.left, error: null }
+  } catch (error) {
+    const magnitude = Math.abs(money(typed))
+    const signed = remaining >= 0 ? -magnitude : magnitude
+    return {
+      signed: null,
+      netted: magnitude,
+      left: money(remaining + signed),
+      error: error instanceof Error ? error.message : 'Check the amount',
+    }
+  }
 }
 
 export function reversalStatement(remaining: number, proposed: number): { netted: number; left: number } {
@@ -77,6 +101,42 @@ export function chainNetsToZero(
 export function isBooksLocked(lockDate: string | null | undefined, entryDate: string | null | undefined): boolean {
   if (!lockDate || !entryDate) return false
   return entryDate.slice(0, 10) <= lockDate
+}
+
+export function errorText(error: unknown): string {
+  if (!error) return ''
+  if (typeof error === 'string') return error
+  if (error instanceof Error && error.message) return error.message
+  if (typeof error === 'object' && 'message' in error && typeof (error as { message?: unknown }).message === 'string') {
+    return (error as { message: string }).message
+  }
+  return ''
+}
+
+function lockDateLabel(lockDate: string): string {
+  const date = new Date(`${lockDate.slice(0, 10)}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return lockDate
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(date)
+}
+
+export function booksClosedMessage(lockDate: string | null | undefined, kind: 'cost' | 'invoice' = 'cost'): string {
+  const through = lockDate ? ` through ${lockDateLabel(lockDate)}` : ''
+  if (kind === 'invoice') return `Books are closed${through}. Post a credit memo instead of editing it.`
+  return `Books are closed${through}. Reverse this entry instead of editing it.`
+}
+
+/** Map a closed-period database error onto the message the form should show. */
+export function describeSaveError(error: unknown, lockDate: string | null | undefined, kind: 'cost' | 'invoice' = 'cost'): string {
+  const message = errorText(error)
+  if (/closed period/i.test(message)) {
+    if (/choose a later date/i.test(message)) {
+      const through = lockDate ? ` through ${lockDateLabel(lockDate)}` : ''
+      return `Books are closed${through}. Choose a later date.`
+    }
+    return booksClosedMessage(lockDate, kind)
+  }
+  if (message) return message
+  return kind === 'invoice' ? 'Could not save this invoice.' : 'Could not save this cost.'
 }
 
 function money(value: number): number {

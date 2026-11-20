@@ -227,6 +227,7 @@ export interface Database {
           project_id: string | null
           mob: number | null
           mob_rate: number | null
+          job_role: string | null
         }
         Insert: {
           id?: string
@@ -240,6 +241,7 @@ export interface Database {
           project_id?: string | null
           mob?: number | null
           mob_rate?: number | null
+          job_role?: string | null
         }
         Update: {
           id?: string
@@ -253,6 +255,7 @@ export interface Database {
           project_id?: string | null
           mob?: number | null
           mob_rate?: number | null
+          job_role?: string | null
         }
       }
       projects: {

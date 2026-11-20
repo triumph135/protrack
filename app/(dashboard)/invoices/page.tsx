@@ -21,7 +21,8 @@ import { ExportMenu, type ExportSpec } from '@/components/export/ExportMenu'
 import { Button } from '@/components/ui/button'
 import { ReverseSheet, type ReverseDraft } from '@/components/ReverseSheet'
 import { createClient } from '@/lib/supabase'
-import { canReverseRow, reversalMark } from '@/lib/reversals'
+import { booksClosedMessage, canReverseRow, describeSaveError, isBooksLocked, reversalMark } from '@/lib/reversals'
+import { readCompanySettings } from '@/lib/company-settings'
 import { isMissingRpc } from '@/lib/security'
 import { Input } from '@/components/ui/input'
 import { Badge, EmptyState, PageHeader, Skeleton } from '@/components/ui/feedback'
@@ -62,6 +63,7 @@ export default function InvoicesPage() {
   const { changeOrders } = useChangeOrders(activeProject?.id)
   const canRead = userCan(user, 'invoices', 'read')
   const canWrite = userCan(user, 'invoices', 'write')
+  const booksLockDate = readCompanySettings(tenant?.settings).books_lock_date
 
   const closeForm = () => {
     setShowForm(false)
@@ -81,7 +83,7 @@ export default function InvoicesPage() {
       return created as CustomerInvoice
     } catch (saveError) {
       console.error('Error saving invoice:', saveError)
-      toast.error('Error saving invoice. Please try again.')
+      toast.error(describeSaveError(saveError, booksLockDate, 'invoice'))
     }
   }
 
@@ -115,7 +117,7 @@ export default function InvoicesPage() {
       toast.success('Invoice deleted')
     } catch (deleteError) {
       console.error('Error deleting invoice:', deleteError)
-      toast.error('Error deleting invoice. Please try again.')
+      toast.error(describeSaveError(deleteError, booksLockDate, 'invoice'))
     }
   }
 
@@ -292,9 +294,9 @@ export default function InvoicesPage() {
                         {!correctionsPending && canReverseRow(Number(invoice.amount || 0), filteredInvoices.filter((item) => item.reversal_of_id === invoice.id).map((item) => Number(item.amount || 0)), invoice.reversed_at) ? (
                           <Button variant="ghost" size="icon" type="button" aria-label={`Credit memo for ${invoice.invoice_number}`} onClick={() => setCreditInvoice(invoice)}><Undo2 className="h-4 w-4" /></Button>
                         ) : null}
-                        <Button variant="ghost" size="icon" type="button" aria-label={`Edit ${invoice.invoice_number}`} onClick={() => { setEditingInvoice(invoice); setIsDuplicateMode(false); setShowForm(true) }} disabled={!!invoice.reversal_of_id || !!invoice.reversed_at}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" type="button" aria-label={isBooksLocked(booksLockDate, invoice.date_billed) ? booksClosedMessage(booksLockDate, 'invoice') : `Edit ${invoice.invoice_number}`} title={isBooksLocked(booksLockDate, invoice.date_billed) ? booksClosedMessage(booksLockDate, 'invoice') : `Edit ${invoice.invoice_number}`} onClick={() => { setEditingInvoice(invoice); setIsDuplicateMode(false); setShowForm(true) }} disabled={!!invoice.reversal_of_id || !!invoice.reversed_at || isBooksLocked(booksLockDate, invoice.date_billed)}><Pencil className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" type="button" aria-label={`Duplicate ${invoice.invoice_number}`} onClick={() => { setEditingInvoice(invoice); setIsDuplicateMode(true); setShowForm(true) }}><Copy className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" type="button" aria-label={`Delete ${invoice.invoice_number}`} onClick={() => handleDelete(invoice.id)} disabled={!!invoice.reversal_of_id || !!invoice.reversed_at}><Trash2 className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" type="button" aria-label={isBooksLocked(booksLockDate, invoice.date_billed) ? booksClosedMessage(booksLockDate, 'invoice') : `Delete ${invoice.invoice_number}`} title={isBooksLocked(booksLockDate, invoice.date_billed) ? booksClosedMessage(booksLockDate, 'invoice') : `Delete ${invoice.invoice_number}`} onClick={() => handleDelete(invoice.id)} disabled={!!invoice.reversal_of_id || !!invoice.reversed_at || isBooksLocked(booksLockDate, invoice.date_billed)}><Trash2 className="h-4 w-4" /></Button>
                       </td>
                     ) : null}
                   </tr>

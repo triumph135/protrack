@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
 import type { Employee } from '@/types/app.types'
 import { employeeProjectIdForSave } from '@/lib/employee-scope'
+import { isMissingColumnError } from '@/lib/security'
 
 export function useEmployees(projectId?: string) {
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -61,11 +62,19 @@ export function useEmployees(projectId?: string) {
         tenant_id: tenant.id
       }
 
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('employees')
         .insert([newEmployee])
         .select()
         .single()
+
+      if (error && isMissingColumnError(error)) {
+        const withoutRole = { ...newEmployee }
+        delete withoutRole.job_role
+        const retry = await supabase.from('employees').insert([withoutRole]).select().single()
+        data = retry.data
+        error = retry.error
+      }
 
       if (error) throw error
 
@@ -92,13 +101,21 @@ export function useEmployees(projectId?: string) {
         payload.project_id = employeeProjectIdForSave(updates.project_id)
       }
 
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('employees')
         .update(payload)
         .eq('id', employeeId)
         .eq('tenant_id', tenant.id)
         .select()
         .single()
+
+      if (error && isMissingColumnError(error)) {
+        const withoutRole = { ...payload }
+        delete withoutRole.job_role
+        const retry = await supabase.from('employees').update(withoutRole).eq('id', employeeId).eq('tenant_id', tenant.id).select().single()
+        data = retry.data
+        error = retry.error
+      }
 
       if (error) throw error
 

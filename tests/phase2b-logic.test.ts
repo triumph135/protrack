@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { grossProfit, grossProfitPercent } from '../lib/overview.ts'
-import { canReverseRow, chainNetsToZero, directRemaining, reversalProposal, reversalStatement } from '../lib/reversals.ts'
+import { booksClosedMessage, canReverseRow, chainNetsToZero, describeSaveError, directRemaining, reversalPreview, reversalProposal, reversalStatement } from '../lib/reversals.ts'
 import { resolveEmployeeRates } from '../lib/employee-rates.ts'
 import { uploadQueue } from '../lib/uploads.ts'
 import { readCompanySettings } from '../lib/company-settings.ts'
@@ -17,6 +17,50 @@ describe('phase 2b remaining amounts', () => {
     assert.equal(reversalProposal(100, -40), -40)
     assert.equal(directRemaining(100, [-40, -60]), 0)
     assert.throws(() => reversalProposal(60, -70), /past zero/)
+  })
+
+  it('stores a positive amount as the opposite sign, including a full reversal that lands on zero', () => {
+    assert.equal(reversalProposal(1000, 1000), -1000)
+    assert.equal(reversalProposal(1000, 400), -400)
+    assert.equal(reversalProposal(1000, null), -1000)
+    assert.deepEqual(reversalStatement(1000, reversalProposal(1000, 1000)), { netted: 1000, left: 0 })
+    assert.deepEqual(reversalStatement(1000, reversalProposal(1000, 400)), { netted: 400, left: 600 })
+    assert.equal(reversalProposal(600, 600), -600)
+    assert.equal(directRemaining(1000, [-400, -600]), 0)
+    assert.throws(() => reversalProposal(1000, 1000.01), /past zero/)
+    assert.throws(() => reversalProposal(1000, 0), /greater than zero/)
+    assert.equal(reversalProposal(-400, 400), 400)
+  })
+
+  it('recomputes the summary from the positive amount the person typed', () => {
+    assert.deepEqual(
+      { netted: reversalPreview(1000, '250').netted, left: reversalPreview(1000, '250').left, error: reversalPreview(1000, '250').error },
+      { netted: 250, left: 750, error: null },
+    )
+    assert.equal(reversalPreview(1000, '1000').left, 0)
+    assert.equal(reversalPreview(1000, '1000').signed, -1000)
+    assert.match(reversalPreview(1000, '0').error || '', /greater than zero/)
+    assert.match(reversalPreview(1000, '1001').error || '', /past zero/)
+  })
+
+  it('turns a closed-period database error into a books-lock message', () => {
+    const lock = '2026-03-01'
+    const closed = { code: 'P0001', message: 'This date is in a closed period. Reverse the entry instead of editing it.' }
+    assert.equal(
+      describeSaveError(closed, lock, 'cost'),
+      booksClosedMessage(lock, 'cost'),
+    )
+    assert.match(describeSaveError(closed, lock, 'cost'), /Books are closed through .+ Reverse this entry instead of editing it\./)
+    assert.match(
+      describeSaveError({ message: 'This billed date is in a closed period. Post a credit memo instead of editing it.' }, lock, 'invoice'),
+      /Post a credit memo instead of editing it\./,
+    )
+    assert.match(
+      describeSaveError({ message: 'That date is in a closed period. Choose a later date.' }, lock, 'cost'),
+      /Choose a later date\./,
+    )
+    assert.equal(describeSaveError({ message: 'Vendor is required' }, lock, 'cost'), 'Vendor is required')
+    assert.equal(describeSaveError({}, null, 'cost'), 'Could not save this cost.')
   })
 
   it('states the amount netted and what remains', () => {

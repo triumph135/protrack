@@ -66,6 +66,7 @@ export interface Employee {
   project_id?: string | null
   mob?: number
   mob_rate?: number
+  job_role?: string | null
   created_at?: string
   updated_at?: string
 }

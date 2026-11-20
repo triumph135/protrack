@@ -16,13 +16,18 @@ test('sign-in screen is ready', async ({ page }) => {
 test('a reversal shows the net copy and the reversed rows', async ({ page }) => {
   await page.goto('/preview?screen=Reverse&bare=1')
   await expect(page.getByText('Net $0.00 after the reversal')).toBeVisible()
-  await expect(page.getByText('This will net')).toBeVisible()
+  await expect(page.getByLabel('Amount')).toHaveValue('250')
+  await expect(page.getByText('This will net $250.00 against the original. Remaining will be $0.00.')).toBeVisible()
+  await expect(page.getByText('past zero')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Post reversal' })).toBeVisible()
 })
 
 test('a credit memo confirms the remaining billed amount', async ({ page }) => {
   await page.goto('/preview?screen=Credit&bare=1')
   await expect(page.getByRole('heading', { name: 'Post a credit memo' })).toBeVisible()
+  await expect(page.getByLabel('Amount')).toHaveValue('1800')
+  await expect(page.getByText('This will net $1,800.00 against the original. Remaining will be $0.00.')).toBeVisible()
+  await expect(page.getByText('past zero')).toHaveCount(0)
   await expect(page.getByLabel('Date billed')).toBeVisible()
 })
 

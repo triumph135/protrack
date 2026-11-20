@@ -47,8 +47,10 @@ The app filters queries by `tenant_id`, but that is not enough on its own. Apply
 7. `supabase/migrations/20261118000400_invoice_collected.sql` — adds `customer_invoices.amount_collected` (default 0)
 8. `supabase/migrations/20261119000000_reversals_and_events.sql` — reversal columns, credit memos, `record_events`, and a stricter `attachment_project_visible`
 9. `supabase/migrations/20261119000100_employee_project_rates.sql` — per-project employee rates and `employee_rates_as_of`
+10. `supabase/migrations/20261120000000_reversal_positive_amounts.sql` — reversal and credit amounts accept a positive magnitude and store the opposite sign
+11. `supabase/migrations/20261120000100_employee_job_role.sql` — optional `employees.job_role`, and a duplicate check before `employee_project_rates_unique`
 
-Apply the Phase 2 files before the Phase 2 app, and the two Phase 2b files before the Phase 2b app. Each file keeps the previous app working. The baseline file only locks an internal table. Rollbacks live in `supabase/rollback/` and run in reverse order. Applying SQL to production is a separate, reviewed step. Nothing in this repo runs those files against a remote database.
+Apply the Phase 2 files before the Phase 2 app, then the Phase 2b files in the order above. Each file keeps the previous app working. The baseline file only locks an internal table. Rollbacks live in `supabase/rollback/` and run in reverse order. Applying SQL to production is a separate, reviewed step. Nothing in this repo runs those files against a remote database.
 
 Local Postgres, with no connection to production:
 

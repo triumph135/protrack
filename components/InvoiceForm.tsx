@@ -13,6 +13,8 @@ import { uploadQueue } from '@/lib/uploads'
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
+import { readCompanySettings } from '@/lib/company-settings'
+import { booksClosedMessage, isBooksLocked } from '@/lib/reversals'
 import { createClient } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Field, Input } from '@/components/ui/input'
@@ -224,9 +226,12 @@ export default function InvoiceForm({
         ) : (
           <QueuedFilesField files={queuedFiles} onChange={setQueuedFiles} />
         )}
+        {editItem && !duplicateMode && isBooksLocked(readCompanySettings(tenant?.settings).books_lock_date, formData.date_billed) ? (
+          <p className="text-sm text-destructive">{booksClosedMessage(readCompanySettings(tenant?.settings).books_lock_date, 'invoice')}</p>
+        ) : null}
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>Cancel</Button>
-          <Button type="submit" disabled={loading}>{loading ? 'Saving…' : editItem && !duplicateMode ? 'Save invoice' : 'Create invoice'}</Button>
+          <Button type="submit" disabled={loading || (!!editItem && !duplicateMode && isBooksLocked(readCompanySettings(tenant?.settings).books_lock_date, formData.date_billed))}>{loading ? 'Saving…' : editItem && !duplicateMode ? 'Save invoice' : 'Create invoice'}</Button>
         </div>
       </form>
     </Sheet>

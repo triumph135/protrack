@@ -218,28 +218,6 @@ export default function DashboardPage() {
         { label: 'Collected', value: formatCurrency(collected), detail: `${formatCurrency(invoiced - collected)} outstanding` },
       ],
       alerts: alerts.map((alert) => `${alert.name} is ${alert.state === 'over' ? 'over budget' : 'nearing its budget'} (${formatCurrency(alert.actual)} of ${formatCurrency(alert.budget)}).`),
-      bars: {
-        title: 'Budget versus actual',
-        items: topLevel.flatMap((category) => {
-          const children = category.children.filter((child) => visible.some((item) => item.id === child.id))
-          return [
-            {
-              label: category.name,
-              actual: rollup[category.id]?.total || 0,
-              budget: budgetRollup[category.id]?.total || 0,
-              caption: `${formatCurrency(rollup[category.id]?.total || 0)} / ${formatCurrency(budgetRollup[category.id]?.total || 0)}`,
-              depth: 0,
-            },
-            ...children.map((child) => ({
-              label: child.name,
-              actual: rollup[child.id]?.own || 0,
-              budget: budgets[child.id] || 0,
-              caption: `${formatCurrency(rollup[child.id]?.own || 0)} / ${formatCurrency(budgets[child.id] || 0)}`,
-              depth: 1,
-            })),
-          ]
-        }),
-      },
       series: {
         title: 'Cost trend',
         points: burn.map((point) => ({ label: point.month.slice(5), value: point.cumulative })),

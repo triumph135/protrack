@@ -73,9 +73,10 @@ export default function EmployeesPage() {
     company: tenant?.name || 'Company',
     project: activeProject ? `${activeProject.jobNumber} — ${activeProject.jobName}` : undefined,
     filters: [searchTerm.trim() ? `Search: ${searchTerm.trim()}` : 'Search: none', `Scope: ${scopeFilter}`],
-    columns: ['Name', 'ST', 'OT', 'DT', 'Mob', 'Scope'],
+    columns: ['Name', 'Job role', 'ST', 'OT', 'DT', 'Mob', 'Scope'],
     csvRows: filteredEmployees.map((employee) => [
       employee.name,
+      employee.job_role || '',
       Number(employee.standard_rate || 0),
       Number(employee.ot_rate || 0),
       Number(employee.dt_rate || 0),
@@ -84,6 +85,7 @@ export default function EmployeesPage() {
     ]),
     pdfRows: filteredEmployees.map((employee) => [
       employee.name,
+      employee.job_role || '',
       formatCurrency(employee.standard_rate),
       formatCurrency(employee.ot_rate),
       formatCurrency(employee.dt_rate),
@@ -149,6 +151,7 @@ export default function EmployeesPage() {
             <thead className="border-b border-border text-left text-muted-foreground">
               <tr>
                 <th className="px-3 py-2 font-medium">Name</th>
+                <th className="px-3 py-2 font-medium">Job role</th>
                 <th className="px-3 py-2 text-right font-medium">ST</th>
                 <th className="px-3 py-2 text-right font-medium">OT</th>
                 <th className="px-3 py-2 text-right font-medium">DT</th>
@@ -161,6 +164,7 @@ export default function EmployeesPage() {
               {filteredEmployees.map((employee) => (
                 <tr key={employee.id} className="border-b border-border last:border-0">
                   <td className="px-3 py-2 font-medium" data-label="Name">{employee.name}</td>
+                  <td className="px-3 py-2" data-label="Job role">{employee.job_role || '—'}</td>
                   <td className="px-3 py-2 text-right tabular" data-label="ST">{formatCurrency(employee.standard_rate)}</td>
                   <td className="px-3 py-2 text-right tabular" data-label="OT">{formatCurrency(employee.ot_rate)}</td>
                   <td className="px-3 py-2 text-right tabular" data-label="DT">{formatCurrency(employee.dt_rate)}</td>

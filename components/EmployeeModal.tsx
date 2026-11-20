@@ -35,6 +35,7 @@ export default function EmployeeModal({
     dt_rate: '',
     mob: '',
     mob_rate: '',
+    job_role: '',
     project_id: '',
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -49,6 +50,7 @@ export default function EmployeeModal({
         dt_rate: employee.dt_rate?.toString() || '',
         mob: employee.mob?.toString() || '',
         mob_rate: employee.mob_rate?.toString() || '',
+        job_role: employee.job_role || '',
         project_id: employee.project_id || '',
       })
     } else {
@@ -59,6 +61,7 @@ export default function EmployeeModal({
         dt_rate: '',
         mob: '',
         mob_rate: '',
+        job_role: '',
         project_id: defaultProjectId || '',
       })
     }
@@ -95,6 +98,7 @@ export default function EmployeeModal({
       dt_rate: Number(formData.dt_rate),
       mob: formData.mob ? Number(formData.mob) : undefined,
       mob_rate: formData.mob_rate ? Number(formData.mob_rate) : undefined,
+      job_role: formData.job_role.trim() || null,
       project_id: employeeProjectIdForSave(formData.project_id),
     })
   }
@@ -113,6 +117,9 @@ export default function EmployeeModal({
       <form onSubmit={handleSubmit} className="space-y-3">
         <Field label="Name" htmlFor="employee-name" error={errors.name}>
           <Input id="employee-name" value={formData.name} onChange={(event) => setField('name', event.target.value)} />
+        </Field>
+        <Field label="Job role" htmlFor="job-role" hint="Optional">
+          <Input id="job-role" value={formData.job_role} onChange={(event) => setField('job_role', event.target.value)} />
         </Field>
         <div className="grid gap-3 sm:grid-cols-3">
           <Field label="ST rate" htmlFor="st-rate" error={errors.standard_rate}>

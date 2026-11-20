@@ -31,7 +31,7 @@ import { readCompanySettings } from '@/lib/company-settings'
 import { formatCurrency, formatDate, formatHours } from '@/lib/format'
 import { getTodayLocalDateString } from '@/lib/dateUtils'
 import { isMissingRelation, isMissingRpc } from '@/lib/security'
-import { canReverseRow, chainNetsToZero, directRemaining, reversalMark } from '@/lib/reversals'
+import { booksClosedMessage, canReverseRow, chainNetsToZero, describeSaveError, directRemaining, isBooksLocked, reversalMark } from '@/lib/reversals'
 import { resolveEmployeeRates, type EmployeeRateOverride } from '@/lib/employee-rates'
 import { uploadQueue } from '@/lib/uploads'
 import { fileUploadService } from '@/lib/fileUploadService'
@@ -338,7 +338,7 @@ export default function CostsPage() {
       setOpen(false)
       toast.success('Cost added')
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not save this cost')
+      toast.error(describeSaveError(error, settings.books_lock_date, 'cost'))
     } finally {
       setSaving(false)
     }
@@ -372,7 +372,7 @@ export default function CostsPage() {
     })
     if (error) {
       if (isMissingRpc(error)) throw new Error('Database update pending. Category moves turn on after the Phase 2b database update.')
-      throw new Error(error.message)
+      throw new Error(describeSaveError(error, settings.books_lock_date, 'cost'))
     }
     refreshCosts()
     toast.success('Cost moved')
@@ -413,7 +413,7 @@ export default function CostsPage() {
       await deleteCost(legacy, row.id)
       toast.success('Cost deleted')
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not delete this cost')
+      toast.error(describeSaveError(error, settings.books_lock_date, 'cost'))
     }
   }
 
@@ -714,6 +714,7 @@ export default function CostsPage() {
               schemaPending={schemaPending}
               correctionsPending={correctionsPending}
               laborSplit={settings.labor_split_enabled}
+              booksLockDate={settings.books_lock_date}
               entries={entries}
               canWriteCategory={(category) => canAccessCategory(user, grantFor(category), 'write')}
               onToggle={(id) => persistCollapsed(collapsedIds.includes(id) ? collapsedIds.filter((item) => item !== id) : [...collapsedIds, id])}
@@ -785,6 +786,9 @@ export default function CostsPage() {
             {changeOrders.length > 0 ? (
               <p className="text-xs text-muted-foreground">This entry is filed to {changeOrderId && changeOrderId !== 'base' ? changeOrders.find((order) => order.id === changeOrderId)?.name : 'the base contract'}.</p>
             ) : null}
+            {editing && isBooksLocked(settings.books_lock_date, draft.date) ? (
+              <p className="text-sm text-destructive">{booksClosedMessage(settings.books_lock_date, 'cost')}</p>
+            ) : null}
             {editing && tenant && user ? (
               <>
                 <FileAttachments entityType="cost" entityId={editing.id} tenantId={tenant.id} userId={user.id} canEdit={formCanWrite} />
@@ -793,7 +797,7 @@ export default function CostsPage() {
             ) : (
               <QueuedFilesField files={queuedFiles} onChange={setQueuedFiles} />
             )}
-            <Button type="button" onClick={save} disabled={saving || !formCanWrite}>{saving ? 'Saving…' : 'Save'}</Button>
+            <Button type="button" onClick={save} disabled={saving || !formCanWrite || (!!editing && isBooksLocked(settings.books_lock_date, draft.date))}>{saving ? 'Saving…' : 'Save'}</Button>
           </div>
         ) : null}
       </Sheet>
@@ -825,7 +829,7 @@ function costRemaining(row: ProjectCost, rows: ProjectCost[]) {
 function hourRemaining(row: ProjectCost, rows: ProjectCost[]) {
   const children = rows.filter((item) => item.reversal_of_id === row.id)
   const part = (key: 'st_hours' | 'ot_hours' | 'dt_hours' | 'per_diem' | 'mob' | 'mob_qty') =>
-    -directRemaining(Number(row[key] || 0), children.map((item) => Number(item[key] || 0)))
+    directRemaining(Number(row[key] || 0), children.map((item) => Number(item[key] || 0)))
   return {
     st_hours: part('st_hours'),
     ot_hours: part('ot_hours'),
@@ -875,6 +879,7 @@ function CostBranch({
   schemaPending,
   correctionsPending,
   laborSplit,
+  booksLockDate,
   entries,
   canWriteCategory,
   onToggle,
@@ -895,6 +900,7 @@ function CostBranch({
   schemaPending: boolean
   correctionsPending: boolean
   laborSplit: boolean
+  booksLockDate: string | null
   entries: ProjectCost[]
   canWriteCategory: (category: CostCategoryRecord) => boolean
   onToggle: (id: string) => void
@@ -1004,10 +1010,10 @@ function CostBranch({
                               <Button variant="ghost" size="icon" type="button" aria-label="Reverse" onClick={() => onReverse(row)}><Undo2 className="h-4 w-4" /></Button>
                             ) : null}
                             {!correctionsPending && canWrite && !row.reversal_of_id ? (
-                              <Button variant="ghost" size="icon" type="button" aria-label="Move" onClick={() => onMove(row)}><FolderInput className="h-4 w-4" /></Button>
+                              <Button variant="ghost" size="icon" type="button" aria-label={isBooksLocked(booksLockDate, row.date) ? booksClosedMessage(booksLockDate, 'cost') : 'Move'} title={isBooksLocked(booksLockDate, row.date) ? booksClosedMessage(booksLockDate, 'cost') : 'Move'} onClick={() => onMove(row)} disabled={isBooksLocked(booksLockDate, row.date)}><FolderInput className="h-4 w-4" /></Button>
                             ) : null}
-                            <Button variant="ghost" size="icon" type="button" aria-label="Edit" onClick={() => onEdit(row, category.id)} disabled={!canWrite || !!row.reversal_of_id || !!row.reversed_at}><Pencil className="h-4 w-4" /></Button>
-                            <Button variant="ghost" size="icon" type="button" aria-label="Delete" onClick={() => onDelete(row, category)} disabled={!canWrite || !!row.reversal_of_id || !!row.reversed_at}><Trash2 className="h-4 w-4" /></Button>
+                            <Button variant="ghost" size="icon" type="button" aria-label={isBooksLocked(booksLockDate, row.date) ? booksClosedMessage(booksLockDate, 'cost') : 'Edit'} title={isBooksLocked(booksLockDate, row.date) ? booksClosedMessage(booksLockDate, 'cost') : 'Edit'} onClick={() => onEdit(row, category.id)} disabled={!canWrite || !!row.reversal_of_id || !!row.reversed_at || isBooksLocked(booksLockDate, row.date)}><Pencil className="h-4 w-4" /></Button>
+                            <Button variant="ghost" size="icon" type="button" aria-label={isBooksLocked(booksLockDate, row.date) ? booksClosedMessage(booksLockDate, 'cost') : 'Delete'} title={isBooksLocked(booksLockDate, row.date) ? booksClosedMessage(booksLockDate, 'cost') : 'Delete'} onClick={() => onDelete(row, category)} disabled={!canWrite || !!row.reversal_of_id || !!row.reversed_at || isBooksLocked(booksLockDate, row.date)}><Trash2 className="h-4 w-4" /></Button>
                           </>
                         ) : null}
                       </td>
@@ -1030,6 +1036,7 @@ function CostBranch({
               schemaPending={schemaPending}
               correctionsPending={correctionsPending}
               laborSplit={laborSplit}
+              booksLockDate={booksLockDate}
               entries={entries}
               canWriteCategory={canWriteCategory}
               onToggle={onToggle}

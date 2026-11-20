@@ -40,6 +40,7 @@ export function ProjectRatesEditor({
   const [rows, setRows] = useState<RateRow[]>(previewRows || [])
   const [pending, setPending] = useState(false)
   const [draft, setDraft] = useState(EMPTY)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const load = async () => {
@@ -48,7 +49,7 @@ export function ProjectRatesEditor({
       .from('employee_project_rates')
       .select('id, project_id, effective_date, standard_rate, ot_rate, dt_rate, mob_rate')
       .eq('employee_id', employeeId)
-      .order('effective_date', { ascending: false })
+      .order('effective_date', { ascending: true })
     if (loadError) {
       if (isMissingRelation(loadError)) setPending(true)
       else setError(loadError.message)
@@ -63,6 +64,18 @@ export function ProjectRatesEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employeeId])
 
+  const fillExisting = (row: RateRow) => {
+    setEditingId(row.id)
+    setDraft({
+      project_id: row.project_id,
+      effective_date: row.effective_date,
+      standard_rate: String(row.standard_rate),
+      ot_rate: String(row.ot_rate),
+      dt_rate: String(row.dt_rate),
+      mob_rate: row.mob_rate == null ? '' : String(row.mob_rate),
+    })
+  }
+
   const add = async () => {
     const standard = Number(draft.standard_rate)
     const ot = Number(draft.ot_rate)
@@ -72,21 +85,53 @@ export function ProjectRatesEditor({
       return
     }
     const supabase = createClient()
-    const { error: insertError } = await supabase.from('employee_project_rates').insert({
-      employee_id: employeeId,
+    const payload = {
       project_id: draft.project_id,
-      tenant_id: tenantId,
       effective_date: draft.effective_date,
       standard_rate: standard,
       ot_rate: ot,
       dt_rate: dt,
       mob_rate: draft.mob_rate === '' ? null : Number(draft.mob_rate),
-    })
-    if (insertError) {
-      setError(insertError.message)
-      return
+    }
+    const duplicateMessage = 'This employee already has a rate for that project on this date. The form is filled with that rate so you can edit it.'
+    const offerExisting = async () => {
+      const { data: existing } = await supabase
+        .from('employee_project_rates')
+        .select('id, project_id, effective_date, standard_rate, ot_rate, dt_rate, mob_rate')
+        .eq('employee_id', employeeId)
+        .eq('project_id', draft.project_id)
+        .eq('effective_date', draft.effective_date)
+        .maybeSingle()
+      if (existing) fillExisting(existing as RateRow)
+      setError(duplicateMessage)
+    }
+    if (editingId) {
+      const { error: updateError } = await supabase.from('employee_project_rates').update(payload).eq('id', editingId)
+      if (updateError) {
+        if (updateError.code === '23505') {
+          await offerExisting()
+          return
+        }
+        setError(updateError.message)
+        return
+      }
+    } else {
+      const { error: insertError } = await supabase.from('employee_project_rates').insert({
+        ...payload,
+        employee_id: employeeId,
+        tenant_id: tenantId,
+      })
+      if (insertError) {
+        if (insertError.code === '23505') {
+          await offerExisting()
+          return
+        }
+        setError(insertError.message)
+        return
+      }
     }
     setDraft(EMPTY)
+    setEditingId(null)
     setError(null)
     await load()
   }
@@ -110,7 +155,7 @@ export function ProjectRatesEditor({
       </div>
       {rows.length === 0 ? <p className="text-sm text-muted-foreground">No project rates yet. The employee card rates are used.</p> : (
         <ul className="space-y-2">
-          {rows.map((row) => {
+          {[...rows].sort((a, b) => a.effective_date.localeCompare(b.effective_date) || a.id.localeCompare(b.id)).map((row) => {
             const project = projects.find((item) => item.id === row.project_id)
             return (
               <li key={row.id} className="flex items-start justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2 text-sm">
@@ -120,7 +165,10 @@ export function ProjectRatesEditor({
                     Effective {row.effective_date} · ST {formatCurrency(Number(row.standard_rate))} · OT {formatCurrency(Number(row.ot_rate))} · DT {formatCurrency(Number(row.dt_rate))}
                   </p>
                 </div>
-                <Button type="button" variant="ghost" size="sm" onClick={() => void remove(row.id)}>Remove</Button>
+                <div className="flex shrink-0 gap-1">
+                  <Button type="button" variant="ghost" size="sm" onClick={() => { fillExisting(row); setError(null) }}>Edit</Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => void remove(row.id)}>Remove</Button>
+                </div>
               </li>
             )
           })}
@@ -144,7 +192,10 @@ export function ProjectRatesEditor({
         <Field label="Mob rate"><Input type="number" min="0" step="0.01" value={draft.mob_rate} onChange={(event) => setDraft({ ...draft, mob_rate: event.target.value })} /></Field>
       </div>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      <Button type="button" variant="outline" onClick={() => void add()}>Add project rate</Button>
+      <div className="flex gap-2">
+        <Button type="button" variant="outline" onClick={() => void add()}>{editingId ? 'Save this rate' : 'Add project rate'}</Button>
+        {editingId ? <Button type="button" variant="ghost" onClick={() => { setEditingId(null); setDraft(EMPTY); setError(null) }}>Cancel</Button> : null}
+      </div>
     </div>
   )
 }
