@@ -3,6 +3,8 @@
 import { useState } from 'react'
 import { Plus, Edit, Trash2, Save, DollarSign, FileText, AlertCircle } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
+import { useTenant } from '@/contexts/TenantContext'
+import FileAttachments from '@/components/FileAttachments'
 import { useChangeOrders } from '@/hooks/useChangeOrders'
 import { confirmAction } from '@/components/ui/confirm-dialog'
 import type { ChangeOrder } from '@/types/app.types'
@@ -14,6 +16,7 @@ interface ChangeOrderManagementProps {
 
 export default function ChangeOrderManagement({ projectId, canWrite = false }: ChangeOrderManagementProps) {
   const { user } = useAuth()
+  const { tenant } = useTenant()
   const { changeOrders, loading, createChangeOrder, updateChangeOrder, deleteChangeOrder, getTotalAdditionalValue } = useChangeOrders(projectId)
   
   const [showForm, setShowForm] = useState(false)
@@ -232,6 +235,9 @@ export default function ChangeOrderManagement({ projectId, canWrite = false }: C
               />
             </div>
 
+            {editingChangeOrder && tenant && user ? (
+              <FileAttachments entityType="change_order" entityId={editingChangeOrder.id} tenantId={tenant.id} userId={user.id} canEdit={canWrite} />
+            ) : null}
             {/* Form Actions */}
             <div className="flex justify-end space-x-3 pt-4 border-t">
               <button

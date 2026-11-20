@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import type { Employee } from '@/types/app.types'
 import { useProjects } from '@/contexts/ProjectContext'
+import { useTenant } from '@/contexts/TenantContext'
+import { ProjectRatesEditor } from '@/components/ProjectRatesEditor'
 import { employeeProjectIdForSave, employeeScopeLabel } from '@/lib/employee-scope'
 import { Button } from '@/components/ui/button'
 import { Field, Input } from '@/components/ui/input'
@@ -33,6 +35,7 @@ export default function EmployeeModal({
     dt_rate: '',
     mob: '',
     mob_rate: '',
+    job_role: '',
     project_id: '',
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -47,6 +50,7 @@ export default function EmployeeModal({
         dt_rate: employee.dt_rate?.toString() || '',
         mob: employee.mob?.toString() || '',
         mob_rate: employee.mob_rate?.toString() || '',
+        job_role: employee.job_role || '',
         project_id: employee.project_id || '',
       })
     } else {
@@ -57,6 +61,7 @@ export default function EmployeeModal({
         dt_rate: '',
         mob: '',
         mob_rate: '',
+        job_role: '',
         project_id: defaultProjectId || '',
       })
     }
@@ -93,10 +98,12 @@ export default function EmployeeModal({
       dt_rate: Number(formData.dt_rate),
       mob: formData.mob ? Number(formData.mob) : undefined,
       mob_rate: formData.mob_rate ? Number(formData.mob_rate) : undefined,
+      job_role: formData.job_role.trim() || null,
       project_id: employeeProjectIdForSave(formData.project_id),
     })
   }
 
+  const { tenant } = useTenant()
   const options = [...projects].sort((a, b) => a.jobNumber.localeCompare(b.jobNumber) || a.jobName.localeCompare(b.jobName))
   const selectedIsListed = !formData.project_id || options.some((project) => project.id === formData.project_id)
 
@@ -110,6 +117,9 @@ export default function EmployeeModal({
       <form onSubmit={handleSubmit} className="space-y-3">
         <Field label="Name" htmlFor="employee-name" error={errors.name}>
           <Input id="employee-name" value={formData.name} onChange={(event) => setField('name', event.target.value)} />
+        </Field>
+        <Field label="Job role" htmlFor="job-role" hint="Optional">
+          <Input id="job-role" value={formData.job_role} onChange={(event) => setField('job_role', event.target.value)} />
         </Field>
         <div className="grid gap-3 sm:grid-cols-3">
           <Field label="ST rate" htmlFor="st-rate" error={errors.standard_rate}>
@@ -143,6 +153,9 @@ export default function EmployeeModal({
             ))}
           </select>
         </Field>
+        {employee?.id && tenant ? (
+          <ProjectRatesEditor employeeId={employee.id} tenantId={tenant.id} projects={options.map((project) => ({ id: project.id, jobNumber: project.jobNumber, jobName: project.jobName }))} />
+        ) : null}
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
           <Button type="submit" disabled={loading}>{loading ? 'Saving…' : employee ? 'Save employee' : 'Add employee'}</Button>

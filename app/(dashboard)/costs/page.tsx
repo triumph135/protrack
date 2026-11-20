@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
-import { ChevronDown, ChevronRight, Copy, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Copy, FolderInput, Pencil, Plus, Trash2, Undo2 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
 import { useProjects } from '@/contexts/ProjectContext'
@@ -14,6 +14,10 @@ import { useCosts } from '@/hooks/useCosts'
 import { useEmployees } from '@/hooks/useEmployees'
 import { useChangeOrders } from '@/hooks/useChangeOrders'
 import FileAttachments from '@/components/FileAttachments'
+import { QueuedFilesField } from '@/components/QueuedFilesField'
+import { RecordHistory } from '@/components/RecordHistory'
+import { ReverseSheet, type ReverseDraft } from '@/components/ReverseSheet'
+import { MoveCostSheet } from '@/components/MoveCostSheet'
 import { createClient } from '@/lib/supabase'
 import { canAccessCategory, canExport } from '@/lib/permissions'
 import { builtinKeyFromSlug, flattenCategoryTree, isFallbackCategoryId, legacyCategoryText, ownAmountsByCategory, rollupCategoryAmounts } from '@/lib/categories'
@@ -26,7 +30,11 @@ import { enabledLaborFields, normalizeLaborFieldValue, validateLaborFieldValue }
 import { readCompanySettings } from '@/lib/company-settings'
 import { formatCurrency, formatDate, formatHours } from '@/lib/format'
 import { getTodayLocalDateString } from '@/lib/dateUtils'
-import { isMissingRelation } from '@/lib/security'
+import { isMissingRelation, isMissingRpc } from '@/lib/security'
+import { booksClosedMessage, canReverseRow, chainNetsToZero, describeSaveError, directRemaining, isBooksLocked, reversalMark } from '@/lib/reversals'
+import { resolveEmployeeRates, type EmployeeRateOverride } from '@/lib/employee-rates'
+import { uploadQueue } from '@/lib/uploads'
+import { fileUploadService } from '@/lib/fileUploadService'
 import { Button } from '@/components/ui/button'
 import { Field, Input, Textarea } from '@/components/ui/input'
 import { Sheet } from '@/components/ui/sheet'
@@ -93,9 +101,9 @@ export default function CostsPage() {
   const { user } = useAuth()
   const { tenant } = useTenant()
   const { activeProject } = useProjects()
-  const { categories, tree, laborFields, schemaPending, loading } = useCategories()
+  const { categories, tree, laborFields, schemaPending, correctionsPending, loading } = useCategories()
   const { changeOrderId } = useWorkspace()
-  const { entries, createCost, updateCost, deleteCost } = useCosts(activeProject?.id, null)
+  const { entries, createCost, updateCost, deleteCost, refreshCosts } = useCosts(activeProject?.id, null)
   const { employees } = useEmployees(activeProject?.id)
   const { changeOrders } = useChangeOrders(activeProject?.id)
   const [draft, setDraft] = useState<Draft>(emptyDraft)
@@ -109,6 +117,10 @@ export default function CostsPage() {
   const [sortKey, setSortKey] = useState<CostSortKey>('date')
   const [sortDirection, setSortDirection] = useState<CostSortDirection>('desc')
   const [collapsed, setCollapsed] = useState<string[] | null>(null)
+  const [queuedFiles, setQueuedFiles] = useState<File[]>([])
+  const [reverseRow, setReverseRow] = useState<ProjectCost | null>(null)
+  const [moveRow, setMoveRow] = useState<ProjectCost | null>(null)
+  const [hideNetZero, setHideNetZero] = useState(false)
   const supabase = createClient()
 
   const requested = searchParams.get('category')
@@ -152,15 +164,20 @@ export default function CostsPage() {
   )
 
   const uncategorizedView = requested === 'uncategorized'
+  const listedEntries = useMemo(() => {
+    if (!hideNetZero || (!focusCategory && !uncategorizedView)) return entries
+    const linked = entries.map((row) => ({ id: row.id, reversal_of_id: row.reversal_of_id, amount: Number(row.cost || 0) }))
+    return entries.filter((row) => !chainNetsToZero(row.id, linked))
+  }, [entries, hideNetZero, focusCategory, uncategorizedView])
   const groups = useMemo(() => groupCostEntries({
-    entries: uncategorizedView ? entries.filter((row) => resolveEntryCategoryId(row, readable) == null) : entries,
+    entries: uncategorizedView ? listedEntries.filter((row) => resolveEntryCategoryId(row, readable) == null) : listedEntries,
     categories: readable,
     query,
     changeOrderId,
     sortKey,
     sortDirection,
     focusCategoryId: !uncategorizedView && focusCategory && readable.some((category) => category.id === focusCategory.id) ? focusCategory.id : null,
-  }), [entries, readable, query, changeOrderId, sortKey, sortDirection, focusCategory, uncategorizedView])
+  }), [listedEntries, readable, query, changeOrderId, sortKey, sortDirection, focusCategory, uncategorizedView])
 
   const budgetRollup = useMemo(() => rollupCategoryAmounts(categories, budgets), [categories, budgets])
 
@@ -231,6 +248,7 @@ export default function CostsPage() {
     setFormCategoryId(categoryId)
     setEditing(null)
     setDraft(emptyDraft())
+    setQueuedFiles([])
     setOpen(true)
   }
 
@@ -301,16 +319,63 @@ export default function CostsPage() {
       const legacy = (formCategory.builtin_key || (formCategory.kind === 'labor' ? 'labor' : 'others')) as CostCategory
       if (editing) {
         await updateCost(legacy, editing.id, payload, { kind: formCategory.kind })
-      } else {
-        await createCost(legacy, payload, { categoryId: formCategory.id, kind: formCategory.kind })
+        setOpen(false)
+        toast.success('Cost updated')
+        return
       }
+      const created = await createCost(legacy, payload, { categoryId: formCategory.id, kind: formCategory.kind }) as ProjectCost
+      if (queuedFiles.length && tenant && user) {
+        fileUploadService.setContext(tenant.id, user.id)
+        const uploaded = await uploadQueue(queuedFiles, (file) => fileUploadService.uploadFile(file, 'cost', created.id))
+        if (uploaded.error) {
+          setQueuedFiles(uploaded.failed)
+          setEditing(created)
+          toast.error(`Cost saved. ${uploaded.error}`)
+          return
+        }
+      }
+      setQueuedFiles([])
       setOpen(false)
-      toast.success(editing ? 'Cost updated' : 'Cost added')
+      toast.success('Cost added')
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not save this cost')
+      toast.error(describeSaveError(error, settings.books_lock_date, 'cost'))
     } finally {
       setSaving(false)
     }
+  }
+
+  const postReversal = async (draftValue: ReverseDraft) => {
+    if (!reverseRow) return
+    const hours = draftValue.hours
+    const { error } = await supabase.rpc('reverse_project_cost', {
+      p_cost_id: reverseRow.id,
+      p_reason: draftValue.reason,
+      p_date: draftValue.date,
+      p_fields: hours
+        ? { cost: draftValue.amount, ...hours }
+        : { cost: draftValue.amount },
+    })
+    if (error) {
+      if (isMissingRpc(error)) throw new Error('Database update pending. Reversals turn on after the Phase 2b database update.')
+      throw new Error(error.message)
+    }
+    refreshCosts()
+    toast.success('Reversal posted')
+  }
+
+  const postMove = async (categoryId: string, reason: string) => {
+    if (!moveRow) return
+    const { error } = await supabase.rpc('move_project_cost', {
+      p_cost_id: moveRow.id,
+      p_category_id: categoryId,
+      p_reason: reason,
+    })
+    if (error) {
+      if (isMissingRpc(error)) throw new Error('Database update pending. Category moves turn on after the Phase 2b database update.')
+      throw new Error(describeSaveError(error, settings.books_lock_date, 'cost'))
+    }
+    refreshCosts()
+    toast.success('Cost moved')
   }
 
   const saveBudget = async (category: CostCategoryRecord) => {
@@ -348,7 +413,7 @@ export default function CostsPage() {
       await deleteCost(legacy, row.id)
       toast.success('Cost deleted')
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not delete this cost')
+      toast.error(describeSaveError(error, settings.books_lock_date, 'cost'))
     }
   }
 
@@ -627,6 +692,10 @@ export default function CostsPage() {
         <Button variant="outline" type="button" onClick={() => setSortDirection((value) => value === 'asc' ? 'desc' : 'asc')}>
           {sortDirection === 'asc' ? 'Ascending' : 'Descending'}
         </Button>
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          <input type="checkbox" checked={hideNetZero} onChange={(event) => setHideNetZero(event.target.checked)} />
+          Hide reversals and their originals that net to zero
+        </label>
       </div>
 
       {groups.length === 0 ? (
@@ -643,7 +712,10 @@ export default function CostsPage() {
               budgetRollup={budgetRollup}
               budgetDraft={budgetDraft}
               schemaPending={schemaPending}
+              correctionsPending={correctionsPending}
               laborSplit={settings.labor_split_enabled}
+              booksLockDate={settings.books_lock_date}
+              entries={entries}
               canWriteCategory={(category) => canAccessCategory(user, grantFor(category), 'write')}
               onToggle={(id) => persistCollapsed(collapsedIds.includes(id) ? collapsedIds.filter((item) => item !== id) : [...collapsedIds, id])}
               onBudgetDraft={(id, value) => setBudgetDraft((prev) => ({ ...prev, [id]: value }))}
@@ -651,6 +723,8 @@ export default function CostsPage() {
               onAdd={openNew}
               onEdit={openEdit}
               onDelete={remove}
+              onReverse={setReverseRow}
+              onMove={setMoveRow}
             />
           ))}
         </div>
@@ -662,7 +736,7 @@ export default function CostsPage() {
             <Field label="Date" htmlFor="cost-date">
               <Input id="cost-date" type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} />
             </Field>
-            {formCategory.kind === 'labor' ? <LaborFields draft={draft} setDraft={setDraft} employees={employees} /> : null}
+            {formCategory.kind === 'labor' ? <LaborFields draft={draft} setDraft={setDraft} employees={employees} projectId={activeProject?.id} /> : null}
             {formCategory.kind === 'named' ? (
               <Field label={formCategory.builtin_key === 'equipment' || formParent?.builtin_key === 'equipment' ? 'Equipment name' : 'Name'} htmlFor="named">
                 <Input id="named" value={draft.subcontractor_name} onChange={(event) => setDraft({ ...draft, subcontractor_name: event.target.value })} />
@@ -712,15 +786,62 @@ export default function CostsPage() {
             {changeOrders.length > 0 ? (
               <p className="text-xs text-muted-foreground">This entry is filed to {changeOrderId && changeOrderId !== 'base' ? changeOrders.find((order) => order.id === changeOrderId)?.name : 'the base contract'}.</p>
             ) : null}
-            {editing && tenant && user ? (
-              <FileAttachments entityType="cost" entityId={editing.id} tenantId={tenant.id} userId={user.id} canEdit={formCanWrite} />
+            {editing && isBooksLocked(settings.books_lock_date, draft.date) ? (
+              <p className="text-sm text-destructive">{booksClosedMessage(settings.books_lock_date, 'cost')}</p>
             ) : null}
-            <Button type="button" onClick={save} disabled={saving || !formCanWrite}>{saving ? 'Saving…' : 'Save'}</Button>
+            {editing && tenant && user ? (
+              <>
+                <FileAttachments entityType="cost" entityId={editing.id} tenantId={tenant.id} userId={user.id} canEdit={formCanWrite} />
+                <RecordHistory entityType="cost" entityId={editing.id} />
+              </>
+            ) : (
+              <QueuedFilesField files={queuedFiles} onChange={setQueuedFiles} />
+            )}
+            <Button type="button" onClick={save} disabled={saving || !formCanWrite || (!!editing && isBooksLocked(settings.books_lock_date, draft.date))}>{saving ? 'Saving…' : 'Save'}</Button>
           </div>
         ) : null}
       </Sheet>
+      <ReverseSheet
+        open={!!reverseRow}
+        title="Reverse this cost"
+        noun="cost"
+        remaining={reverseRow ? costRemaining(reverseRow, entries) : 0}
+        hours={reverseRow && laborCategory(reverseRow, categories) ? hourRemaining(reverseRow, entries) : undefined}
+        onClose={() => setReverseRow(null)}
+        onConfirm={postReversal}
+      />
+      <MoveCostSheet
+        open={!!moveRow}
+        categories={readable}
+        currentCategoryId={moveRow?.category_id}
+        currentKind={moveRow ? categories.find((item) => item.id === moveRow.category_id)?.kind : null}
+        onClose={() => setMoveRow(null)}
+        onConfirm={postMove}
+      />
     </div>
   )
+}
+
+function costRemaining(row: ProjectCost, rows: ProjectCost[]) {
+  return directRemaining(Number(row.cost || 0), rows.filter((item) => item.reversal_of_id === row.id).map((item) => Number(item.cost || 0)))
+}
+
+function hourRemaining(row: ProjectCost, rows: ProjectCost[]) {
+  const children = rows.filter((item) => item.reversal_of_id === row.id)
+  const part = (key: 'st_hours' | 'ot_hours' | 'dt_hours' | 'per_diem' | 'mob' | 'mob_qty') =>
+    directRemaining(Number(row[key] || 0), children.map((item) => Number(item[key] || 0)))
+  return {
+    st_hours: part('st_hours'),
+    ot_hours: part('ot_hours'),
+    dt_hours: part('dt_hours'),
+    per_diem: part('per_diem'),
+    mob: part('mob'),
+    mob_qty: part('mob_qty'),
+  }
+}
+
+function laborCategory(row: ProjectCost, categories: CostCategoryRecord[]) {
+  return categories.find((item) => item.id === row.category_id)?.kind === 'labor' || row.category === 'labor'
 }
 
 function SummaryBar({ href, name, actual, budget, depth }: { href: string; name: string; actual: number; budget: number; depth: number }) {
@@ -756,7 +877,10 @@ function CostBranch({
   budgetRollup,
   budgetDraft,
   schemaPending,
+  correctionsPending,
   laborSplit,
+  booksLockDate,
+  entries,
   canWriteCategory,
   onToggle,
   onBudgetDraft,
@@ -764,6 +888,8 @@ function CostBranch({
   onAdd,
   onEdit,
   onDelete,
+  onReverse,
+  onMove,
 }: {
   group: CostGroup<ProjectCost>
   depth: number
@@ -772,7 +898,10 @@ function CostBranch({
   budgetRollup: Record<string, { total: number }>
   budgetDraft: Record<string, string>
   schemaPending: boolean
+  correctionsPending: boolean
   laborSplit: boolean
+  booksLockDate: string | null
+  entries: ProjectCost[]
   canWriteCategory: (category: CostCategoryRecord) => boolean
   onToggle: (id: string) => void
   onBudgetDraft: (id: string, value: string) => void
@@ -780,6 +909,8 @@ function CostBranch({
   onAdd: (categoryId: string) => void
   onEdit: (row: ProjectCost, categoryId: string, duplicate?: boolean) => void
   onDelete: (row: ProjectCost, category: CostCategoryRecord) => void
+  onReverse: (row: ProjectCost) => void
+  onMove: (row: ProjectCost) => void
 }) {
   const category = readable.find((item) => item.id === group.categoryId) || null
   const groupKey = group.categoryId || 'uncategorized'
@@ -847,11 +978,22 @@ function CostBranch({
                   </tr>
                 </thead>
                 <tbody>
-                  {group.rows.map((row) => (
-                    <tr key={row.id} className="cost-row border-b border-border last:border-0">
+                  {group.rows.map((row) => {
+                    const mark = reversalMark(row, entries)
+                    return (
+                    <tr key={row.id} id={`cost-${row.id}`} className="cost-row border-b border-border last:border-0">
                       <td className="px-3 py-2" data-label="Date">{formatDate(row.date)}</td>
                       <td className="px-3 py-2" data-label="Details">
-                        <div>{row.description || row.vendor || row.subcontractor_name || row.employee_name || '—'}</div>
+                        <div>
+                          {row.description || row.vendor || row.subcontractor_name || row.employee_name || '—'}
+                          {mark === 'reversed' ? <span className="ml-2 rounded-full border border-border px-2 py-0.5 text-xs">Reversed</span> : null}
+                          {mark === 'partial' ? <span className="ml-2 rounded-full border border-border px-2 py-0.5 text-xs">Partially reversed</span> : null}
+                          {mark === 'reversal' ? (
+                            <button type="button" className="ml-2 rounded-full border border-border px-2 py-0.5 text-xs text-primary" onClick={() => document.getElementById(`cost-${row.reversal_of_id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}>
+                              Reversal
+                            </button>
+                          ) : null}
+                        </div>
                         {category?.kind === 'labor' ? (
                           <div className="text-xs text-muted-foreground tabular">
                             ST {formatHours(row.st_hours)} · OT {formatHours(row.ot_hours)} · DT {formatHours(row.dt_hours)}
@@ -864,13 +1006,20 @@ function CostBranch({
                         {category ? (
                           <>
                             <Button variant="ghost" size="icon" type="button" aria-label="Duplicate" onClick={() => onEdit(row, category.id, true)} disabled={!canWrite}><Copy className="h-4 w-4" /></Button>
-                            <Button variant="ghost" size="icon" type="button" aria-label="Edit" onClick={() => onEdit(row, category.id)} disabled={!canWrite}><Pencil className="h-4 w-4" /></Button>
-                            <Button variant="ghost" size="icon" type="button" aria-label="Delete" onClick={() => onDelete(row, category)} disabled={!canWrite}><Trash2 className="h-4 w-4" /></Button>
+                            {!correctionsPending && canWrite && canReverseRow(Number(row.cost || 0), entries.filter((item) => item.reversal_of_id === row.id).map((item) => Number(item.cost || 0)), row.reversed_at) ? (
+                              <Button variant="ghost" size="icon" type="button" aria-label="Reverse" onClick={() => onReverse(row)}><Undo2 className="h-4 w-4" /></Button>
+                            ) : null}
+                            {!correctionsPending && canWrite && !row.reversal_of_id ? (
+                              <Button variant="ghost" size="icon" type="button" aria-label={isBooksLocked(booksLockDate, row.date) ? booksClosedMessage(booksLockDate, 'cost') : 'Move'} title={isBooksLocked(booksLockDate, row.date) ? booksClosedMessage(booksLockDate, 'cost') : 'Move'} onClick={() => onMove(row)} disabled={isBooksLocked(booksLockDate, row.date)}><FolderInput className="h-4 w-4" /></Button>
+                            ) : null}
+                            <Button variant="ghost" size="icon" type="button" aria-label={isBooksLocked(booksLockDate, row.date) ? booksClosedMessage(booksLockDate, 'cost') : 'Edit'} title={isBooksLocked(booksLockDate, row.date) ? booksClosedMessage(booksLockDate, 'cost') : 'Edit'} onClick={() => onEdit(row, category.id)} disabled={!canWrite || !!row.reversal_of_id || !!row.reversed_at || isBooksLocked(booksLockDate, row.date)}><Pencil className="h-4 w-4" /></Button>
+                            <Button variant="ghost" size="icon" type="button" aria-label={isBooksLocked(booksLockDate, row.date) ? booksClosedMessage(booksLockDate, 'cost') : 'Delete'} title={isBooksLocked(booksLockDate, row.date) ? booksClosedMessage(booksLockDate, 'cost') : 'Delete'} onClick={() => onDelete(row, category)} disabled={!canWrite || !!row.reversal_of_id || !!row.reversed_at || isBooksLocked(booksLockDate, row.date)}><Trash2 className="h-4 w-4" /></Button>
                           </>
                         ) : null}
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -885,7 +1034,10 @@ function CostBranch({
               budgetRollup={budgetRollup}
               budgetDraft={budgetDraft}
               schemaPending={schemaPending}
+              correctionsPending={correctionsPending}
               laborSplit={laborSplit}
+              booksLockDate={booksLockDate}
+              entries={entries}
               canWriteCategory={canWriteCategory}
               onToggle={onToggle}
               onBudgetDraft={onBudgetDraft}
@@ -893,6 +1045,8 @@ function CostBranch({
               onAdd={onAdd}
               onEdit={onEdit}
               onDelete={onDelete}
+              onReverse={onReverse}
+              onMove={onMove}
             />
           ))}
         </>
@@ -921,11 +1075,64 @@ function LaborFields({
   draft,
   setDraft,
   employees,
+  projectId,
 }: {
   draft: Draft
   setDraft: (draft: Draft) => void
   employees: Array<{ id: string; name: string; standard_rate: number; ot_rate: number; dt_rate: number; mob_rate?: number | null }>
+  projectId?: string
 }) {
+  const [rateNote, setRateNote] = useState<string | null>(null)
+  useEffect(() => {
+    if (!draft.employee_id) {
+      setRateNote(null)
+      return
+    }
+    const employee = employees.find((item) => item.id === draft.employee_id)
+    if (!employee || !projectId) return
+    let active = true
+    void (async () => {
+      const client = createClient()
+      const { data, error } = await client.rpc('employee_rates_as_of', {
+        p_employee_id: draft.employee_id,
+        p_project_id: projectId,
+        p_on: draft.date,
+      })
+      let resolved = null as ReturnType<typeof resolveEmployeeRates> | null
+      const row = Array.isArray(data) ? data[0] : data
+      if (!error && row && typeof row === 'object' && 'source' in row) {
+        const card = row as { source: 'override' | 'employee'; standard_rate: number; ot_rate: number; dt_rate: number; mob_rate: number | null; effective_date: string | null }
+        resolved = {
+          standard_rate: Number(card.standard_rate),
+          ot_rate: Number(card.ot_rate),
+          dt_rate: Number(card.dt_rate),
+          mob_rate: card.mob_rate == null ? null : Number(card.mob_rate),
+          effective_date: card.effective_date,
+          source: card.source,
+        }
+      } else if (isMissingRpc(error)) {
+        const loaded = await client.from('employee_project_rates').select('project_id, effective_date, standard_rate, ot_rate, dt_rate, mob_rate').eq('employee_id', draft.employee_id)
+        const overrides = ((loaded.data || []) as EmployeeRateOverride[])
+        resolved = resolveEmployeeRates(employee, overrides, projectId, draft.date)
+      }
+      if (!active || !resolved) return
+      setRateNote(resolved.source === 'override' && resolved.effective_date
+        ? `Using the rate for this project, effective ${resolved.effective_date}.`
+        : null)
+      setDraft({
+        ...draft,
+        st_rate: String(resolved.standard_rate),
+        ot_rate: String(resolved.ot_rate),
+        dt_rate: String(resolved.dt_rate),
+        mob_rate: resolved.mob_rate == null ? draft.mob_rate : String(resolved.mob_rate),
+      })
+    })()
+    return () => {
+      active = false
+    }
+    // Rates refresh when the employee, project, or entry date changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.employee_id, draft.date, projectId])
   const chooseEmployee = (id: string) => {
     const employee = employees.find((item) => item.id === id)
     setDraft({
@@ -950,7 +1157,7 @@ function LaborFields({
           {employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}
         </select>
       </Field>
-      <div />
+      <div className="flex items-end pb-2 text-sm text-muted-foreground">{rateNote}</div>
       {number('st_hours', 'ST hours')}
       {number('st_rate', 'ST rate')}
       {number('ot_hours', 'OT hours')}

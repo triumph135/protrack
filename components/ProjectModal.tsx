@@ -14,6 +14,10 @@ import { Button } from '@/components/ui/button'
 import { Field, Input } from '@/components/ui/input'
 import { EmptyState } from '@/components/ui/feedback'
 import { Sheet } from '@/components/ui/sheet'
+import FileAttachments from '@/components/FileAttachments'
+import { useAuth } from '@/contexts/AuthContext'
+import { useTenant } from '@/contexts/TenantContext'
+import { userCan } from '@/lib/permissions'
 
 interface ProjectModalProps {
   open: boolean
@@ -38,6 +42,8 @@ export default function ProjectModal({ project, onSave, onCancel, open }: Projec
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
   const [employeeLoading, setEmployeeLoading] = useState(false)
   const { projects } = useProjects()
+  const { user } = useAuth()
+  const { tenant } = useTenant()
   const { employees, loading: employeesLoading, createEmployee, updateEmployee, deleteEmployee } = useEmployees(project?.id)
 
   useEffect(() => {
@@ -158,6 +164,9 @@ export default function ProjectModal({ project, onSave, onCancel, open }: Projec
                 <option value="On Hold">On Hold</option>
               </select>
             </Field>
+            {project?.id && tenant && user ? (
+              <FileAttachments entityType="project" entityId={project.id} tenantId={tenant.id} userId={user.id} canEdit={userCan(user, 'projects', 'write')} />
+            ) : null}
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
               <Button type="submit" disabled={loading}>{loading ? 'Saving…' : project ? 'Save project' : 'Create project'}</Button>

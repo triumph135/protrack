@@ -1,11 +1,12 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Copy, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Copy, Pencil, Plus, Trash2, Undo2 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
 import { useProjects } from '@/contexts/ProjectContext'
 import { useWorkspace } from '@/contexts/WorkspaceContext'
+import { useCategories } from '@/contexts/CategoryContext'
 import { useInvoices } from '@/hooks/useInvoices'
 import { useChangeOrders } from '@/hooks/useChangeOrders'
 import InvoiceForm from '@/components/InvoiceForm'
@@ -18,6 +19,11 @@ import { userCan } from '@/lib/permissions'
 import { formatCurrency } from '@/lib/format'
 import { ExportMenu, type ExportSpec } from '@/components/export/ExportMenu'
 import { Button } from '@/components/ui/button'
+import { ReverseSheet, type ReverseDraft } from '@/components/ReverseSheet'
+import { createClient } from '@/lib/supabase'
+import { booksClosedMessage, canReverseRow, describeSaveError, isBooksLocked, reversalMark } from '@/lib/reversals'
+import { readCompanySettings } from '@/lib/company-settings'
+import { isMissingRpc } from '@/lib/security'
 import { Input } from '@/components/ui/input'
 import { Badge, EmptyState, PageHeader, Skeleton } from '@/components/ui/feedback'
 
@@ -34,10 +40,12 @@ export default function InvoicesPage() {
   const { tenant } = useTenant()
   const { activeProject } = useProjects()
   const { changeOrderId } = useWorkspace()
+  const { correctionsPending } = useCategories()
   const selectedChangeOrder = changeOrderId ?? 'all'
   const [showForm, setShowForm] = useState(false)
   const [editingInvoice, setEditingInvoice] = useState<CustomerInvoice | null>(null)
   const [isDuplicateMode, setIsDuplicateMode] = useState(false)
+  const [creditInvoice, setCreditInvoice] = useState<CustomerInvoice | null>(null)
   const [showFilters, setShowFilters] = useState(false)
   const [filters, setFilters] = useState<InvoiceFilters>({
     startDate: '',
@@ -55,6 +63,7 @@ export default function InvoicesPage() {
   const { changeOrders } = useChangeOrders(activeProject?.id)
   const canRead = userCan(user, 'invoices', 'read')
   const canWrite = userCan(user, 'invoices', 'write')
+  const booksLockDate = readCompanySettings(tenant?.settings).books_lock_date
 
   const closeForm = () => {
     setShowForm(false)
@@ -65,16 +74,34 @@ export default function InvoicesPage() {
   const handleSave = async (invoiceData: Omit<CustomerInvoice, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>) => {
     try {
       if (editingInvoice && !isDuplicateMode) {
-        await updateInvoice(editingInvoice.id, invoiceData)
-      } else {
-        await createInvoice(invoiceData)
+        const updated = await updateInvoice(editingInvoice.id, invoiceData)
+        toast.success('Invoice updated')
+        return updated as CustomerInvoice
       }
-      closeForm()
-      toast.success(editingInvoice && !isDuplicateMode ? 'Invoice updated' : 'Invoice saved')
+      const created = await createInvoice(invoiceData)
+      toast.success('Invoice saved')
+      return created as CustomerInvoice
     } catch (saveError) {
       console.error('Error saving invoice:', saveError)
-      toast.error('Error saving invoice. Please try again.')
+      toast.error(describeSaveError(saveError, booksLockDate, 'invoice'))
     }
+  }
+
+  const postCredit = async (draft: ReverseDraft) => {
+    if (!creditInvoice) return
+    const supabase = createClient()
+    const { error: creditError } = await supabase.rpc('reverse_customer_invoice', {
+      p_invoice_id: creditInvoice.id,
+      p_reason: draft.reason,
+      p_date: draft.date,
+      p_amount: draft.amount,
+    })
+    if (creditError) {
+      if (isMissingRpc(creditError)) throw new Error('Database update pending. Credit memos turn on after the Phase 2b database update.')
+      throw new Error(creditError.message)
+    }
+    await loadInvoices()
+    toast.success('Credit memo posted')
   }
 
   const handleDelete = async (invoiceId: string) => {
@@ -90,7 +117,7 @@ export default function InvoicesPage() {
       toast.success('Invoice deleted')
     } catch (deleteError) {
       console.error('Error deleting invoice:', deleteError)
-      toast.error('Error deleting invoice. Please try again.')
+      toast.error(describeSaveError(deleteError, booksLockDate, 'invoice'))
     }
   }
 
@@ -251,6 +278,9 @@ export default function InvoicesPage() {
                     <td className="px-3 py-2 font-medium" data-label="Number">
                       {invoice.invoice_number}
                       {invoice.in_system ? <Badge tone="success">Processed</Badge> : null}
+                      {reversalMark(invoice, filteredInvoices) === 'reversed' ? <Badge>Reversed</Badge> : null}
+                      {reversalMark(invoice, filteredInvoices) === 'partial' ? <Badge>Partially reversed</Badge> : null}
+                      {reversalMark(invoice, filteredInvoices) === 'reversal' ? <Badge>Credit memo</Badge> : null}
                     </td>
                     <td className="px-3 py-2 text-right tabular" data-label="Amount">{formatCurrency(invoice.amount)}</td>
                     <td className="px-3 py-2 text-right tabular" data-label="Collected">{formatCurrency(invoice.amount_collected || 0)}</td>
@@ -261,9 +291,12 @@ export default function InvoicesPage() {
                     <td className="px-3 py-2 tabular" data-label="Files">{attachmentCounts[invoice.id] || '—'}</td>
                     {canWrite ? (
                       <td className="px-3 py-2 text-right" data-label="Actions">
-                        <Button variant="ghost" size="icon" type="button" aria-label={`Edit ${invoice.invoice_number}`} onClick={() => { setEditingInvoice(invoice); setIsDuplicateMode(false); setShowForm(true) }}><Pencil className="h-4 w-4" /></Button>
+                        {!correctionsPending && canReverseRow(Number(invoice.amount || 0), filteredInvoices.filter((item) => item.reversal_of_id === invoice.id).map((item) => Number(item.amount || 0)), invoice.reversed_at) ? (
+                          <Button variant="ghost" size="icon" type="button" aria-label={`Credit memo for ${invoice.invoice_number}`} onClick={() => setCreditInvoice(invoice)}><Undo2 className="h-4 w-4" /></Button>
+                        ) : null}
+                        <Button variant="ghost" size="icon" type="button" aria-label={isBooksLocked(booksLockDate, invoice.date_billed) ? booksClosedMessage(booksLockDate, 'invoice') : `Edit ${invoice.invoice_number}`} title={isBooksLocked(booksLockDate, invoice.date_billed) ? booksClosedMessage(booksLockDate, 'invoice') : `Edit ${invoice.invoice_number}`} onClick={() => { setEditingInvoice(invoice); setIsDuplicateMode(false); setShowForm(true) }} disabled={!!invoice.reversal_of_id || !!invoice.reversed_at || isBooksLocked(booksLockDate, invoice.date_billed)}><Pencil className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" type="button" aria-label={`Duplicate ${invoice.invoice_number}`} onClick={() => { setEditingInvoice(invoice); setIsDuplicateMode(true); setShowForm(true) }}><Copy className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" type="button" aria-label={`Delete ${invoice.invoice_number}`} onClick={() => handleDelete(invoice.id)}><Trash2 className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" type="button" aria-label={isBooksLocked(booksLockDate, invoice.date_billed) ? booksClosedMessage(booksLockDate, 'invoice') : `Delete ${invoice.invoice_number}`} title={isBooksLocked(booksLockDate, invoice.date_billed) ? booksClosedMessage(booksLockDate, 'invoice') : `Delete ${invoice.invoice_number}`} onClick={() => handleDelete(invoice.id)} disabled={!!invoice.reversal_of_id || !!invoice.reversed_at || isBooksLocked(booksLockDate, invoice.date_billed)}><Trash2 className="h-4 w-4" /></Button>
                       </td>
                     ) : null}
                   </tr>
@@ -284,6 +317,15 @@ export default function InvoicesPage() {
           duplicateMode={isDuplicateMode}
         />
       ) : null}
+      <ReverseSheet
+        open={!!creditInvoice}
+        title="Post a credit memo"
+        noun="invoice"
+        remaining={creditInvoice ? Number(creditInvoice.amount || 0) + filteredInvoices.filter((item) => item.reversal_of_id === creditInvoice.id).reduce((sum, item) => sum + Number(item.amount || 0), 0) : 0}
+        dateLabel="Date billed"
+        onClose={() => setCreditInvoice(null)}
+        onConfirm={postCredit}
+      />
     </div>
   )
 }
