@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
+import { inflateSync } from 'node:zlib'
 import { describe, it } from 'node:test'
 import { toCsv } from '../lib/csv.ts'
 import { categoryBudgetState, grossProfitPercent, monthlyBurn } from '../lib/overview.ts'
 import { rollupCategoryAmounts, type CostCategoryRecord } from '../lib/categories.ts'
 import { PDFDocument } from 'pdf-lib'
-import { renderReportPdf } from '../lib/pdf-report.ts'
+import { formatCurrency } from '../lib/format.ts'
+import { pdfText, renderReportPdf } from '../lib/pdf-report.ts'
 import { overviewPdfFixture } from './overview-pdf-fixture.ts'
 
 describe('csv export', () => {
@@ -95,6 +97,13 @@ describe('pdf export', () => {
     assert.ok(bytes.length > plain.length)
   })
 
+  it('puts a minus sign before the dollar sign', () => {
+    assert.equal(formatCurrency(-2534.5), '-$2,534.50')
+    assert.equal(formatCurrency(112000), '$112,000.00')
+    assert.equal(pdfText('$-2,534.50'), '-$2,534.50')
+    assert.equal(pdfText('Gross profit $-2,534.50'), 'Gross profit -$2,534.50')
+  })
+
   it('fits a 7-category overview on one letter page and keeps a 20-category overview readable', async () => {
     const seven = await renderReportPdf(overviewPdfFixture(7))
     const twenty = await renderReportPdf(overviewPdfFixture(20))
@@ -102,7 +111,45 @@ describe('pdf export', () => {
     const twentyPages = (await PDFDocument.load(twenty)).getPageCount()
     assert.equal(sevenPages, 1)
     assert.equal(twentyPages, 1)
+    const text = pdfPlainText(seven)
+    assert.ok(text.includes('-$2,534.50'))
+    assert.equal(text.includes('$-'), false)
+    assert.ok(text.includes('Jun'))
+    assert.ok(text.includes('Nov'))
+    assert.ok(text.includes('$4,834.00'))
+    assert.ok(text.includes('INV-A-002'))
+    assert.ok(text.includes('INV-A-005'))
+    assert.equal(text.includes('sixth line'), false)
     const overflow = await renderReportPdf(overviewPdfFixture(60))
     assert.ok((await PDFDocument.load(overflow)).getPageCount() >= 2)
   })
 })
+
+function pdfPlainText(bytes: Uint8Array): string {
+  const raw = Buffer.from(bytes)
+  const parts: string[] = []
+  let offset = 0
+  while (offset < raw.length) {
+    const start = raw.indexOf('stream', offset)
+    if (start < 0) break
+    let dataStart = start + 'stream'.length
+    if (raw[dataStart] === 0x0d && raw[dataStart + 1] === 0x0a) dataStart += 2
+    else if (raw[dataStart] === 0x0a) dataStart += 1
+    else {
+      offset = start + 'stream'.length
+      continue
+    }
+    const end = raw.indexOf('endstream', dataStart)
+    if (end < 0) break
+    const body = raw.subarray(dataStart, end)
+    let text = ''
+    try {
+      text = inflateSync(body).toString('latin1')
+    } catch {
+      text = body.toString('latin1')
+    }
+    parts.push(text.replace(/<([0-9A-Fa-f]+)>/g, (_, hex: string) => Buffer.from(hex, 'hex').toString('latin1')))
+    offset = end + 'endstream'.length
+  }
+  return parts.join('\n')
+}

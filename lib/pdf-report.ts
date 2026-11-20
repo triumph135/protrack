@@ -69,6 +69,7 @@ export function pdfText(value: string): string {
     .replace(/[\u201C\u201D]/g, '"')
     .replace(/\u2026/g, '...')
     .replace(/\u00B7/g, '-')
+    .replace(/\$-(?=\d)/g, '-$')
     .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, '')
 }
 
@@ -109,7 +110,7 @@ function fit(text: string, width: number, size: number, font: PDFFont): string {
 function fitKeepingAmount(text: string, width: number, size: number, font: PDFFont): string {
   const value = pdfText(text)
   if (font.widthOfTextAtSize(value, size) <= width) return value
-  const amount = value.match(/(\$-?[\d,]+\.\d{2})\s*$/)
+  const amount = value.match(/(-?\$[\d,]+\.\d{2})\s*$/)
   if (!amount || amount.index == null) return fit(value, width, size, font)
   const suffix = amount[1]
   const prefixBudget = width - font.widthOfTextAtSize(` ${suffix}`, size)
@@ -117,6 +118,43 @@ function fitKeepingAmount(text: string, width: number, size: number, font: PDFFo
   let head = value.slice(0, amount.index).trimEnd()
   while (head.length > 1 && font.widthOfTextAtSize(`${head}...`, size) > prefixBudget) head = head.slice(0, -1)
   return `${head}... ${suffix}`
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/** "06" and "2026-06" are month buckets from the cost trend. Anything else is left as written. */
+function axisMonth(label: string): string {
+  const value = pdfText(label).trim()
+  const match = value.match(/^(?:\d{4}-)?(0[1-9]|1[0-2])$/)
+  if (!match) return value
+  return MONTHS[Number(match[1]) - 1]
+}
+
+function axisMoney(value: number): string {
+  const digits = Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return value < 0 ? `-$${digits}` : `$${digits}`
+}
+
+/** Up to two lines, with a trailing amount kept whole on the last line. */
+function activityWrap(text: string, width: number, size: number, font: PDFFont): string[] {
+  const value = pdfText(text)
+  if (!value) return ['']
+  if (font.widthOfTextAtSize(value, size) <= width) return [value]
+  const words = value.split(/\s+/).filter(Boolean)
+  let first = ''
+  let index = 0
+  for (; index < words.length; index += 1) {
+    const next = first ? `${first} ${words[index]}` : words[index]
+    if (font.widthOfTextAtSize(next, size) > width) break
+    first = next
+  }
+  if (!first) {
+    first = fit(words[0] || value, width, size, font)
+    index = 1
+  }
+  const rest = words.slice(index).join(' ')
+  if (!rest) return [first]
+  return [first, fitKeepingAmount(rest, width, size, font)]
 }
 
 export async function renderReportPdf(report: PdfReport): Promise<Uint8Array> {
@@ -437,19 +475,25 @@ async function renderOverviewPdf(report: PdfReport): Promise<Uint8Array> {
     y -= pitch
   }
 
+  const marked = report.rows.map((row, index) => childRow(row, report.rowDepth?.[index]))
+  let style = overviewRowStyle(marked.length)
+  const trend = planTrend(report.visual, style, marked.length)
+  const trendBand = trend.band
+  const activityBand = trend.activityH
+  style = trend.style
+
   drawPageHeader(false)
   drawOverviewVisual(report.visual)
 
-  const marked = report.rows.map((row, index) => childRow(row, report.rowDepth?.[index]))
-  let style = overviewRowStyle(marked.length)
-  const tableChrome = 22 + report.totals.length * 10 + 8
+  const summaryBlock = report.totals.length > 0 ? 14 + report.totals.length * 12 : 0
+  const tableChrome = 16 + 11 + summaryBlock
   if (marked.length * style.pitch > y - OVERVIEW_FOOTER - tableChrome) {
     style = { size: 7, pitch: 9.5 }
   }
   if (columns.length > 0) {
-    ensure(14 + 11)
+    ensure(16 + 11)
     page.drawText('Details', { x: OVERVIEW_MARGIN, y, size: 8, font: bold, color: ink })
-    y -= 11
+    y -= 14
     repeatingTable = true
     drawColumnHeader()
     for (const row of marked) {
@@ -488,17 +532,29 @@ async function renderOverviewPdf(report: PdfReport): Promise<Uint8Array> {
     repeatingTable = false
   }
 
-  if (report.totals.length > 0) y -= 6
-  for (const total of report.totals) {
-    ensure(11)
-    page.drawText(fit(`${total.label}: ${total.value}`, contentWidth, 8, bold), {
+  if (report.totals.length > 0) {
+    const blockH = 6 + report.totals.length * 12
+    y -= 8
+    ensure(blockH)
+    page.drawRectangle({
       x: OVERVIEW_MARGIN,
-      y,
-      size: 8,
-      font: bold,
-      color: ink,
+      y: y - blockH,
+      width: contentWidth,
+      height: blockH,
+      color: card,
+      borderColor: line,
+      borderWidth: 0.4,
     })
-    y -= 10
+    report.totals.forEach((total, index) => {
+      page.drawText(fit(`${total.label}: ${total.value}`, contentWidth - 12, 8, bold), {
+        x: OVERVIEW_MARGIN + 6,
+        y: y - 13 - index * 12,
+        size: 8,
+        font: bold,
+        color: ink,
+      })
+    })
+    y -= blockH
   }
 
   pages.forEach((item, index) => {
@@ -577,48 +633,118 @@ async function renderOverviewPdf(report: PdfReport): Promise<Uint8Array> {
     y -= blockH + 4
   }
 
+  function planTrend(
+    visual: PdfVisual | undefined,
+    base: { size: number; pitch: number },
+    rowCount: number,
+  ): { band: number; activityH: number; style: { size: number; pitch: number } } {
+    const series = visual?.series && visual.series.points.length > 0 ? visual.series : null
+    const activity = visual?.activity && visual.activity.length > 0 ? visual.activity : null
+    if (!series && !activity) return { band: 0, activityH: 0, style: base }
+    const widths = trendWidths(Boolean(series), Boolean(activity))
+    const activityH = activity ? activityBandHeight(activity, widths.activityW) : 0
+    let band = Math.max(series ? 96 : 0, activityH)
+    const headerH = 12 + 12 + 10 + (report.project ? 9 : 0) + (report.filters.length > 0 ? 9 : 0) + 10
+    const kpiH = visual?.kpis && visual.kpis.length > 0 ? kpiBlockHeight(visual.kpis) : 0
+    const alertH = visual?.alerts && visual.alerts.length > 0 ? 18 + Math.ceil(visual.alerts.length / 2) * 10 : 0
+    const summaryH = report.totals.length > 0 ? 14 + report.totals.length * 12 : 0
+    const chrome = headerH + kpiH + alertH + band + 16 + 16 + 11 + summaryH + rowCount * base.pitch
+    let slack = PAGE_HEIGHT - OVERVIEW_MARGIN - OVERVIEW_FOOTER - chrome
+    if (slack <= 12) return { band, activityH, style: base }
+    const chartCap = series ? (rowCount <= 8 ? 170 : rowCount <= 16 ? 36 : 28) : 0
+    const chartBoost = Math.min(chartCap, slack * (rowCount <= 8 ? 0.5 : 0.16))
+    slack -= chartBoost
+    band += chartBoost
+    const rowCap = rowCount <= 8 ? 9 : rowCount <= 16 ? 4 : 6
+    const rowBoost = Math.min(rowCap, Math.max(0, slack) / Math.max(rowCount, 1))
+    let size = base.size
+    const pitch = base.pitch + rowBoost
+    if (pitch >= 16 && size < 10) size = 10
+    else if (pitch >= 14 && size < 9) size = 9
+    else if (pitch >= 12.5 && size < 8.5) size = 8.5
+    return { band, activityH, style: { size, pitch } }
+  }
+
+  function trendWidths(hasSeries: boolean, hasActivity: boolean) {
+    const gap = 8
+    if (hasSeries && hasActivity) {
+      const chartW = contentWidth * 0.33
+      return { gap, chartW, activityW: contentWidth - chartW - gap }
+    }
+    return { gap, chartW: contentWidth, activityW: contentWidth }
+  }
+
+  function activityColumnWidth(width: number, count: number) {
+    const gap = 6
+    return (width - 8 - gap * (Math.max(count, 1) - 1)) / Math.max(count, 1)
+  }
+
+  function activityBandHeight(columns: PdfActivity[], width: number) {
+    const colW = activityColumnWidth(width, columns.length)
+    let rows = 1
+    for (const column of columns) {
+      const entries = (column.lines.length > 0 ? column.lines : ['None']).slice(0, 5)
+      const count = entries.reduce((sum, entry) => sum + activityWrap(entry, colW, 7, font).length, 0)
+      rows = Math.max(rows, count)
+    }
+    return 32 + rows * 10
+  }
+
+  function kpiBlockHeight(kpis: PdfKpi[]) {
+    const gap = 4
+    const perRow = Math.min(6, kpis.length)
+    let total = 0
+    for (let start = 0; start < kpis.length; start += perRow) {
+      const slice = kpis.slice(start, start + perRow)
+      const cardW = (contentWidth - gap * (slice.length - 1)) / slice.length
+      const detailWidth = cardW - 8
+      const details = slice.map((kpi) => (kpi.detail ? wrap(kpi.detail, detailWidth, 7, (value, size) => font.widthOfTextAtSize(pdfText(value), size)).slice(0, 2) : []))
+      const detailRows = Math.max(0, ...details.map((lines) => lines.length))
+      total += 28 + (detailRows > 0 ? detailRows * 8 + 2 : 0)
+    }
+    return total
+  }
+
   function drawTrendAndActivity(
     series: { title: string; points: PdfPoint[] } | null,
     activity: PdfActivity[] | null,
   ) {
-    const gap = 8
-    const split = series && activity
-    const chartW = split ? contentWidth * 0.4 : contentWidth
-    const activityW = split ? contentWidth - chartW - gap : contentWidth
-    const lineCount = Math.max(1, ...(activity || []).map((column) => Math.min(5, Math.max(column.lines.length, 1))))
-    const bandH = Math.max(series ? 64 : 0, activity ? 36 + lineCount * 9 : 0)
-    ensure(bandH + 2)
+    const widths = trendWidths(Boolean(series), Boolean(activity))
+    const chartH = series ? Math.max(trendBand, activityBand) : 0
+    const boxH = activity ? activityBand : 0
+    const used = Math.max(chartH, boxH)
+    ensure(used + 2)
     const top = y
-    if (series) drawSeriesBox(OVERVIEW_MARGIN, top, chartW, bandH, series.title, series.points)
-    if (activity) drawActivityBox(OVERVIEW_MARGIN + (series ? chartW + gap : 0), top, activityW, bandH, activity)
-    y -= bandH + 6
+    if (series) drawSeriesBox(OVERVIEW_MARGIN, top, widths.chartW, chartH, series.title, series.points)
+    if (activity) drawActivityBox(OVERVIEW_MARGIN + (series ? widths.chartW + widths.gap : 0), top, widths.activityW, boxH, activity)
+    y -= used + 16
   }
 
   function drawSeriesBox(x: number, top: number, width: number, height: number, title: string, points: PdfPoint[]) {
-    page.drawText(fit(title, width, 8, bold), { x, y: top - 8, size: 8, font: bold, color: ink })
-    const plotBottom = top - height + 12
-    const plotTop = top - 14
-    const plotH = Math.max(16, plotTop - plotBottom)
+    page.drawText(fit(title, width - 48, 8, bold), { x, y: top - 9, size: 8, font: bold, color: ink })
+    const plotBottom = top - height + 20
+    const plotTop = top - 24
+    const plotH = Math.max(18, plotTop - plotBottom)
     page.drawLine({ start: { x, y: plotBottom }, end: { x: x + width, y: plotBottom }, thickness: 0.4, color: line })
     const max = Math.max(1, ...points.map((point) => point.value))
-    const maxLabel = fit(String(Math.round(max)), 40, 7, font)
-    page.drawText(maxLabel, { x, y: plotTop - 8, size: 7, font, color: muted })
+    const maxLabel = fit(axisMoney(max), width - 4, 7, font)
+    page.drawText(maxLabel, { x, y: plotTop + 2, size: 7, font, color: muted })
     const step = points.length <= 1 ? 0 : width / (points.length - 1)
     let previous: { x: number; y: number } | null = null
     let lastLabelRight = x - 4
     points.forEach((point, index) => {
       const px = x + index * step
-      const py = plotBottom + (point.value / max) * (plotH - 10)
+      const py = plotBottom + (point.value / max) * (plotH - 8)
       if (previous) page.drawLine({ start: previous, end: { x: px, y: py }, thickness: 1.1, color: blue })
       page.drawRectangle({ x: px - 1.1, y: py - 1.1, width: 2.2, height: 2.2, color: blue })
-      const label = fit(point.label, 24, 7, font)
+      const label = axisMonth(point.label)
       const labelWidth = font.widthOfTextAtSize(label, 7)
       let labelX = Math.min(Math.max(x, px - labelWidth / 2), x + width - labelWidth)
       const lastPoint = index === points.length - 1
       if (labelX >= lastLabelRight + 1 || lastPoint) {
         if (lastPoint && labelX < lastLabelRight + 1) labelX = Math.min(x + width - labelWidth, lastLabelRight + 1)
         if (labelX >= x && labelX + labelWidth <= x + width + 0.5) {
-          page.drawText(label, { x: labelX, y: plotBottom - 9, size: 7, font, color: muted })
+          page.drawText(label, { x: labelX, y: plotBottom - 11, size: 7, font, color: muted })
           lastLabelRight = labelX + labelWidth
         }
       }
@@ -629,14 +755,18 @@ async function renderOverviewPdf(report: PdfReport): Promise<Uint8Array> {
   function drawActivityBox(x: number, top: number, width: number, height: number, columns: PdfActivity[]) {
     page.drawRectangle({ x, y: top - height, width, height, color: card, borderColor: line, borderWidth: 0.4 })
     page.drawText('Recent activity', { x: x + 4, y: top - 10, size: 8, font: bold, color: ink })
+    const colW = activityColumnWidth(width, columns.length)
     const gap = 6
-    const colW = (width - 8 - gap * (columns.length - 1)) / Math.max(columns.length, 1)
     columns.forEach((column, index) => {
       const cx = x + 4 + index * (colW + gap)
       page.drawText(fit(column.title, colW, 7, bold), { x: cx, y: top - 21, size: 7, font: bold, color: ink })
-      const lines = (column.lines.length > 0 ? column.lines : ['None']).slice(0, 5)
-      lines.forEach((entry, lineIndex) => {
-        page.drawText(fitKeepingAmount(entry, colW, 7, font), { x: cx, y: top - 32 - lineIndex * 9, size: 7, font, color: muted })
+      const entries = (column.lines.length > 0 ? column.lines : ['None']).slice(0, 5)
+      let row = 0
+      entries.forEach((entry) => {
+        activityWrap(entry, colW, 7, font).forEach((lineText) => {
+          page.drawText(lineText, { x: cx, y: top - 33 - row * 10, size: 7, font, color: muted })
+          row += 1
+        })
       })
     })
   }

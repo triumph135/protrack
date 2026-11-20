@@ -11,7 +11,8 @@ const hours = new Intl.NumberFormat('en-US', {
 export function formatCurrency(amount: number | null | undefined): string {
   const value = Number(amount)
   if (!Number.isFinite(value)) return currency.format(0)
-  return currency.format(value)
+  // Some callers used to prefix "$" onto a signed number and produced "$-2.00".
+  return currency.format(value).replace(/\$-(?=\d)/g, '-$')
 }
 
 export function formatHours(amount: number | null | undefined): string {

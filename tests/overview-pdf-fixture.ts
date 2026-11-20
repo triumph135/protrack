@@ -1,6 +1,7 @@
+import { formatCurrency } from '../lib/format.ts'
 import type { PdfReport } from '../lib/pdf-report.ts'
 
-const money = (amount: number) => `$${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+const money = (amount: number) => formatCurrency(amount)
 
 /** A project overview with the usual KPI row, alerts, trend, and five recent lines. */
 export function overviewPdfFixture(categoryCount: number): PdfReport {
@@ -24,14 +25,14 @@ export function overviewPdfFixture(categoryCount: number): PdfReport {
     rows,
     totals: [
       { label: 'Contract', value: '$112,000.00' },
-      { label: 'Gross profit (invoiced minus cost)', value: '$-2,534.50 (-110.2%)' },
+      { label: 'Gross profit (invoiced minus cost)', value: `${money(-2534.5)} (-110.2%)` },
     ],
     visual: {
       kpis: [
         { label: 'Contract', value: '$112,000.00', detail: '$100,000.00 base · $12,000.00 change orders' },
         { label: 'Cost to date', value: '$4,834.50' },
         { label: 'Budget', value: '$48,000.00', detail: '$43,165.50 remaining' },
-        { label: 'Gross profit', value: '$-2,534.50', detail: 'Invoiced minus cost · -110.2%' },
+        { label: 'Gross profit', value: money(-2534.5), detail: 'Invoiced minus cost · -110.2%' },
         { label: 'Invoiced', value: '$2,300.00', detail: '$109,700.00 not billed' },
         { label: 'Collected', value: '$900.00', detail: '$1,400.00 outstanding' },
       ],
