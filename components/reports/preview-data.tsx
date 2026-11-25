@@ -1,5 +1,7 @@
 'use client'
 
+import { useState } from 'react'
+import { ScheduleWizard, type ScheduleFormState } from './ScheduleWizard'
 import { ReportDocument, ReportsLandingView, RunHistory, ScheduleList, UnsubscribeCard } from './views'
 import type { BuiltReport } from '@/lib/reports/types'
 
@@ -120,9 +122,9 @@ export function ReportsPreview({ screen }: { screen: string }) {
       />
     )
   }
-  if (screen === 'Activity') return <ReportDocument report={activity} />
-  if (screen === 'Job cost') return <ReportDocument report={jobCost} />
-  if (screen === 'Vendor') return <ReportDocument report={vendors} />
+  if (screen === 'Activity') return <ResultsChrome range="Last year"><ReportDocument report={activity} /></ResultsChrome>
+  if (screen === 'Job cost') return <ResultsChrome range="All time"><ReportDocument report={jobCost} /></ResultsChrome>
+  if (screen === 'Vendor') return <ResultsChrome range="This year"><ReportDocument report={vendors} /></ResultsChrome>
   if (screen === 'Builder') {
     return (
       <div className="space-y-3">
@@ -133,17 +135,7 @@ export function ReportsPreview({ screen }: { screen: string }) {
       </div>
     )
   }
-  if (screen === 'Schedule') {
-    return (
-      <div className="max-w-lg space-y-3 rounded-lg border border-border bg-card p-4">
-        <h2 className="text-base font-semibold">Schedule this report</h2>
-        <p className="text-sm text-muted-foreground">Emails go out in America/New York.</p>
-        <p className="text-sm">Every week on Monday at 7:00 · PDF</p>
-        <p className="text-sm">Recipients: Ada Master, Acme Viewer</p>
-        <p className="text-xs text-muted-foreground">Next: Mon 7:00 AM · Mon 7:00 AM · Mon 7:00 AM</p>
-      </div>
-    )
-  }
+  if (screen === 'Schedule') return <SchedulePreview />
   if (screen === 'History') {
     return (
       <div className="space-y-3">
@@ -162,11 +154,66 @@ export function ReportsPreview({ screen }: { screen: string }) {
           ],
         }]} />
         <ScheduleList
-          rows={[{ id: 's1', name: 'Monday activity', frequency: 'weekly', send_hour: 7, status: 'active', next_run_at: null, lastStatus: 'skipped', recipients: 2, unsubscribed: 0 }]}
-          onOpen={() => undefined}
+          rows={[{ id: 's1', name: 'Monday activity', frequency: 'weekly', weekday: 1, month_day: null, send_hour: 7, status: 'active', next_run_at: '2026-11-23T12:00:00Z', lastStatus: 'skipped', recipients: 2, unsubscribed: 0, timezone: 'America/New_York' }]}
+          timezone="America/New_York"
+          onEdit={() => undefined}
+          onSend={() => undefined}
+          onPause={() => undefined}
+          onDelete={() => undefined}
         />
       </div>
     )
   }
   return <UnsubscribeCard done={false} error="" onConfirm={() => undefined} />
+}
+
+function ResultsChrome({ range, children }: { range: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 md:grid-cols-4">
+        <div>
+          <p className="mb-1 text-sm font-medium">Date range</p>
+          <div className="flex h-11 items-center rounded-lg border border-input bg-card px-2 text-sm">{range}</div>
+        </div>
+        <div>
+          <p className="mb-1 text-sm font-medium">Projects</p>
+          <div className="flex h-11 items-center rounded-lg border border-input bg-card px-2 text-sm">All projects I can see</div>
+        </div>
+        <div className="flex items-end gap-2">
+          <span className="inline-flex h-11 items-center rounded-lg border border-border bg-card px-4 text-sm">Refresh</span>
+          <span className="inline-flex h-11 items-center rounded-lg border border-border bg-card px-4 text-sm">Download</span>
+          <span className="inline-flex h-11 items-center rounded-lg border border-border bg-card px-4 text-sm">Schedule</span>
+        </div>
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function SchedulePreview() {
+  const [form, setForm] = useState<ScheduleFormState>({
+    name: 'Monday activity',
+    frequency: 'weekly',
+    weekday: 1,
+    monthDay: 1,
+    sendHour: 7,
+    formats: ['pdf'],
+    recipientIds: ['ada'],
+  })
+  return (
+    <div className="max-w-lg rounded-lg border border-border bg-card">
+      <div className="border-b border-border px-4 py-3">
+        <h2 className="text-base font-semibold">Schedule this report</h2>
+        <p className="text-sm text-muted-foreground">Emails go out in America/New_York.</p>
+      </div>
+      <ScheduleWizard
+        form={form}
+        setForm={setForm}
+        timezone="America/New_York"
+        users={[{ id: 'ada', name: 'Ada Master', email: 'master-a@example.test' }, { id: 'view', name: 'Acme Viewer', email: 'viewer-a@example.test' }]}
+        times={['2026-11-23T12:00:00Z', '2026-11-30T12:00:00Z', '2026-12-07T12:00:00Z']}
+        onSubmit={() => undefined}
+      />
+    </div>
+  )
 }

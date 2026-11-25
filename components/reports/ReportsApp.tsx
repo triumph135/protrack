@@ -7,11 +7,15 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Field, Input } from '@/components/ui/input'
 import { Sheet } from '@/components/ui/sheet'
-import { EmptyState, PageHeader } from '@/components/ui/feedback'
+import { EmptyState } from '@/components/ui/feedback'
+import { confirmAction } from '@/components/ui/confirm-dialog'
 import { ACTIVITY_COLUMNS, COST_COLUMNS, GROUP_FIELDS, INVOICE_COLUMNS } from '@/lib/reports/custom'
-import { defaultRangeFor } from '@/lib/reports/date-range'
+import { defaultRangeFor, RANGE_PRESETS } from '@/lib/reports/date-range'
+import { scheduleWriteBody, type ScheduleFrequency } from '@/lib/reports/schedule'
 import type { BuiltReport, ReportParams } from '@/lib/reports/types'
-import { ReportDocument, ReportsLandingView, RunHistory, ScheduleList, rangeOptions } from './views'
+import { DownloadMenu } from './DownloadMenu'
+import { ScheduleWizard, type ScheduleFormState } from './ScheduleWizard'
+import { ReportDocument, ReportsLandingView, RunHistory, ScheduleList, rangeOptions, type ScheduleRow } from './views'
 
 type Mode = 'landing' | 'report' | 'builder'
 
@@ -20,6 +24,7 @@ interface ContextPayload {
   error?: string
   companyName?: string
   scope?: {
+    userId?: string
     role: string | null
     canSchedule: boolean
     invoicesRead: boolean
@@ -50,6 +55,14 @@ interface CustomDraft {
   filters: { vendorContains?: string; range?: string; project_status?: 'active' | 'all' }
 }
 
+interface ScheduleRecord extends ScheduleRow {
+  report_key?: string
+  report_definition_id?: string | null
+  formats?: string[]
+  recipientIds?: string[]
+  config?: { params?: ReportParams; custom?: unknown; definitionId?: string | null }
+}
+
 const selectClass = 'h-11 w-full rounded-lg border border-input bg-card px-2 text-sm'
 
 async function readJson<T>(response: Response): Promise<T> {
@@ -58,34 +71,90 @@ async function readJson<T>(response: Response): Promise<T> {
   return body as T
 }
 
-export default function ReportsApp({ mode, reportKey, definitionId }: { mode: Mode; reportKey?: string; definitionId?: string }) {
+function allowedRange(value: string | undefined, fallback: string): string {
+  if (!value) return fallback
+  if ((RANGE_PRESETS as readonly string[]).includes(value) || /^year:\d{4}$/.test(value)) return value
+  return fallback
+}
+
+function startingParams(reportKey: string, initialRange?: string, initialGroup?: string, initialPerProject?: string): ReportParams {
+  const params: ReportParams = {
+    range: allowedRange(initialRange, defaultRangeFor(reportKey)),
+    projects: 'all',
+    project_status: 'all',
+  }
+  if (initialGroup === 'project') params.group_detail_by = 'project'
+  if (initialPerProject === '1') params.per_project_sections = true
+  return params
+}
+
+function blankSchedule(name: string, userId: string | undefined): ScheduleFormState {
+  return {
+    name,
+    frequency: 'weekly',
+    weekday: 1,
+    monthDay: 1,
+    sendHour: 7,
+    formats: ['pdf'],
+    recipientIds: userId ? [userId] : [],
+  }
+}
+
+export default function ReportsApp({
+  mode,
+  reportKey,
+  definitionId,
+  initialRange,
+  initialGroup,
+  initialPerProject,
+}: {
+  mode: Mode
+  reportKey?: string
+  definitionId?: string
+  initialRange?: string
+  initialGroup?: string
+  initialPerProject?: string
+}) {
   const router = useRouter()
   const [context, setContext] = useState<ContextPayload | null>(null)
+  const [ready, setReady] = useState(false)
   const [saved, setSaved] = useState<SavedReport[]>([])
-  const [tab, setTab] = useState<'reports' | 'schedules' | 'subscriptions'>('reports')
-  const [schedules, setSchedules] = useState<Array<{ id: string; name: string; frequency: string; send_hour: number; status: string; next_run_at: string | null; lastStatus: string | null; recipients: number; unsubscribed: number }>>([])
+  const [schedules, setSchedules] = useState<ScheduleRecord[]>([])
   const [subscriptions, setSubscriptions] = useState<Array<{ id: string; unsubscribed_at: string | null; schedule: { name: string; frequency: string } | null }>>([])
-  const [params, setParams] = useState<ReportParams>({ range: defaultRangeFor(reportKey || 'activity'), projects: 'all', project_status: 'active' })
+  const [params, setParams] = useState<ReportParams>(() => startingParams(reportKey || 'activity', initialRange, initialGroup, initialPerProject))
   const [report, setReport] = useState<BuiltReport | null>(null)
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
   const [scheduleOpen, setScheduleOpen] = useState(false)
   const [history, setHistory] = useState<Parameters<typeof RunHistory>[0]['runs']>([])
   const [draft, setDraft] = useState<CustomDraft>({ source: 'costs', columns: ['date', 'project', 'vendor', 'amount'], groupBy: ['vendor', 'month'], filters: { range: 'this_year', project_status: 'all' } })
   const [name, setName] = useState('')
   const [shared, setShared] = useState(false)
-  const [scheduleForm, setScheduleForm] = useState({ name: '', frequency: 'weekly', weekday: 1, monthDay: 1, sendHour: 7, formats: ['pdf'] as string[], recipientIds: [] as string[] })
+  const [hydrated, setHydrated] = useState(!definitionId)
+  const [scheduleForm, setScheduleForm] = useState<ScheduleFormState>(() => blankSchedule('Scheduled report', undefined))
+  const [scheduleMeta, setScheduleMeta] = useState<{ reportKey: string; params: ReportParams; definitionId: string | null; config?: unknown }>({
+    reportKey: reportKey || 'custom',
+    params: startingParams(reportKey || 'activity', initialRange, initialGroup, initialPerProject),
+    definitionId: definitionId || null,
+  })
   const [previewTimes, setPreviewTimes] = useState<string[]>([])
   const [activeSchedule, setActiveSchedule] = useState<string | null>(null)
+  const [savingSchedule, setSavingSchedule] = useState(false)
 
   const load = useCallback(async () => {
     const response = await fetch('/api/reports/context')
     const body = await response.json()
+    if (!response.ok) {
+      toast.error(body.error || 'Could not load reports.')
+      return
+    }
     setContext(body)
-    if (response.ok && !body.schemaPending) {
+    setReady(true)
+    if (!body.schemaPending) {
       const defs = await readJson<{ definitions: SavedReport[] }>(await fetch('/api/reports/definitions'))
       setSaved(defs.definitions)
       if (body.scope?.canSchedule) {
-        const listed = await readJson<{ schedules: typeof schedules }>(await fetch('/api/reports/schedules'))
+        const listed = await readJson<{ schedules: ScheduleRecord[] }>(await fetch('/api/reports/schedules'))
         setSchedules(listed.schedules)
       }
       const subs = await readJson<{ subscriptions: typeof subscriptions }>(await fetch('/api/reports/subscriptions'))
@@ -93,36 +162,55 @@ export default function ReportsApp({ mode, reportKey, definitionId }: { mode: Mo
     }
   }, [])
 
-  useEffect(() => { void load().catch((error: Error) => toast.error(error.message)) }, [load])
+  useEffect(() => { void load().catch((loadError: Error) => toast.error(loadError.message)) }, [load])
 
   useEffect(() => {
-    if (!definitionId || saved.length === 0) return
+    if (!definitionId || !ready) return
     const found = saved.find((item) => item.id === definitionId)
-    if (!found) return
-    setName(found.name)
-    setShared(found.is_shared)
-    if (found.config?.params) setParams(found.config.params)
-    if (found.config?.custom) setDraft(found.config.custom)
-  }, [definitionId, saved])
+    if (found) {
+      setName(found.name)
+      setShared(found.is_shared)
+      if (found.config?.params) setParams(found.config.params)
+      if (found.config?.custom) setDraft(found.config.custom)
+    }
+    setHydrated(true)
+  }, [definitionId, ready, saved])
 
   const key = reportKey || 'custom'
   const options = useMemo(() => rangeOptions(context?.years || []), [context?.years])
   const columns = draft.source === 'invoices' ? INVOICE_COLUMNS : draft.source === 'activity' ? ACTIVITY_COLUMNS : COST_COLUMNS
+  const timezone = context?.scope?.timezone || 'America/New_York'
 
-  async function run(body: Record<string, unknown>) {
+  const runBody = useMemo(() => (
+    mode === 'builder'
+      ? { reportKey: 'custom', definitionId, params: { ...params, range: draft.filters.range || params.range, project_status: draft.filters.project_status || params.project_status, vendor: draft.filters.vendorContains }, config: draft, name }
+      : { reportKey: key, definitionId, params }
+  ), [mode, definitionId, params, draft, name, key])
+
+  const run = useCallback(async (body: Record<string, unknown>) => {
     setBusy(true)
+    setError('')
     try {
       const result = await readJson<{ report: BuiltReport }>(await fetch('/api/reports/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }))
       setReport(result.report)
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not run the report.')
+    } catch (runError) {
+      const message = runError instanceof Error ? runError.message : 'Could not run the report.'
+      setError(message)
+      toast.error(message)
     } finally {
       setBusy(false)
     }
-  }
+  }, [])
 
-  async function download(format: 'pdf' | 'csv' | 'xlsx', body: Record<string, unknown>) {
-    const response = await fetch('/api/reports/export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, format }) })
+  const runKey = JSON.stringify(runBody)
+  useEffect(() => {
+    if (mode === 'landing' || !ready || !hydrated || context?.schemaPending) return
+    const handle = setTimeout(() => { void run(JSON.parse(runKey) as Record<string, unknown>) }, 400)
+    return () => clearTimeout(handle)
+  }, [mode, ready, hydrated, context?.schemaPending, runKey, run])
+
+  async function download(format: 'pdf' | 'csv' | 'xlsx') {
+    const response = await fetch('/api/reports/export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...runBody, format }) })
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}))
       toast.error((payload as { error?: string }).error || 'Could not export.')
@@ -138,36 +226,92 @@ export default function ReportsApp({ mode, reportKey, definitionId }: { mode: Mo
     URL.revokeObjectURL(url)
   }
 
-  const runBody = mode === 'builder'
-    ? { reportKey: 'custom', definitionId, params: { ...params, range: draft.filters.range || params.range, project_status: draft.filters.project_status || params.project_status, vendor: draft.filters.vendorContains }, config: draft, name }
-    : { reportKey: key, definitionId, params }
+  function openCreate() {
+    const currentName = name || report?.title || 'Scheduled report'
+    setActiveSchedule(null)
+    setHistory([])
+    setPreviewTimes([])
+    setScheduleForm(blankSchedule(currentName, context?.scope?.userId))
+    setScheduleMeta({
+      reportKey: key,
+      params,
+      definitionId: definitionId || null,
+      config: mode === 'builder' ? draft : undefined,
+    })
+    setScheduleOpen(true)
+  }
+
+  function openEdit(id: string) {
+    const row = schedules.find((item) => item.id === id)
+    if (!row) return
+    const formats = Array.isArray(row.formats) && row.formats.length ? row.formats.map(String) : ['pdf']
+    setActiveSchedule(id)
+    setPreviewTimes([])
+    setScheduleForm({
+      name: row.name,
+      frequency: (row.frequency === 'daily' || row.frequency === 'monthly' ? row.frequency : 'weekly') as ScheduleFrequency,
+      weekday: row.weekday ?? 1,
+      monthDay: row.month_day ?? 1,
+      sendHour: row.send_hour,
+      formats,
+      recipientIds: row.recipientIds || [],
+    })
+    setScheduleMeta({
+      reportKey: row.report_key || 'activity',
+      params: row.config?.params || params,
+      definitionId: row.report_definition_id || row.config?.definitionId || null,
+      config: row.config?.custom,
+    })
+    setScheduleOpen(true)
+    void openHistory(id)
+  }
+
+  useEffect(() => {
+    if (!scheduleOpen || !context?.scope?.canSchedule) return
+    const handle = setTimeout(() => { void previewSchedule() }, 250)
+    return () => clearTimeout(handle)
+    // Preview whenever the timing changes, including while the drawer is open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scheduleOpen, scheduleForm.frequency, scheduleForm.weekday, scheduleForm.monthDay, scheduleForm.sendHour, scheduleForm.name])
 
   if (context?.schemaPending) {
     return <ReportsLandingView canSchedule={false} invoicesRead={false} saved={[]} pending />
   }
 
+  const projectLabel = params.projects === 'all'
+    ? 'All projects I can see'
+    : `${params.projects.length} project${params.projects.length === 1 ? '' : 's'}`
+
   return (
     <div className="space-y-4">
       {mode === 'landing' ? (
         <>
-          <div className="flex gap-2">
-            <Button type="button" variant={tab === 'reports' ? 'primary' : 'outline'} onClick={() => setTab('reports')}>Reports</Button>
-            {context?.scope?.canSchedule ? <Button type="button" variant={tab === 'schedules' ? 'primary' : 'outline'} onClick={() => setTab('schedules')}>Schedules</Button> : null}
-            <Button type="button" variant={tab === 'subscriptions' ? 'primary' : 'outline'} onClick={() => setTab('subscriptions')}>Email subscriptions</Button>
-          </div>
-          {tab === 'reports' ? <ReportsLandingView canSchedule={!!context?.scope?.canSchedule} invoicesRead={context?.scope?.invoicesRead !== false} saved={saved} /> : null}
-          {tab === 'schedules' ? <ScheduleList rows={schedules} onOpen={(id) => { setActiveSchedule(id); setScheduleOpen(true); void openHistory(id) }} /> : null}
-          {tab === 'subscriptions' ? <SubscriptionList rows={subscriptions} onToggle={toggleSubscription} /> : null}
+          <ReportsLandingView canSchedule={!!context?.scope?.canSchedule} invoicesRead={context?.scope?.invoicesRead !== false} saved={saved} />
+          {context?.scope?.canSchedule ? (
+            <section className="space-y-2">
+              <h2 className="text-sm font-semibold">Scheduled reports</h2>
+              <ScheduleList
+                rows={schedules}
+                timezone={timezone}
+                onEdit={openEdit}
+                onSend={(id) => void sendNow(id)}
+                onPause={(id, status) => void pause(id, status)}
+                onDelete={(id) => void removeSchedule(id)}
+              />
+            </section>
+          ) : null}
+          <section className="space-y-2">
+            <h2 className="text-sm font-semibold">Email subscriptions</h2>
+            <SubscriptionList rows={subscriptions} onToggle={toggleSubscription} />
+          </section>
         </>
       ) : null}
 
       {mode !== 'landing' ? (
         <>
-          <PageHeader
-            title={mode === 'builder' ? (name || 'Custom report') : (report?.title || 'Report')}
-            description={context?.scope?.timezone ? `Dates use ${context.scope.timezone.replaceAll('_', ' ')}.` : undefined}
-            action={<Link href="/reports" className="text-sm text-muted-foreground">All reports</Link>}
-          />
+          <div className="flex justify-end">
+            <Link href="/reports" className="text-sm text-muted-foreground">All reports</Link>
+          </div>
           <div className="grid gap-3 md:grid-cols-4">
             <Field label="Date range" htmlFor="report-range">
               <select id="report-range" className={selectClass} value={params.range} onChange={(event) => setParams({ ...params, range: event.target.value })}>
@@ -181,88 +325,74 @@ export default function ReportsApp({ mode, reportKey, definitionId }: { mode: Mo
               </>
             ) : null}
             <Field label="Projects" htmlFor="report-projects">
-              <select id="report-projects" className={selectClass} value={params.projects === 'all' ? 'all' : params.projects[0] || 'all'} onChange={(event) => setParams({ ...params, projects: event.target.value === 'all' ? 'all' : [event.target.value] })}>
-                <option value="all">All projects I can see</option>
-                {(context?.projects || []).map((project) => <option key={project.id} value={project.id}>{project.jobNumber} {project.jobName}</option>)}
-              </select>
+              <details className="relative">
+                <summary id="report-projects" className={`${selectClass} flex cursor-pointer list-none items-center`}>{projectLabel}</summary>
+                <div className="absolute z-20 mt-1 max-h-64 w-full min-w-56 overflow-y-auto rounded-lg border border-border bg-card p-2 shadow-lg">
+                  <label className="flex items-center gap-2 px-1 py-1 text-sm">
+                    <input type="checkbox" checked={params.projects === 'all'} onChange={() => setParams({ ...params, projects: 'all' })} />
+                    All projects I can see
+                  </label>
+                  {(context?.projects || []).map((project) => {
+                    const selected = params.projects !== 'all' && params.projects.includes(project.id)
+                    return (
+                      <label key={project.id} className="flex items-center gap-2 px-1 py-1 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={params.projects === 'all' ? false : selected}
+                          onChange={(event) => {
+                            const current = params.projects === 'all' ? [] : params.projects
+                            const next = event.target.checked ? [...current, project.id] : current.filter((id) => id !== project.id)
+                            setParams({ ...params, projects: next.length ? next : 'all' })
+                          }}
+                        />
+                        {project.jobNumber} {project.jobName}
+                      </label>
+                    )
+                  })}
+                </div>
+              </details>
             </Field>
+            <div className="flex items-end gap-2">
+              <Button type="button" variant="outline" disabled={busy} onClick={() => void run(runBody)}>{busy ? 'Updating…' : 'Refresh'}</Button>
+              <DownloadMenu onDownload={(format) => void download(format)} />
+              {context?.scope?.canSchedule ? <Button type="button" variant="outline" onClick={openCreate}>Schedule</Button> : null}
+            </div>
           </div>
-          {mode === 'builder' ? <Builder draft={draft} columns={[...columns]} setDraft={setDraft} name={name} setName={setName} shared={shared} setShared={setShared} canShare={!!context?.scope?.canSchedule} /> : null}
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" disabled={busy} onClick={() => void run(runBody)}>{busy ? 'Running…' : 'Run report'}</Button>
-            <Button type="button" variant="outline" onClick={() => void download('pdf', runBody)}>PDF</Button>
-            <Button type="button" variant="outline" onClick={() => void download('csv', runBody)}>CSV</Button>
-            <Button type="button" variant="outline" onClick={() => void download('xlsx', runBody)}>Excel</Button>
-            {context?.scope?.canSchedule ? <Button type="button" variant="outline" onClick={() => { setActiveSchedule(null); setScheduleForm({ ...scheduleForm, name: name || report?.title || 'Scheduled report' }); setScheduleOpen(true) }}>Schedule</Button> : null}
-            {mode === 'builder' ? <Button type="button" variant="secondary" onClick={() => void saveDefinition()}>Save report</Button> : null}
-          </div>
-          {report ? <ReportDocument report={report} /> : <EmptyState title="Run the report" body="Pick a date range, then run it. The same numbers are used for the page, the PDF, the CSV, and the Excel file." />}
+          {mode === 'builder' ? <Builder draft={draft} columns={[...columns]} setDraft={setDraft} name={name} setName={setName} shared={shared} setShared={setShared} canShare={!!context?.scope?.canSchedule} onSave={() => void saveDefinition()} /> : null}
+          {busy && !report ? <EmptyState title="Running the report" body="Results use the same numbers as the download." /> : null}
+          {error && !report ? <EmptyState title="Could not run the report" body={error} /> : null}
+          {report ? <ReportDocument report={report} /> : null}
         </>
       ) : null}
 
-      <Sheet open={scheduleOpen} onOpenChange={setScheduleOpen} title={activeSchedule ? 'Schedule' : 'Schedule this report'} description="Emails go out in the company timezone.">
-        <div className="space-y-3 overflow-y-auto p-4">
-          <Field label="Name" htmlFor="sched-name"><Input id="sched-name" value={scheduleForm.name} onChange={(event) => setScheduleForm({ ...scheduleForm, name: event.target.value })} /></Field>
-          <Field label="How often" htmlFor="sched-freq">
-            <select id="sched-freq" className={selectClass} value={scheduleForm.frequency} onChange={(event) => setScheduleForm({ ...scheduleForm, frequency: event.target.value })}>
-              <option value="daily">Every day</option>
-              <option value="weekly">Every week</option>
-              <option value="monthly">Every month</option>
-            </select>
-          </Field>
-          {scheduleForm.frequency === 'weekly' ? (
-            <Field label="Day" htmlFor="sched-day">
-              <select id="sched-day" className={selectClass} value={scheduleForm.weekday} onChange={(event) => setScheduleForm({ ...scheduleForm, weekday: Number(event.target.value) })}>
-                {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((label, index) => <option key={label} value={index}>{label}</option>)}
-              </select>
-            </Field>
-          ) : null}
-          {scheduleForm.frequency === 'monthly' ? (
-            <Field label="Day of month" htmlFor="sched-dom"><Input id="sched-dom" type="number" min={1} max={31} value={scheduleForm.monthDay} onChange={(event) => setScheduleForm({ ...scheduleForm, monthDay: Number(event.target.value) })} /></Field>
-          ) : null}
-          <Field label="Hour" htmlFor="sched-hour">
-            <select id="sched-hour" className={selectClass} value={scheduleForm.sendHour} onChange={(event) => setScheduleForm({ ...scheduleForm, sendHour: Number(event.target.value) })}>
-              {Array.from({ length: 24 }, (_, hour) => <option key={hour} value={hour}>{hour}:00</option>)}
-            </select>
-          </Field>
-          <fieldset>
-            <legend className="mb-1 text-sm font-medium">Files</legend>
-            {['pdf', 'csv', 'xlsx'].map((format) => (
-              <label key={format} className="mr-3 text-sm">
-                <input type="checkbox" className="mr-1" checked={scheduleForm.formats.includes(format)} onChange={(event) => {
-                  const formats = event.target.checked ? [...scheduleForm.formats, format] : scheduleForm.formats.filter((item) => item !== format)
-                  setScheduleForm({ ...scheduleForm, formats })
-                }} />
-                {format.toUpperCase()}
-              </label>
-            ))}
-          </fieldset>
-          <fieldset>
-            <legend className="mb-1 text-sm font-medium">Recipients</legend>
-            <div className="max-h-40 space-y-1 overflow-y-auto">
-              {(context?.users || []).map((person) => (
-                <label key={person.id} className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={scheduleForm.recipientIds.includes(person.id)} onChange={(event) => {
-                    const recipientIds = event.target.checked ? [...scheduleForm.recipientIds, person.id] : scheduleForm.recipientIds.filter((id) => id !== person.id)
-                    setScheduleForm({ ...scheduleForm, recipientIds })
-                  }} />
-                  {person.name} · {person.email}
-                </label>
-              ))}
+      <Sheet open={scheduleOpen} onOpenChange={setScheduleOpen} title={activeSchedule ? 'Edit schedule' : 'Schedule this report'} description={cadenceLine()}>
+        <ScheduleWizard
+          key={activeSchedule || 'new'}
+          form={scheduleForm}
+          setForm={setScheduleForm}
+          timezone={timezone}
+          users={context?.users || []}
+          times={previewTimes}
+          saving={savingSchedule}
+          editing={!!activeSchedule}
+          onSubmit={() => void saveSchedule()}
+        />
+        {activeSchedule ? (
+          <div className="space-y-3 border-t border-border p-4">
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="outline" onClick={() => void sendNow(activeSchedule)}>Send now</Button>
+              <Button type="button" variant="outline" onClick={() => void pause(activeSchedule, schedules.find((row) => row.id === activeSchedule)?.status || 'active')}>{schedules.find((row) => row.id === activeSchedule)?.status === 'paused' ? 'Resume' : 'Pause'}</Button>
             </div>
-          </fieldset>
-          {previewTimes.length ? <p className="text-xs text-muted-foreground">Next: {previewTimes.map((time) => new Date(time).toLocaleString()).join(' · ')}</p> : null}
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" onClick={() => void previewSchedule()}>Preview next 3</Button>
-            <Button type="button" onClick={() => void saveSchedule()}>{activeSchedule ? 'Save' : 'Create schedule'}</Button>
-            {activeSchedule ? <Button type="button" variant="outline" onClick={() => void sendNow(activeSchedule)}>Send now</Button> : null}
-            {activeSchedule ? <Button type="button" variant="outline" onClick={() => void pause(activeSchedule)}>Pause</Button> : null}
+            <RunHistory runs={history} />
           </div>
-          {activeSchedule ? <RunHistory runs={history} /> : null}
-        </div>
+        ) : null}
       </Sheet>
     </div>
   )
+
+  function cadenceLine() {
+    return `${scheduleForm.frequency === 'weekly' ? 'Weekly' : scheduleForm.frequency === 'monthly' ? 'Monthly' : 'Daily'} email in ${timezone.replaceAll('_', ' ')}.`
+  }
 
   async function saveDefinition() {
     try {
@@ -275,8 +405,8 @@ export default function ReportsApp({ mode, reportKey, definitionId }: { mode: Mo
         toast.success('Report saved')
         router.push(`/reports/custom/${created.definition.id}` as never)
       }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not save.')
+    } catch (saveError) {
+      toast.error(saveError instanceof Error ? saveError.message : 'Could not save.')
     }
   }
 
@@ -285,17 +415,18 @@ export default function ReportsApp({ mode, reportKey, definitionId }: { mode: Mo
       const result = await readJson<{ times: string[] }>(await fetch('/api/reports/schedules/preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...scheduleForm, reportKey: key, params, config: mode === 'builder' ? draft : undefined, recipientIds: scheduleForm.recipientIds.length ? scheduleForm.recipientIds : ['00000000-0000-0000-0000-000000000000'] }),
+        body: JSON.stringify(scheduleWriteBody({ ...scheduleForm, ...scheduleMeta })),
       }))
       setPreviewTimes(result.times)
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not preview.')
+    } catch {
+      setPreviewTimes([])
     }
   }
 
   async function saveSchedule() {
+    setSavingSchedule(true)
     try {
-      const payload = { ...scheduleForm, reportKey: key, params, config: mode === 'builder' ? draft : undefined, definitionId }
+      const payload = scheduleWriteBody({ ...scheduleForm, ...scheduleMeta })
       if (activeSchedule) {
         await readJson(await fetch(`/api/reports/schedules/${activeSchedule}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }))
       } else {
@@ -303,9 +434,12 @@ export default function ReportsApp({ mode, reportKey, definitionId }: { mode: Mo
         setActiveSchedule(created.id)
       }
       toast.success('Schedule saved')
+      setScheduleOpen(false)
       await load()
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not save the schedule.')
+    } catch (saveError) {
+      toast.error(saveError instanceof Error ? saveError.message : 'Could not save the schedule.')
+    } finally {
+      setSavingSchedule(false)
     }
   }
 
@@ -314,15 +448,30 @@ export default function ReportsApp({ mode, reportKey, definitionId }: { mode: Mo
       const result = await readJson<{ message?: string; status: string }>(await fetch(`/api/reports/schedules/${id}/send-now`, { method: 'POST' }))
       if (result.message) toast.message(result.message)
       else toast.success(`Send ${result.status}`)
-      await openHistory(id)
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not send.')
+      if (activeSchedule === id) await openHistory(id)
+      await load()
+    } catch (sendError) {
+      toast.error(sendError instanceof Error ? sendError.message : 'Could not send.')
     }
   }
 
-  async function pause(id: string) {
-    await fetch(`/api/reports/schedules/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'paused' }) })
-    toast.success('Schedule paused')
+  async function pause(id: string, status: string) {
+    const next = status === 'paused' ? 'active' : 'paused'
+    await fetch(`/api/reports/schedules/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: next }) })
+    toast.success(next === 'paused' ? 'Schedule paused' : 'Schedule resumed')
+    await load()
+  }
+
+  async function removeSchedule(id: string) {
+    const ok = await confirmAction({ title: 'Delete this schedule?', description: 'Recipients will stop getting this report. Past sends stay in the history.', confirmLabel: 'Delete', destructive: true })
+    if (!ok) return
+    const response = await fetch(`/api/reports/schedules/${id}`, { method: 'DELETE' })
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}))
+      toast.error((payload as { error?: string }).error || 'Could not delete the schedule.')
+      return
+    }
+    toast.success('Schedule deleted')
     await load()
   }
 
@@ -338,7 +487,7 @@ export default function ReportsApp({ mode, reportKey, definitionId }: { mode: Mo
 }
 
 function Builder({
-  draft, columns, setDraft, name, setName, shared, setShared, canShare,
+  draft, columns, setDraft, name, setName, shared, setShared, canShare, onSave,
 }: {
   draft: CustomDraft
   columns: string[]
@@ -348,6 +497,7 @@ function Builder({
   shared: boolean
   setShared: (value: boolean) => void
   canShare: boolean
+  onSave: () => void
 }) {
   return (
     <div className="grid gap-3 rounded-lg border border-border bg-card p-3 md:grid-cols-2">
@@ -389,6 +539,7 @@ function Builder({
           <Input id="vendor-contains" value={draft.filters.vendorContains || ''} onChange={(event) => setDraft({ ...draft, filters: { ...draft.filters, vendorContains: event.target.value } })} />
         </Field>
         {canShare ? <label className="mt-2 block text-sm"><input type="checkbox" className="mr-1" checked={shared} onChange={(event) => setShared(event.target.checked)} />Share with the company</label> : null}
+        <Button type="button" className="mt-3" variant="secondary" onClick={onSave}>Save report</Button>
       </fieldset>
     </div>
   )

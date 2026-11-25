@@ -12,6 +12,8 @@ import { reportToCsv } from '../lib/reports/export-csv.ts'
 import { reportToXlsx } from '../lib/reports/export-xlsx.ts'
 import { toStructuredPdf } from '../lib/reports/files.ts'
 import { renderStructuredReportPdf } from '../lib/pdf-report.ts'
+import { reportCharts } from '../lib/reports/charts.ts'
+import { cadenceSummary, parseScheduleDraft, scheduleWriteBody } from '../lib/reports/schedule.ts'
 import { vendorDisplayName, vendorKey } from '../lib/reports/vendor.ts'
 import type { ReportCategory, ReportCost, ReportDataset, ReportInvoice, ReportParams } from '../lib/reports/types.ts'
 
@@ -263,6 +265,88 @@ describe('custom reports and exports', () => {
     assert.ok(detail)
     const values = detail.getColumn(6).values
     assert.ok(values.some((value) => value === 12.5))
+  })
+})
+
+describe('schedule create and edit', () => {
+  const people = ['11111111-1111-4111-8111-111111111111']
+  const params = { range: 'this_year', projects: 'all', project_status: 'all' }
+
+  it('creates daily, weekly, and monthly schedules and drops the unused day', () => {
+    const weekly = scheduleWriteBody({ name: 'Monday activity', reportKey: 'activity', frequency: 'weekly', weekday: 1, monthDay: 1, sendHour: 7, formats: ['pdf'], recipientIds: people, params })
+    assert.equal(weekly.weekday, 1)
+    assert.equal('monthDay' in weekly, false)
+    assert.equal(parseScheduleDraft({ ...weekly, monthDay: 1 }).monthDay, null)
+    assert.equal(parseScheduleDraft({ ...weekly, monthDay: 1 }).weekday, 1)
+
+    const daily = scheduleWriteBody({ name: 'Daily activity', reportKey: 'activity', frequency: 'daily', weekday: 1, monthDay: 15, sendHour: 7, formats: ['pdf'], recipientIds: people, params })
+    assert.equal('weekday' in daily, false)
+    assert.equal('monthDay' in daily, false)
+    const dailyParsed = parseScheduleDraft({ ...daily, weekday: 1, monthDay: 15 })
+    assert.equal(dailyParsed.weekday, null)
+    assert.equal(dailyParsed.monthDay, null)
+
+    const monthly = scheduleWriteBody({ name: 'Month end', reportKey: 'activity', frequency: 'monthly', weekday: 1, monthDay: 31, sendHour: 18, formats: ['pdf', 'csv'], recipientIds: people, params })
+    assert.equal(monthly.monthDay, 31)
+    assert.equal('weekday' in monthly, false)
+    assert.equal(parseScheduleDraft({ ...monthly, weekday: 4 }).weekday, null)
+    assert.equal(parseScheduleDraft({ ...monthly, weekday: 4 }).monthDay, 31)
+    assert.equal(cadenceSummary({ frequency: 'weekly', weekday: 1, sendHour: 7, timezone: 'America/New_York' }), 'Every Monday at 7:00 AM (America/New_York)')
+  })
+
+  it('edits a weekly schedule to daily or monthly without rejecting the old day fields', () => {
+    const created = parseScheduleDraft(scheduleWriteBody({ name: 'Monday activity', reportKey: 'activity', frequency: 'weekly', weekday: 1, monthDay: 1, sendHour: 7, formats: ['pdf'], recipientIds: people, params }))
+    const editedDaily = parseScheduleDraft({ ...created, frequency: 'daily', weekday: created.weekday, monthDay: 1, params })
+    assert.equal(editedDaily.frequency, 'daily')
+    assert.equal(editedDaily.weekday, null)
+    assert.equal(editedDaily.monthDay, null)
+    const editedMonthly = parseScheduleDraft({ ...created, frequency: 'monthly', weekday: created.weekday, monthDay: 15, params })
+    assert.equal(editedMonthly.weekday, null)
+    assert.equal(editedMonthly.monthDay, 15)
+    assert.throws(() => parseScheduleDraft({ ...created, frequency: 'weekly', weekday: null, params }), /day of the week/)
+    assert.throws(() => parseScheduleDraft({ ...created, frequency: 'monthly', monthDay: 32, params }), /day of the month/)
+  })
+})
+
+describe('report charts', () => {
+  it('uses top-level category nets and cost rows, not invoices', () => {
+    const charts = reportCharts({
+      key: 'activity',
+      title: 'Activity for a period',
+      rangeLabel: 'Last year',
+      filters: [],
+      kpis: [],
+      notes: [],
+      sections: [
+        {
+          title: 'Totals by category',
+          columns: [
+            { key: 'category', label: 'Category', kind: 'text' },
+            { key: 'net', label: 'Net', kind: 'money' },
+          ],
+          rows: [
+            { cells: ['Materials', 115] },
+            { depth: 1, cells: ['Lumber', 60] },
+            { cells: ['Labor', 440] },
+          ],
+        },
+        {
+          title: 'Chronological detail',
+          columns: [
+            { key: 'date', label: 'Date', kind: 'text' },
+            { key: 'type', label: 'Type', kind: 'text' },
+            { key: 'amount', label: 'Amount', kind: 'money' },
+          ],
+          rows: [
+            { cells: ['2025-11-02', 'Cost', 15] },
+            { cells: ['2025-11-03', 'Invoice', 750] },
+            { cells: ['2025-05-06', 'Cost reversal', -20] },
+          ],
+        },
+      ],
+    })
+    assert.deepEqual(charts.bars?.points.map((point) => point.value), [115, 440])
+    assert.deepEqual(charts.line?.points.map((point) => point.value), [-20, 15])
   })
 })
 

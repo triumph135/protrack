@@ -7,6 +7,8 @@ import { REPORT_CATALOG } from '@/lib/reports/catalog'
 import type { BuiltReport, ReportCell, ReportColumn } from '@/lib/reports/types'
 import { Badge, EmptyState, PageHeader } from '@/components/ui/feedback'
 import { Button } from '@/components/ui/button'
+import { cadenceSummary } from '@/lib/reports/schedule'
+import { ReportChartRow } from './ReportCharts'
 
 export function cellText(column: ReportColumn, value: ReportCell): string {
   if (value == null || value === '') return ''
@@ -33,6 +35,7 @@ export function ReportDocument({ report }: { report: BuiltReport }) {
           ))}
         </div>
       ) : null}
+      <ReportChartRow report={report} />
       {report.sections.map((section) => (
         <section key={section.title} className="overflow-hidden rounded-lg border border-border bg-card">
           <h2 className="border-b border-border px-3 py-2 text-sm font-semibold">{section.title}</h2>
@@ -78,6 +81,15 @@ export function ReportDocument({ report }: { report: BuiltReport }) {
   )
 }
 
+export const QUICK_STARTS: Array<{ href: string; title: string; blurb: string }> = [
+  { href: '/reports/activity?range=this_year', title: "This year's activity", blurb: 'Costs, invoices, and changes since January 1.' },
+  { href: '/reports/activity?range=last_year', title: "Last year's activity", blurb: 'The full previous calendar year.' },
+  { href: '/reports/job_cost_summary?range=last_month&per_project=1', title: 'Last month by job', blurb: 'Budget versus actual on each job.' },
+  { href: '/reports/labor_by_employee?range=this_month', title: 'Labor by employee (this month)', blurb: 'Hours and labor cost for this month.' },
+  { href: '/reports/vendor_spend?range=ytd', title: 'Vendor spend (YTD)', blurb: 'Net spend by vendor, year to date.' },
+  { href: '/reports/portfolio?range=all_time', title: 'Portfolio overview', blurb: 'Contract, cost, invoiced, and gross profit by job.' },
+]
+
 export function ReportsLandingView({
   canSchedule,
   invoicesRead,
@@ -93,26 +105,28 @@ export function ReportsLandingView({
     <div className="space-y-6">
       <PageHeader
         title="Reports"
-        description="Activity, job cost, labor, invoicing, and the reports you save."
-        action={canSchedule ? <Link href="/reports/custom/new" className="inline-flex h-11 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground">Build a report</Link> : <Link href="/reports/custom/new" className="inline-flex h-11 items-center rounded-lg border border-border px-4 text-sm">Build a private report</Link>}
+        description="Start with a common report. Results open immediately for every project you can see."
       />
       {pending ? <EmptyState title="Reports turn on after the database update" body="The Reports page is here. Numbers appear after the reporting database update is applied." /> : null}
-      <Link href="/reports/activity" className="block rounded-lg border border-border bg-card p-5 hover:bg-muted/40">
-        <div className="flex items-center gap-2">
-          <h2 className="text-lg font-semibold">Activity for a period</h2>
-          <Badge>Start here</Badge>
-        </div>
-        <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Everything that happened in a year or date range: costs, labor, invoices, reversals, moves, and change orders.</p>
-      </Link>
-      <div className="grid gap-3 sm:grid-cols-2">
-        {REPORT_CATALOG.filter((item) => item.key !== 'activity').map((item) => (
-          <Link key={item.key} href={`/reports/${item.key}` as never} className="rounded-lg border border-border bg-card p-4 hover:bg-muted/40">
-            <h3 className="font-medium">{item.title}</h3>
-            <p className="mt-1 text-sm text-muted-foreground">{item.description}</p>
-            {item.needsInvoices && !invoicesRead ? <p className="mt-2 text-xs text-muted-foreground">Needs invoice access.</p> : null}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {QUICK_STARTS.map((item) => (
+          <Link key={item.href} href={item.href as never} className="rounded-lg border border-border bg-card p-4 hover:bg-muted/40">
+            <h2 className="font-medium">{item.title}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{item.blurb}</p>
           </Link>
         ))}
       </div>
+      <section>
+        <h2 className="mb-2 text-sm font-semibold">All reports</h2>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {REPORT_CATALOG.map((item) => (
+            <Link key={item.key} href={`/reports/${item.key}` as never} className="rounded-lg border border-border bg-card px-3 py-2 text-sm hover:bg-muted/40">
+              <span className="font-medium">{item.title}</span>
+              {item.needsInvoices && !invoicesRead ? <span className="mt-0.5 block text-xs text-muted-foreground">Needs invoice access.</span> : null}
+            </Link>
+          ))}
+        </div>
+      </section>
       <section>
         <h2 className="mb-2 text-sm font-semibold">Saved reports</h2>
         {saved.length === 0 ? <p className="text-sm text-muted-foreground">No saved reports yet.</p> : (
@@ -128,29 +142,68 @@ export function ReportsLandingView({
           </ul>
         )}
       </section>
+      <Link href="/reports/custom/new" className="block rounded-lg border border-dashed border-border px-4 py-3 text-sm hover:bg-muted/40">
+        <span className="font-medium">{canSchedule ? 'Build a custom report' : 'Build a private report'}</span>
+        <span className="mt-0.5 block text-muted-foreground">Pick columns and group costs, labor, invoices, or activity.</span>
+      </Link>
     </div>
   )
 }
 
+export interface ScheduleRow {
+  id: string
+  name: string
+  frequency: string
+  weekday?: number | null
+  month_day?: number | null
+  send_hour: number
+  status: string
+  next_run_at: string | null
+  lastStatus: string | null
+  recipients: number
+  unsubscribed: number
+  timezone?: string
+}
+
 export function ScheduleList({
   rows,
-  onOpen,
+  timezone,
+  onEdit,
+  onSend,
+  onPause,
+  onDelete,
 }: {
-  rows: Array<{ id: string; name: string; frequency: string; send_hour: number; status: string; next_run_at: string | null; lastStatus: string | null; recipients: number; unsubscribed: number }>
-  onOpen: (id: string) => void
+  rows: ScheduleRow[]
+  timezone?: string
+  onEdit: (id: string) => void
+  onSend?: (id: string) => void
+  onPause?: (id: string, status: string) => void
+  onDelete?: (id: string) => void
 }) {
   if (rows.length === 0) return <EmptyState title="No schedules" body="A schedule emails a report on a day and hour you pick." />
   return (
     <ul className="divide-y divide-border rounded-lg border border-border bg-card">
       {rows.map((row) => (
-        <li key={row.id}>
-          <button type="button" className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left text-sm hover:bg-muted/40" onClick={() => onOpen(row.id)}>
-            <span>
+        <li key={row.id} className="flex flex-col gap-2 px-3 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
               <span className="font-medium">{row.name}</span>
-              <span className="mt-0.5 block text-xs text-muted-foreground">{row.frequency} at {row.send_hour}:00 · {row.recipients} recipients{row.unsubscribed ? ` · ${row.unsubscribed} unsubscribed` : ''}</span>
-            </span>
-            <span className="text-xs text-muted-foreground">{row.status}{row.lastStatus ? ` · last ${row.lastStatus}` : ''}</span>
-          </button>
+              {row.status === 'paused' ? <Badge>Paused</Badge> : null}
+            </div>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {cadenceSummary({ frequency: row.frequency, weekday: row.weekday, monthDay: row.month_day, sendHour: row.send_hour, timezone: row.timezone || timezone })}
+              {' · '}{row.recipients} recipient{row.recipients === 1 ? '' : 's'}
+              {row.unsubscribed ? ` · ${row.unsubscribed} unsubscribed` : ''}
+              {row.next_run_at ? ` · next ${new Date(row.next_run_at).toLocaleString()}` : ''}
+              {row.lastStatus ? ` · last ${row.lastStatus}` : ''}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" size="sm" variant="outline" onClick={() => onEdit(row.id)}>Edit</Button>
+            {onSend ? <Button type="button" size="sm" variant="outline" onClick={() => onSend(row.id)}>Send now</Button> : null}
+            {onPause ? <Button type="button" size="sm" variant="outline" onClick={() => onPause(row.id, row.status)}>{row.status === 'paused' ? 'Resume' : 'Pause'}</Button> : null}
+            {onDelete ? <Button type="button" size="sm" variant="outline" onClick={() => onDelete(row.id)}>Delete</Button> : null}
+          </div>
         </li>
       ))}
     </ul>

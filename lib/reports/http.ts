@@ -10,6 +10,7 @@ import { EMAIL_NOT_SET_UP, resolveEmailTransport } from './email-mode'
 import { loadDataset, loadScope, parseScope } from './engine'
 import { filenameFor, renderReportFile } from './files'
 import { catalogItem } from './catalog'
+import { parseScheduleDraft } from './schedule'
 import { paramsFromSearch, paramsToSearch, parseReportParams } from './params'
 import { resolveRange, yearChoices } from './date-range'
 import type { AccessScope, ReportKey, ReportParams } from './types'
@@ -142,6 +143,7 @@ export async function getContext(request: Request) {
     schemaPending: false,
     companyName: tenant?.name || '',
     scope: {
+      userId: scope.user_id,
       role: scope.role,
       canSchedule: scope.can_schedule,
       invoicesRead: scope.invoices_read,
@@ -256,41 +258,12 @@ function assertProjects(params: ReportParams, scope: AccessScope) {
 
 function assertSchedule(body: Record<string, unknown>, scope: AccessScope) {
   if (!scope.can_schedule) throw new Error('Only a master or project manager can schedule a report.')
-  const name = typeof body.name === 'string' ? body.name.trim() : ''
-  if (name.length < 1 || name.length > 120) throw new Error('Name the schedule in 120 characters or fewer.')
-  const reportKey = body.reportKey
-  if (typeof reportKey !== 'string' || !catalogItem(reportKey) && reportKey !== 'custom') throw new Error('Unknown report.')
-  const frequency = body.frequency
-  if (frequency !== 'daily' && frequency !== 'weekly' && frequency !== 'monthly') throw new Error('Frequency must be daily, weekly, or monthly.')
-  const weekday = body.weekday == null ? null : Number(body.weekday)
-  const monthDay = body.monthDay == null ? null : Number(body.monthDay)
-  if (frequency === 'weekly' && (weekday == null || weekday < 0 || weekday > 6)) throw new Error('Pick a day of the week.')
-  if (frequency !== 'weekly' && body.weekday != null) throw new Error('A weekday is only used for weekly schedules.')
-  if (frequency === 'monthly' && (monthDay == null || monthDay < 1 || monthDay > 31)) throw new Error('Pick a day of the month from 1 to 31.')
-  if (frequency !== 'monthly' && body.monthDay != null) throw new Error('A day of the month is only used for monthly schedules.')
-  const sendHour = Number(body.sendHour)
-  if (!Number.isInteger(sendHour) || sendHour < 0 || sendHour > 23) throw new Error('Pick an hour from 12:00 AM through 11:00 PM.')
-  if (!Array.isArray(body.formats) || body.formats.length === 0) throw new Error('Choose at least one file format.')
-  const formats = body.formats.map(String)
-  if (formats.some((format) => !['pdf', 'csv', 'xlsx'].includes(format))) throw new Error('Formats are pdf, csv, and xlsx.')
-  if (!Array.isArray(body.recipientIds) || body.recipientIds.length === 0) throw new Error('Choose at least one recipient.')
-  if (body.recipientIds.length > 25) throw new Error('A schedule can have at most 25 recipients.')
-  const params = parseReportParams(reportKey, body.params ?? {})
+  const draft = parseScheduleDraft(body)
+  if (!catalogItem(draft.reportKey) && draft.reportKey !== 'custom') throw new Error('Unknown report.')
+  const params = parseReportParams(draft.reportKey, draft.params ?? {})
   assertProjects(params, scope)
-  const custom = reportKey === 'custom' ? parseCustomConfig(body.config) : null
-  return {
-    name,
-    reportKey,
-    frequency,
-    weekday: frequency === 'weekly' ? weekday : null,
-    monthDay: frequency === 'monthly' ? monthDay : null,
-    sendHour,
-    formats,
-    recipientIds: body.recipientIds.map(String),
-    params,
-    custom,
-    definitionId: typeof body.definitionId === 'string' ? body.definitionId : null,
-  }
+  const custom = draft.reportKey === 'custom' ? parseCustomConfig(draft.config) : null
+  return { ...draft, params, custom }
 }
 
 async function nextRun(admin: Admin, input: { frequency: string; weekday: number | null; monthDay: number | null; sendHour: number; timezone: string; after?: string }) {
@@ -331,7 +304,7 @@ export async function getSchedules() {
   const gate = await context()
   if (gate.response) return gate.response
   if (!gate.scope.can_schedule) return NextResponse.json({ schedules: [] })
-  let query = gate.admin.from('report_schedules').select('id, name, report_key, frequency, weekday, month_day, send_hour, formats, status, paused_reason, next_run_at, last_run_at, owner_id').eq('tenant_id', gate.scope.tenant_id!)
+  let query = gate.admin.from('report_schedules').select('id, name, report_key, report_definition_id, config, frequency, weekday, month_day, send_hour, formats, status, paused_reason, next_run_at, last_run_at, owner_id').eq('tenant_id', gate.scope.tenant_id!)
   if (gate.scope.role !== 'master') query = query.eq('owner_id', gate.scope.user_id)
   const { data, error } = await query.order('name')
   if (error) return jsonError(error.message, 400)
@@ -346,6 +319,7 @@ export async function getSchedules() {
     schedules: (data || []).map((row) => ({
       ...row,
       recipients: (recipients || []).filter((item) => item.schedule_id === row.id).length,
+      recipientIds: (recipients || []).filter((item) => item.schedule_id === row.id).map((item) => item.user_id),
       unsubscribed: (recipients || []).filter((item) => item.schedule_id === row.id && item.unsubscribed_at).length,
       lastStatus: (runs || []).find((item) => item.schedule_id === row.id)?.status || null,
     })),
