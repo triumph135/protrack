@@ -30,6 +30,27 @@ test('schedule wizard walks when, who, and format', async ({ page }) => {
   await page.screenshot({ path: '/opt/cursor/artifacts/schedule-format-desktop.png', fullPage: true })
 })
 
+test('reports landing in light and dark, and team without job selectors', async ({ page }) => {
+  await mkdir('/opt/cursor/artifacts', { recursive: true })
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto('/preview?screen=Reports&bare=1&theme=dark')
+  await expect(page.getByText("This year's activity")).toBeVisible()
+  await expect(page.locator('header').getByText('All change orders')).toHaveCount(0)
+  await page.screenshot({ path: '/opt/cursor/artifacts/reports-landing-dark.png', fullPage: true })
+  await page.goto('/preview?screen=Reports&bare=1&theme=light')
+  await expect(page.getByText('Build a custom report')).toBeVisible()
+  await page.screenshot({ path: '/opt/cursor/artifacts/reports-landing-light.png', fullPage: true })
+  await page.goto('/preview?screen=Team&bare=1&theme=dark')
+  await expect(page.getByRole('heading', { name: 'Team' })).toBeVisible()
+  await expect(page.locator('header').getByText('JOB-A-001')).toHaveCount(0)
+  await expect(page.locator('header').getByText('All change orders')).toHaveCount(0)
+  await expect(page.getByText('Ada Master').first()).toBeVisible()
+  await page.screenshot({ path: '/opt/cursor/artifacts/team-no-selectors-dark.png', fullPage: true })
+  await page.goto('/preview?screen=Activity&bare=1&theme=light')
+  await expect(page.getByText('Activity for a period')).toBeVisible()
+  await page.screenshot({ path: '/opt/cursor/artifacts/activity-results-light.png', fullPage: true })
+})
+
 for (const [screen, heading, slug] of shots) {
   test(`report preview ${slug} shows ${heading}`, async ({ page }, info) => {
     const mobile = info.project.name === 'mobile'

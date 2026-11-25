@@ -12,6 +12,7 @@ import { MoveCostSheet } from '@/components/MoveCostSheet'
 import { QueuedFilesField } from '@/components/QueuedFilesField'
 import { ProjectRatesEditor } from '@/components/ProjectRatesEditor'
 import { ReportsPreview } from '@/components/reports/preview-data'
+import { showsJobSelectors } from '@/lib/shell-scope'
 
 const screens = ['Login', 'Forgot password', 'Overview', 'Projects', 'Costs', 'Category', 'Invoices', 'Reports', 'Activity', 'Job cost', 'Vendor', 'Builder', 'Schedule', 'History', 'Unsubscribe', 'Employees', 'Team', 'Settings', 'Reverse', 'Credit', 'Move', 'Attachments', 'Rates'] as const
 
@@ -90,8 +91,17 @@ function NavTree({ screen }: { screen: string }) {
   )
 }
 
+function previewPath(screen: string): string {
+  if (['Reports', 'Activity', 'Job cost', 'Vendor', 'Builder', 'Schedule', 'History'].includes(screen)) return '/reports'
+  if (screen === 'Employees') return '/employees'
+  if (screen === 'Team') return '/team'
+  if (screen === 'Settings') return '/settings'
+  return '/dashboard'
+}
+
 function AppFrame({ screen, mobile }: { screen: string; mobile: boolean }) {
   const showDrawer = mobile && (screen === 'Costs' || screen === 'Category')
+  const showJobs = showsJobSelectors(previewPath(screen))
   return (
     <div className={mobile ? 'relative flex min-h-[760px] flex-col' : 'flex min-h-[760px]'}>
       {mobile ? null : (
@@ -108,8 +118,12 @@ function AppFrame({ screen, mobile }: { screen: string; mobile: boolean }) {
       ) : null}
       <div className="min-w-0 flex-1">
         <header className="flex h-14 items-center gap-2 border-b border-border px-3 text-sm">
-          <span className="rounded-lg border border-border px-2 py-2">JOB-A-001 — Acme Test Job</span>
-          <span className="hidden rounded-lg border border-border px-2 py-2 sm:inline">All change orders</span>
+          {showJobs ? (
+            <>
+              <span className="rounded-lg border border-border px-2 py-2">JOB-A-001 — Acme Test Job</span>
+              <span className="hidden rounded-lg border border-border px-2 py-2 sm:inline">All change orders</span>
+            </>
+          ) : null}
           <span className="ml-auto text-right text-xs text-muted-foreground">Ada Master<br />Master · Acme Test</span>
           <ThemeToggle />
         </header>

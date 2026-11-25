@@ -1,8 +1,9 @@
 'use client'
 
+import { Clock } from 'lucide-react'
 import { useState } from 'react'
 import { ScheduleWizard, type ScheduleFormState } from './ScheduleWizard'
-import { ReportDocument, ReportsLandingView, RunHistory, ScheduleList, UnsubscribeCard } from './views'
+import { ReportDocument, ReportsLandingView, RunHistory, ScheduleList, SectionHeading, UnsubscribeCard } from './views'
 import type { BuiltReport } from '@/lib/reports/types'
 
 const activity: BuiltReport = {
@@ -115,11 +116,27 @@ const vendors: BuiltReport = {
 export function ReportsPreview({ screen }: { screen: string }) {
   if (screen === 'Reports') {
     return (
-      <ReportsLandingView
-        canSchedule
-        invoicesRead
-        saved={[{ id: 'saved-1', name: 'Home Depot by month', is_shared: false, mine: true }]}
-      />
+      <div className="space-y-6">
+        <ReportsLandingView
+          canSchedule
+          invoicesRead
+          saved={[{ id: 'saved-1', name: 'Home Depot by month', is_shared: false, mine: true }]}
+        />
+        <section>
+          <SectionHeading icon={Clock}>Scheduled reports</SectionHeading>
+          <ScheduleList
+            timezone="America/New_York"
+            onEdit={() => undefined}
+            onSend={() => undefined}
+            onPause={() => undefined}
+            onDelete={() => undefined}
+            rows={[
+              { id: 's1', name: 'Monday activity', frequency: 'weekly', weekday: 1, send_hour: 7, status: 'active', next_run_at: '2026-11-23T12:00:00.000Z', lastStatus: null, recipients: 2, unsubscribed: 0 },
+              { id: 's2', name: 'Month-end portfolio', frequency: 'monthly', month_day: 1, send_hour: 8, status: 'paused', next_run_at: null, lastStatus: 'skipped', recipients: 1, unsubscribed: 0 },
+            ]}
+          />
+        </section>
+      </div>
     )
   }
   if (screen === 'Activity') return <ResultsChrome range="Last year"><ReportDocument report={activity} /></ResultsChrome>

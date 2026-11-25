@@ -1,11 +1,12 @@
 'use client'
 
 import Link from 'next/link'
+import { Bookmark, Briefcase, Calendar, CalendarClock, Clock, LayoutGrid, List, Receipt, Store, Users, type LucideIcon } from 'lucide-react'
 import { formatCurrency, formatHours, formatPercent } from '@/lib/format'
 import { PRESET_LABELS } from '@/lib/reports/date-range'
 import { REPORT_CATALOG } from '@/lib/reports/catalog'
 import type { BuiltReport, ReportCell, ReportColumn } from '@/lib/reports/types'
-import { Badge, EmptyState, PageHeader } from '@/components/ui/feedback'
+import { EmptyState, PageHeader } from '@/components/ui/feedback'
 import { Button } from '@/components/ui/button'
 import { cadenceSummary } from '@/lib/reports/schedule'
 import { ReportChartRow } from './ReportCharts'
@@ -27,7 +28,7 @@ export function ReportDocument({ report }: { report: BuiltReport }) {
       {report.kpis.length ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {report.kpis.map((kpi) => (
-            <div key={kpi.label} className="rounded-lg border border-border bg-card p-3">
+            <div key={kpi.label} className="rounded-lg border border-border border-l-2 border-l-primary bg-card p-3">
               <p className="text-sm font-medium text-muted-foreground">{kpi.label}</p>
               <p className="mt-1 text-xl font-semibold">{kpi.value}</p>
               {kpi.detail ? <p className="mt-1 text-xs text-muted-foreground">{kpi.detail}</p> : null}
@@ -81,14 +82,41 @@ export function ReportDocument({ report }: { report: BuiltReport }) {
   )
 }
 
-export const QUICK_STARTS: Array<{ href: string; title: string; blurb: string }> = [
-  { href: '/reports/activity?range=this_year', title: "This year's activity", blurb: 'Costs, invoices, and changes since January 1.' },
-  { href: '/reports/activity?range=last_year', title: "Last year's activity", blurb: 'The full previous calendar year.' },
-  { href: '/reports/job_cost_summary?range=last_month&per_project=1', title: 'Last month by job', blurb: 'Budget versus actual on each job.' },
-  { href: '/reports/labor_by_employee?range=this_month', title: 'Labor by employee (this month)', blurb: 'Hours and labor cost for this month.' },
-  { href: '/reports/vendor_spend?range=ytd', title: 'Vendor spend (YTD)', blurb: 'Net spend by vendor, year to date.' },
-  { href: '/reports/portfolio?range=all_time', title: 'Portfolio overview', blurb: 'Contract, cost, invoiced, and gross profit by job.' },
+export const QUICK_STARTS: Array<{ href: string; title: string; blurb: string; icon: LucideIcon }> = [
+  { href: '/reports/activity?range=this_year', title: "This year's activity", blurb: 'Costs, invoices, and changes since January 1.', icon: Calendar },
+  { href: '/reports/activity?range=last_year', title: "Last year's activity", blurb: 'The full previous calendar year.', icon: CalendarClock },
+  { href: '/reports/job_cost_summary?range=last_month&per_project=1', title: 'Last month by job', blurb: 'Budget versus actual on each job.', icon: Briefcase },
+  { href: '/reports/labor_by_employee?range=this_month', title: 'Labor by employee (this month)', blurb: 'Hours and labor cost for this month.', icon: Users },
+  { href: '/reports/vendor_spend?range=ytd', title: 'Vendor spend (YTD)', blurb: 'Net spend by vendor, year to date.', icon: Store },
+  { href: '/reports/portfolio?range=all_time', title: 'Portfolio overview', blurb: 'Contract, cost, invoiced, and gross profit by job.', icon: LayoutGrid },
 ]
+
+const REPORT_ICONS: Record<string, LucideIcon> = {
+  activity: Calendar,
+  job_cost_summary: Briefcase,
+  cost_detail: List,
+  labor_by_employee: Users,
+  invoicing_gp: Receipt,
+  portfolio: LayoutGrid,
+  vendor_spend: Store,
+}
+
+export function SectionHeading({ icon: Icon, children }: { icon?: LucideIcon; children: React.ReactNode }) {
+  return (
+    <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold tracking-tight">
+      {Icon ? <Icon className="h-4 w-4 text-primary" aria-hidden /> : null}
+      {children}
+    </h2>
+  )
+}
+
+function IconChip({ icon: Icon }: { icon: LucideIcon }) {
+  return (
+    <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+      <Icon className="h-4 w-4" aria-hidden />
+    </span>
+  )
+}
 
 export function ReportsLandingView({
   canSchedule,
@@ -110,25 +138,36 @@ export function ReportsLandingView({
       {pending ? <EmptyState title="Reports turn on after the database update" body="The Reports page is here. Numbers appear after the reporting database update is applied." /> : null}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {QUICK_STARTS.map((item) => (
-          <Link key={item.href} href={item.href as never} className="rounded-lg border border-border bg-card p-4 hover:bg-muted/40">
-            <h2 className="font-medium">{item.title}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">{item.blurb}</p>
+          <Link key={item.href} href={item.href as never} className="rounded-lg border border-border border-l-2 border-l-primary/70 bg-card p-4 transition hover:border-primary/40 hover:bg-primary/5 hover:shadow-[0_8px_24px_-18px_var(--primary)]">
+            <div className="flex items-start gap-3">
+              <IconChip icon={item.icon} />
+              <div>
+                <h2 className="font-medium">{item.title}</h2>
+                <p className="mt-1 text-sm text-muted-foreground">{item.blurb}</p>
+              </div>
+            </div>
           </Link>
         ))}
       </div>
       <section>
-        <h2 className="mb-2 text-sm font-semibold">All reports</h2>
+        <SectionHeading icon={List}>All reports</SectionHeading>
         <div className="grid gap-2 sm:grid-cols-2">
-          {REPORT_CATALOG.map((item) => (
-            <Link key={item.key} href={`/reports/${item.key}` as never} className="rounded-lg border border-border bg-card px-3 py-2 text-sm hover:bg-muted/40">
-              <span className="font-medium">{item.title}</span>
-              {item.needsInvoices && !invoicesRead ? <span className="mt-0.5 block text-xs text-muted-foreground">Needs invoice access.</span> : null}
-            </Link>
-          ))}
+          {REPORT_CATALOG.map((item) => {
+            const Icon = REPORT_ICONS[item.key] || List
+            return (
+              <Link key={item.key} href={`/reports/${item.key}` as never} className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm transition hover:border-primary/30 hover:bg-primary/5">
+                <Icon className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+                <span>
+                  <span className="font-medium">{item.title}</span>
+                  {item.needsInvoices && !invoicesRead ? <span className="mt-0.5 block text-xs text-muted-foreground">Needs invoice access.</span> : null}
+                </span>
+              </Link>
+            )
+          })}
         </div>
       </section>
       <section>
-        <h2 className="mb-2 text-sm font-semibold">Saved reports</h2>
+        <SectionHeading icon={Bookmark}>Saved reports</SectionHeading>
         {saved.length === 0 ? <p className="text-sm text-muted-foreground">No saved reports yet.</p> : (
           <ul className="divide-y divide-border rounded-lg border border-border bg-card">
             {saved.map((item) => (
@@ -142,9 +181,12 @@ export function ReportsLandingView({
           </ul>
         )}
       </section>
-      <Link href="/reports/custom/new" className="block rounded-lg border border-dashed border-border px-4 py-3 text-sm hover:bg-muted/40">
-        <span className="font-medium">{canSchedule ? 'Build a custom report' : 'Build a private report'}</span>
-        <span className="mt-0.5 block text-muted-foreground">Pick columns and group costs, labor, invoices, or activity.</span>
+      <Link href="/reports/custom/new" className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-primary/45 bg-primary/5 px-4 py-4 text-sm transition hover:border-primary hover:bg-primary/10">
+        <span>
+          <span className="font-medium text-primary">{canSchedule ? 'Build a custom report' : 'Build a private report'}</span>
+          <span className="mt-0.5 block text-muted-foreground">Pick columns and group costs, labor, invoices, or activity.</span>
+        </span>
+        <span className="inline-flex h-9 items-center rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground">Build</span>
       </Link>
     </div>
   )
@@ -188,14 +230,19 @@ export function ScheduleList({
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-medium">{row.name}</span>
-              {row.status === 'paused' ? <Badge>Paused</Badge> : null}
+              <span className={row.status === 'paused' ? 'inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground' : 'inline-flex items-center rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary'}>
+                {row.status === 'paused' ? 'Paused' : 'Active'}
+              </span>
             </div>
-            <p className="mt-0.5 text-xs text-muted-foreground">
+            <p className="mt-0.5 flex items-start gap-1 text-xs text-muted-foreground">
+              <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
+              <span>
               {cadenceSummary({ frequency: row.frequency, weekday: row.weekday, monthDay: row.month_day, sendHour: row.send_hour, timezone: row.timezone || timezone })}
               {' · '}{row.recipients} recipient{row.recipients === 1 ? '' : 's'}
               {row.unsubscribed ? ` · ${row.unsubscribed} unsubscribed` : ''}
               {row.next_run_at ? ` · next ${new Date(row.next_run_at).toLocaleString()}` : ''}
               {row.lastStatus ? ` · last ${row.lastStatus}` : ''}
+              </span>
             </p>
           </div>
           <div className="flex flex-wrap gap-2">

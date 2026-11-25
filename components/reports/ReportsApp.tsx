@@ -1,5 +1,6 @@
 'use client'
 
+import { Clock, Mail } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -15,7 +16,7 @@ import { scheduleWriteBody, type ScheduleFrequency } from '@/lib/reports/schedul
 import type { BuiltReport, ReportParams } from '@/lib/reports/types'
 import { DownloadMenu } from './DownloadMenu'
 import { ScheduleWizard, type ScheduleFormState } from './ScheduleWizard'
-import { ReportDocument, ReportsLandingView, RunHistory, ScheduleList, rangeOptions, type ScheduleRow } from './views'
+import { ReportDocument, ReportsLandingView, RunHistory, ScheduleList, SectionHeading, rangeOptions, type ScheduleRow } from './views'
 
 type Mode = 'landing' | 'report' | 'builder'
 
@@ -289,7 +290,7 @@ export default function ReportsApp({
           <ReportsLandingView canSchedule={!!context?.scope?.canSchedule} invoicesRead={context?.scope?.invoicesRead !== false} saved={saved} />
           {context?.scope?.canSchedule ? (
             <section className="space-y-2">
-              <h2 className="text-sm font-semibold">Scheduled reports</h2>
+              <SectionHeading icon={Clock}>Scheduled reports</SectionHeading>
               <ScheduleList
                 rows={schedules}
                 timezone={timezone}
@@ -301,7 +302,7 @@ export default function ReportsApp({
             </section>
           ) : null}
           <section className="space-y-2">
-            <h2 className="text-sm font-semibold">Email subscriptions</h2>
+            <SectionHeading icon={Mail}>Email subscriptions</SectionHeading>
             <SubscriptionList rows={subscriptions} onToggle={toggleSubscription} />
           </section>
         </>

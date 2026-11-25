@@ -12,7 +12,7 @@ function moneyTick(value: number): string {
 
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-lg border border-border bg-card p-3">
+    <section className="rounded-lg border border-border border-t-2 border-t-primary/50 bg-card p-3">
       <h3 className="mb-2 text-sm font-medium">{title}</h3>
       <div className="h-56 w-full min-w-0">
         {children}
@@ -21,18 +21,21 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
   )
 }
 
-const axis = { stroke: '#a1a1aa', fontSize: 12, tickLine: false, axisLine: false }
-const tooltipStyle = { background: '#16181d', border: '1px solid #2a2d34', borderRadius: 8, color: '#f4f4f5' }
+const axis = { stroke: 'var(--muted-foreground)', fontSize: 12, tickLine: false, axisLine: false }
+const tooltipStyle = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--foreground)' }
+const grid = 'color-mix(in srgb, var(--primary) 22%, var(--border))'
+
+const frame = { width: '100%' as const, height: '100%' as const, minWidth: 0, initialDimension: { width: 480, height: 224 } }
 
 function Bars({ points }: { points: ChartPoint[] }) {
   return (
-    <ResponsiveContainer width="100%" height="100%">
+    <ResponsiveContainer {...frame}>
       <BarChart data={points} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
-        <CartesianGrid stroke="#2a2d34" vertical={false} />
+        <CartesianGrid stroke={grid} vertical={false} />
         <XAxis dataKey="label" {...axis} interval={0} angle={points.length > 4 ? -25 : 0} height={points.length > 4 ? 56 : 32} textAnchor={points.length > 4 ? 'end' : 'middle'} />
         <YAxis {...axis} tickFormatter={moneyTick} width={56} />
-        <Tooltip formatter={(value) => formatCurrency(Number(value))} contentStyle={tooltipStyle} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
-        <Bar dataKey="value" fill="#60a5fa" radius={[4, 4, 0, 0]} />
+        <Tooltip formatter={(value) => formatCurrency(Number(value))} contentStyle={tooltipStyle} cursor={{ fill: 'color-mix(in srgb, var(--primary) 8%, transparent)' }} />
+        <Bar dataKey="value" fill="#2563eb" radius={[4, 4, 0, 0]} maxBarSize={48} isAnimationActive={false} />
       </BarChart>
     </ResponsiveContainer>
   )
@@ -40,13 +43,13 @@ function Bars({ points }: { points: ChartPoint[] }) {
 
 function LineOverTime({ points }: { points: ChartPoint[] }) {
   return (
-    <ResponsiveContainer width="100%" height="100%">
+    <ResponsiveContainer {...frame}>
       <LineChart data={points} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
-        <CartesianGrid stroke="#2a2d34" vertical={false} />
+        <CartesianGrid stroke={grid} vertical={false} />
         <XAxis dataKey="label" {...axis} />
         <YAxis {...axis} tickFormatter={moneyTick} width={56} />
         <Tooltip formatter={(value) => formatCurrency(Number(value))} contentStyle={tooltipStyle} />
-        <Line type="monotone" dataKey="value" stroke="#34d399" strokeWidth={2} dot={{ r: 3, fill: '#34d399' }} />
+        <Line type="monotone" dataKey="value" stroke="#93c5fd" strokeWidth={2} dot={{ r: 3, fill: '#60a5fa' }} isAnimationActive={false} />
       </LineChart>
     </ResponsiveContainer>
   )
