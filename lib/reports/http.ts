@@ -4,7 +4,7 @@ import { getApiUser } from '@/lib/api-auth'
 import { createAdminClient } from '@/lib/supabase-admin'
 import { isMissingRelation, isMissingRpc, isSchemaPending } from '@/lib/security'
 import { buildReport } from './compute'
-import { parseCustomConfig } from './custom'
+import { paramsForCustom, parseCustomConfig } from './custom'
 import { claimAndProcess, processReportRun } from './deliver'
 import { EMAIL_NOT_SET_UP, resolveEmailTransport } from './email-mode'
 import { loadDataset, loadScope, parseScope } from './engine'
@@ -73,9 +73,16 @@ async function buildFromBody(admin: Admin, scope: AccessScope, body: Record<stri
   }
   if (!reportKey) throw new Error('Choose a report.')
   if (reportKey === 'invoicing_gp' && !scope.invoices_read) throw new Error('You do not have invoice access.')
-  const params = parseReportParams(reportKey, body.params ?? {})
-  if (reportKey === 'custom' && !custom) {
+  if (reportKey === 'custom' && body.config != null) {
+    custom = { config: body.config, name: typeof body.name === 'string' && body.name.trim() ? body.name : custom?.name }
+  } else if (reportKey === 'custom' && !custom) {
     custom = { config: body.config, name: typeof body.name === 'string' ? body.name : undefined }
+  }
+  let params = parseReportParams(reportKey, body.params ?? {})
+  if (reportKey === 'custom' && custom) {
+    const parsed = parseCustomConfig(custom.config)
+    params = parseReportParams('custom', { ...params, ...paramsForCustom(parsed, params) })
+    custom = { ...custom, config: parsed }
   }
   const allowedProjects = params.projects === 'all' ? scope.project_ids : params.projects.filter((id) => scope.project_ids.includes(id))
   const scopedParams: ReportParams = { ...params, projects: params.projects === 'all' ? 'all' : allowedProjects }
@@ -260,9 +267,10 @@ function assertSchedule(body: Record<string, unknown>, scope: AccessScope) {
   if (!scope.can_schedule) throw new Error('Only a master or project manager can schedule a report.')
   const draft = parseScheduleDraft(body)
   if (!catalogItem(draft.reportKey) && draft.reportKey !== 'custom') throw new Error('Unknown report.')
-  const params = parseReportParams(draft.reportKey, draft.params ?? {})
-  assertProjects(params, scope)
+  let params = parseReportParams(draft.reportKey, draft.params ?? {})
   const custom = draft.reportKey === 'custom' ? parseCustomConfig(draft.config) : null
+  if (custom) params = parseReportParams('custom', { ...params, ...paramsForCustom(custom, params) })
+  assertProjects(params, scope)
   return { ...draft, params, custom }
 }
 

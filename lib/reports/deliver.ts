@@ -4,6 +4,7 @@ import type { Database } from '@/types/database.types'
 import { appOrigin } from '@/lib/security'
 import { renderReportEmail } from '@/lib/email/report'
 import { buildReport } from './compute'
+import { paramsForCustom, parseCustomConfig } from './custom'
 import { SEND_GAP_MS, applyDelivery, runOutcome, scopeHash, type DeliveryWork } from './delivery'
 import { resolveEmailTransport } from './email-mode'
 import { loadDataset, loadScope } from './engine'
@@ -185,13 +186,20 @@ export async function processReportRun(admin: Admin, runId: string, deadline = D
 }
 
 async function buildFor(admin: Admin, scope: AccessScope, reportKey: string, params: ReportParams, config: unknown, scheduleName: string) {
-  const dataset = await loadDataset(admin, scope, params)
   const record = config && typeof config === 'object' ? (config as Record<string, unknown>) : {}
-  const report = buildReport(dataset, reportKey, params, reportKey === 'custom' ? { config: record.custom || record, name: scheduleName } : undefined)
-  const range = resolveRange(params, scope.timezone)
+  let nextParams = params
+  let customConfig: unknown = record.custom || record
+  if (reportKey === 'custom') {
+    const parsed = parseCustomConfig(customConfig)
+    nextParams = parseReportParams('custom', { ...params, ...paramsForCustom(parsed, params) })
+    customConfig = parsed
+  }
+  const dataset = await loadDataset(admin, scope, nextParams)
+  const report = buildReport(dataset, reportKey, nextParams, reportKey === 'custom' ? { config: customConfig, name: scheduleName } : undefined)
+  const range = resolveRange(nextParams, scope.timezone)
   const link = reportKey === 'custom' && typeof record.definitionId === 'string'
     ? `/reports/custom/${record.definitionId}`
-    : `/reports/${reportKey}?${paramsToSearch(params)}`
+    : `/reports/${reportKey}?${paramsToSearch(nextParams)}`
   return { report, range, company: dataset.companyName, link }
 }
 

@@ -1,7 +1,7 @@
 'use client'
 
 import { Clock, Mail } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
@@ -10,7 +10,8 @@ import { Field, Input } from '@/components/ui/input'
 import { Sheet } from '@/components/ui/sheet'
 import { EmptyState } from '@/components/ui/feedback'
 import { confirmAction } from '@/components/ui/confirm-dialog'
-import { ACTIVITY_COLUMNS, COST_COLUMNS, GROUP_FIELDS, INVOICE_COLUMNS } from '@/lib/reports/custom'
+import { customSummary, draftToConfig, emptyBuilderDraft, paramsForCustom, type BuilderDraft } from '@/lib/reports/custom'
+import { CustomBuilder } from './CustomBuilder'
 import { defaultRangeFor, RANGE_PRESETS } from '@/lib/reports/date-range'
 import { scheduleWriteBody, type ScheduleFrequency } from '@/lib/reports/schedule'
 import type { BuiltReport, ReportParams } from '@/lib/reports/types'
@@ -46,14 +47,7 @@ interface SavedReport {
   report_key: string
   is_shared: boolean
   mine: boolean
-  config: { params?: ReportParams; custom?: CustomDraft }
-}
-
-interface CustomDraft {
-  source: 'costs' | 'labor' | 'invoices' | 'activity'
-  columns: string[]
-  groupBy: string[]
-  filters: { vendorContains?: string; range?: string; project_status?: 'active' | 'all' }
+  config: { params?: ReportParams; custom?: BuilderDraft }
 }
 
 interface ScheduleRecord extends ScheduleRow {
@@ -128,7 +122,9 @@ export default function ReportsApp({
   const [error, setError] = useState('')
   const [scheduleOpen, setScheduleOpen] = useState(false)
   const [history, setHistory] = useState<Parameters<typeof RunHistory>[0]['runs']>([])
-  const [draft, setDraft] = useState<CustomDraft>({ source: 'costs', columns: ['date', 'project', 'vendor', 'amount'], groupBy: ['vendor', 'month'], filters: { range: 'this_year', project_status: 'all' } })
+  const [draft, setDraft] = useState<BuilderDraft>(emptyBuilderDraft)
+  const [notice, setNotice] = useState('')
+  const runSeq = useRef(0)
   const [name, setName] = useState('')
   const [shared, setShared] = useState(false)
   const [hydrated, setHydrated] = useState(!definitionId)
@@ -172,45 +168,85 @@ export default function ReportsApp({
       setName(found.name)
       setShared(found.is_shared)
       if (found.config?.params) setParams(found.config.params)
-      if (found.config?.custom) setDraft(found.config.custom)
+      if (found.config?.custom?.source) {
+        const custom = found.config.custom
+        const savedParams = found.config.params
+        setDraft({
+          source: custom.source,
+          columns: custom.columns || [],
+          groupBy: custom.groupBy || [],
+          filters: {
+            ...custom.filters,
+            range: savedParams?.range || custom.filters?.range || 'this_year',
+            from: savedParams?.from || custom.filters?.from,
+            to: savedParams?.to || custom.filters?.to,
+            projects: savedParams?.projects || custom.filters?.projects || 'all',
+            project_status: savedParams?.project_status || custom.filters?.project_status || 'all',
+          },
+        })
+      }
     }
     setHydrated(true)
   }, [definitionId, ready, saved])
 
   const key = reportKey || 'custom'
   const options = useMemo(() => rangeOptions(context?.years || []), [context?.years])
-  const columns = draft.source === 'invoices' ? INVOICE_COLUMNS : draft.source === 'activity' ? ACTIVITY_COLUMNS : COST_COLUMNS
   const timezone = context?.scope?.timezone || 'America/New_York'
 
-  const runBody = useMemo(() => (
-    mode === 'builder'
-      ? { reportKey: 'custom', definitionId, params: { ...params, range: draft.filters.range || params.range, project_status: draft.filters.project_status || params.project_status, vendor: draft.filters.vendorContains }, config: draft, name }
-      : { reportKey: key, definitionId, params }
-  ), [mode, definitionId, params, draft, name, key])
+  const runBody = useMemo(() => {
+    if (mode === 'builder') {
+      if (!draft.source || draft.columns.length === 0) return null
+      return {
+        reportKey: 'custom',
+        definitionId,
+        params: paramsForCustom({ filters: draft.filters }),
+        config: { source: draft.source, columns: draft.columns, groupBy: draft.groupBy, filters: draft.filters },
+        name,
+      }
+    }
+    return { reportKey: key, definitionId, params }
+  }, [mode, definitionId, params, draft, name, key])
 
-  const run = useCallback(async (body: Record<string, unknown>) => {
+  const run = useCallback(async (body: Record<string, unknown> | null, signal?: AbortSignal, announce = false) => {
+    if (!body) return
+    const seq = ++runSeq.current
     setBusy(true)
     setError('')
     try {
-      const result = await readJson<{ report: BuiltReport }>(await fetch('/api/reports/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }))
+      const response = await fetch('/api/reports/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal })
+      const result = await readJson<{ report: BuiltReport }>(response)
+      if (seq !== runSeq.current) return
       setReport(result.report)
     } catch (runError) {
+      if (signal?.aborted || seq !== runSeq.current) return
       const message = runError instanceof Error ? runError.message : 'Could not run the report.'
       setError(message)
-      toast.error(message)
+      if (announce) toast.error(message)
+      if (mode === 'builder') setReport(null)
     } finally {
-      setBusy(false)
+      if (seq === runSeq.current) setBusy(false)
     }
-  }, [])
+  }, [mode])
 
-  const runKey = JSON.stringify(runBody)
+  const runKey = runBody ? JSON.stringify(runBody) : ''
   useEffect(() => {
     if (mode === 'landing' || !ready || !hydrated || context?.schemaPending) return
-    const handle = setTimeout(() => { void run(JSON.parse(runKey) as Record<string, unknown>) }, 400)
-    return () => clearTimeout(handle)
+    if (!runKey) {
+      setReport(null)
+      setBusy(false)
+      setError('')
+      return
+    }
+    const controller = new AbortController()
+    const handle = setTimeout(() => { void run(JSON.parse(runKey) as Record<string, unknown>, controller.signal, false) }, 400)
+    return () => {
+      clearTimeout(handle)
+      controller.abort()
+    }
   }, [mode, ready, hydrated, context?.schemaPending, runKey, run])
 
   async function download(format: 'pdf' | 'csv' | 'xlsx') {
+    if (!runBody) return
     const response = await fetch('/api/reports/export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...runBody, format }) })
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}))
@@ -235,9 +271,9 @@ export default function ReportsApp({
     setScheduleForm(blankSchedule(currentName, context?.scope?.userId))
     setScheduleMeta({
       reportKey: key,
-      params,
+      params: mode === 'builder' ? paramsForCustom({ filters: draft.filters }) : params,
       definitionId: definitionId || null,
-      config: mode === 'builder' ? draft : undefined,
+      config: mode === 'builder' ? { source: draft.source, columns: draft.columns, groupBy: draft.groupBy, filters: draft.filters } : undefined,
     })
     setScheduleOpen(true)
   }
@@ -308,7 +344,44 @@ export default function ReportsApp({
         </>
       ) : null}
 
-      {mode !== 'landing' ? (
+      {mode === 'builder' ? (
+        <>
+          <div className="flex justify-end">
+            <Link href="/reports" className="text-sm text-muted-foreground">All reports</Link>
+          </div>
+          <CustomBuilder
+            draft={draft}
+            onDraft={(next, message) => { setDraft(next); setNotice(message || '') }}
+            notice={notice}
+            name={name}
+            onName={setName}
+            shared={shared}
+            onShared={setShared}
+            canShare={!!context?.scope?.canSchedule}
+            invoicesRead={context?.scope?.invoicesRead !== false}
+            projects={context?.projects || []}
+            employees={context?.employees || []}
+            years={context?.years || []}
+            onSave={() => void saveDefinition()}
+          />
+          <section className="space-y-3 rounded-lg border border-border border-t-2 border-t-primary/50 bg-card p-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <p className="text-sm font-medium">{customSummary(draft)}</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" variant="outline" disabled={busy || !runBody} onClick={() => void run(runBody, undefined, true)}>{busy ? 'Updating…' : 'Refresh'}</Button>
+                <DownloadMenu disabled={!runBody} onDownload={(format) => void download(format)} />
+                {context?.scope?.canSchedule && draft.source ? <Button type="button" variant="outline" onClick={openCreate}>Schedule</Button> : null}
+              </div>
+            </div>
+            {busy ? <p className="text-sm text-muted-foreground">Updating the preview…</p> : null}
+            {!draft.source ? <EmptyState title="Pick a source" body="Choose costs, labor, invoices, or activity. The preview uses the same numbers as the download." /> : null}
+            {draft.source && error && !report ? <EmptyState title="Could not run the report" body={error} /> : null}
+            {report ? <ReportDocument report={report} /> : null}
+          </section>
+        </>
+      ) : null}
+
+      {mode !== 'landing' && mode !== 'builder' ? (
         <>
           <div className="flex justify-end">
             <Link href="/reports" className="text-sm text-muted-foreground">All reports</Link>
@@ -354,12 +427,11 @@ export default function ReportsApp({
               </details>
             </Field>
             <div className="flex items-end gap-2">
-              <Button type="button" variant="outline" disabled={busy} onClick={() => void run(runBody)}>{busy ? 'Updating…' : 'Refresh'}</Button>
+              <Button type="button" variant="outline" disabled={busy} onClick={() => void run(runBody, undefined, true)}>{busy ? 'Updating…' : 'Refresh'}</Button>
               <DownloadMenu onDownload={(format) => void download(format)} />
               {context?.scope?.canSchedule ? <Button type="button" variant="outline" onClick={openCreate}>Schedule</Button> : null}
             </div>
           </div>
-          {mode === 'builder' ? <Builder draft={draft} columns={[...columns]} setDraft={setDraft} name={name} setName={setName} shared={shared} setShared={setShared} canShare={!!context?.scope?.canSchedule} onSave={() => void saveDefinition()} /> : null}
           {busy && !report ? <EmptyState title="Running the report" body="Results use the same numbers as the download." /> : null}
           {error && !report ? <EmptyState title="Could not run the report" body={error} /> : null}
           {report ? <ReportDocument report={report} /> : null}
@@ -397,7 +469,8 @@ export default function ReportsApp({
 
   async function saveDefinition() {
     try {
-      const payload = { name, reportKey: 'custom', is_shared: shared, params, config: draft }
+      const config = draftToConfig(draft)
+      const payload = { name, reportKey: 'custom', is_shared: shared, params: paramsForCustom(config), config }
       if (definitionId) {
         await readJson(await fetch(`/api/reports/definitions/${definitionId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }))
         toast.success('Report saved')
@@ -485,65 +558,6 @@ export default function ReportsApp({
     await readJson(await fetch('/api/reports/subscriptions', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, unsubscribed }) }))
     await load()
   }
-}
-
-function Builder({
-  draft, columns, setDraft, name, setName, shared, setShared, canShare, onSave,
-}: {
-  draft: CustomDraft
-  columns: string[]
-  setDraft: (draft: CustomDraft) => void
-  name: string
-  setName: (value: string) => void
-  shared: boolean
-  setShared: (value: boolean) => void
-  canShare: boolean
-  onSave: () => void
-}) {
-  return (
-    <div className="grid gap-3 rounded-lg border border-border bg-card p-3 md:grid-cols-2">
-      <Field label="Report name" htmlFor="custom-name"><Input id="custom-name" value={name} onChange={(event) => setName(event.target.value)} /></Field>
-      <Field label="Source" htmlFor="custom-source">
-        <select id="custom-source" className={selectClass} value={draft.source} onChange={(event) => setDraft({ ...draft, source: event.target.value as CustomDraft['source'], columns: event.target.value === 'invoices' ? ['date', 'project', 'amount'] : ['date', 'project', 'vendor', 'amount'] })}>
-          <option value="costs">Costs</option>
-          <option value="labor">Labor</option>
-          <option value="invoices">Invoices</option>
-          <option value="activity">Activity</option>
-        </select>
-      </Field>
-      <fieldset>
-        <legend className="mb-1 text-sm font-medium">Columns</legend>
-        <div className="grid grid-cols-2 gap-1">
-          {columns.map((column) => (
-            <label key={column} className="text-sm">
-              <input type="checkbox" className="mr-1" checked={draft.columns.includes(column)} onChange={(event) => {
-                const next = event.target.checked ? [...draft.columns, column] : draft.columns.filter((item) => item !== column)
-                setDraft({ ...draft, columns: next })
-              }} />
-              {column.replaceAll('_', ' ')}
-            </label>
-          ))}
-        </div>
-      </fieldset>
-      <fieldset>
-        <legend className="mb-1 text-sm font-medium">Group by</legend>
-        {GROUP_FIELDS.map((field) => (
-          <label key={field} className="mr-3 text-sm">
-            <input type="checkbox" className="mr-1" checked={draft.groupBy.includes(field)} onChange={(event) => {
-              const next = event.target.checked ? [...draft.groupBy, field].slice(0, 2) : draft.groupBy.filter((item) => item !== field)
-              setDraft({ ...draft, groupBy: next })
-            }} />
-            {field.replaceAll('_', ' ')}
-          </label>
-        ))}
-        <Field label="Vendor contains" htmlFor="vendor-contains">
-          <Input id="vendor-contains" value={draft.filters.vendorContains || ''} onChange={(event) => setDraft({ ...draft, filters: { ...draft.filters, vendorContains: event.target.value } })} />
-        </Field>
-        {canShare ? <label className="mt-2 block text-sm"><input type="checkbox" className="mr-1" checked={shared} onChange={(event) => setShared(event.target.checked)} />Share with the company</label> : null}
-        <Button type="button" className="mt-3" variant="secondary" onClick={onSave}>Save report</Button>
-      </fieldset>
-    </div>
-  )
 }
 
 function SubscriptionList({

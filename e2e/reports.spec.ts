@@ -6,7 +6,7 @@ const shots: Array<[string, string, string]> = [
   ['Activity', 'Activity for a period', 'activity-last-year'],
   ['Job cost', 'Job cost summary', 'job-cost-summary'],
   ['Vendor', 'Vendor spend', 'vendor-spend'],
-  ['Builder', 'Vendor months', 'custom-builder'],
+  ['Builder', 'Pick what to report on', 'custom-builder'],
   ['Schedule', 'Every Monday at 7:00 AM (America/New_York)', 'schedule-sheet'],
   ['History', "Email isn't set up yet", 'run-history'],
   ['Unsubscribe', 'Unsubscribe from this report', 'unsubscribe'],
@@ -28,6 +28,27 @@ test('schedule wizard walks when, who, and format', async ({ page }) => {
   await expect(page.getByText('Next 3 sends')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Create schedule' })).toBeVisible()
   await page.screenshot({ path: '/opt/cursor/artifacts/schedule-format-desktop.png', fullPage: true })
+})
+
+test('custom builder preview changes with the source', async ({ page }) => {
+  await mkdir('/opt/cursor/artifacts', { recursive: true })
+  await page.setViewportSize({ width: 1280, height: 1100 })
+  await page.goto('/preview?screen=Builder&bare=1&theme=light')
+  await expect(page.getByRole('heading', { name: 'Pick a source' })).toBeVisible()
+  await page.getByRole('button', { name: /^Costs/ }).click()
+  await expect(page.getByText(/each cost row/)).toBeVisible()
+  await expect(page.getByText('Home Depot')).toBeVisible()
+  await page.screenshot({ path: '/opt/cursor/artifacts/builder-costs-light.png', fullPage: true })
+  await page.getByRole('button', { name: /^Labor/ }).click()
+  await expect(page.getByText(/each labor row/)).toBeVisible()
+  await expect(page.getByText('Home Depot')).toHaveCount(0)
+  await expect(page.getByRole('cell', { name: 'Alex Rivera' })).toBeVisible()
+  await page.screenshot({ path: '/opt/cursor/artifacts/builder-labor-light.png', fullPage: true })
+  await page.goto('/preview?screen=Builder&bare=1&theme=dark')
+  await page.getByRole('button', { name: /^Invoices/ }).click()
+  await expect(page.getByText(/each invoice row/)).toBeVisible()
+  await expect(page.getByText('INV-100')).toBeVisible()
+  await page.screenshot({ path: '/opt/cursor/artifacts/builder-invoices-dark.png', fullPage: true })
 })
 
 test('reports landing in light and dark, and team without job selectors', async ({ page }) => {

@@ -1,10 +1,14 @@
 'use client'
 
 import { Clock } from 'lucide-react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { buildCustom } from '@/lib/reports/compute'
+import { customSummary, draftToConfig, emptyBuilderDraft, type BuilderDraft } from '@/lib/reports/custom'
+import type { BuiltReport, ReportDataset } from '@/lib/reports/types'
+import { CustomBuilder } from './CustomBuilder'
 import { ScheduleWizard, type ScheduleFormState } from './ScheduleWizard'
+import { EmptyState } from '@/components/ui/feedback'
 import { ReportDocument, ReportsLandingView, RunHistory, ScheduleList, SectionHeading, UnsubscribeCard } from './views'
-import type { BuiltReport } from '@/lib/reports/types'
 
 const activity: BuiltReport = {
   key: 'activity',
@@ -142,16 +146,7 @@ export function ReportsPreview({ screen }: { screen: string }) {
   if (screen === 'Activity') return <ResultsChrome range="Last year"><ReportDocument report={activity} /></ResultsChrome>
   if (screen === 'Job cost') return <ResultsChrome range="All time"><ReportDocument report={jobCost} /></ResultsChrome>
   if (screen === 'Vendor') return <ResultsChrome range="This year"><ReportDocument report={vendors} /></ResultsChrome>
-  if (screen === 'Builder') {
-    return (
-      <div className="space-y-3">
-        <h1 className="text-xl font-semibold">Vendor months</h1>
-        <p className="text-sm text-muted-foreground">Grouped by vendor and month. Reversals stay in the total.</p>
-        <div className="rounded-lg border border-border bg-card p-3 text-sm">Source: Costs · Columns: vendor, amount · Group by: vendor, month</div>
-        <ReportDocument report={{ ...vendors, title: 'Vendor months', key: 'custom' }} />
-      </div>
-    )
-  }
+  if (screen === 'Builder') return <BuilderScreen />
   if (screen === 'Schedule') return <SchedulePreview />
   if (screen === 'History') {
     return (
@@ -203,6 +198,72 @@ function ResultsChrome({ range, children }: { range: string; children: React.Rea
         </div>
       </div>
       {children}
+    </div>
+  )
+}
+
+const builderDataset: ReportDataset = {
+  companyName: 'Acme Test',
+  timezone: 'America/New_York',
+  generatedAt: '2026-11-25T15:00:00.000Z',
+  useCategoryBudgets: true,
+  invoicesRead: true,
+  isMaster: true,
+  projects: [{ id: 'p1', jobNumber: 'JOB-A-001', jobName: 'Acme Test Job', customer: 'Acme', status: 'Active', totalContractValue: 10000 }],
+  categories: [
+    { id: 'materials', name: 'Materials', kind: 'standard', parent_id: null, builtin_key: 'material', sort_order: 1, is_hidden: false },
+    { id: 'labor', name: 'Labor', kind: 'labor', parent_id: null, builtin_key: 'labor', sort_order: 2, is_hidden: false },
+  ],
+  costs: [
+    { id: 'm', project_id: 'p1', category_id: 'materials', category: 'material', date: '2026-03-02', cost: 40, vendor: 'Home Depot', invoice_number: null, description: 'Screws', employee_name: null, employee_id: null, st_hours: null, ot_hours: null, dt_hours: null, per_diem: null, mob_qty: null, change_order_id: null, reversal_of_id: null, reversed_at: null, reversal_reason: null, created_at: '2026-03-02T15:00:00Z' },
+    { id: 'l', project_id: 'p1', category_id: 'labor', category: 'labor', date: '2026-04-04', cost: 80, vendor: null, invoice_number: null, description: 'Shop time', employee_name: 'Alex Rivera', employee_id: 'e1', st_hours: 8, ot_hours: 0, dt_hours: 0, per_diem: null, mob_qty: null, change_order_id: null, reversal_of_id: null, reversed_at: null, reversal_reason: null, created_at: '2026-04-04T15:00:00Z' },
+  ],
+  invoices: [{ id: 'i1', project_id: 'p1', invoice_number: 'INV-100', amount: 750, amount_collected: 0, date_billed: '2026-05-01', change_order_id: null, reversal_of_id: null, reversal_reason: null, created_at: '2026-05-01T15:00:00Z' }],
+  changeOrders: [],
+  events: [],
+  attachments: [],
+  employees: [{ id: 'e1', name: 'Alex Rivera', job_role: 'Welder' }],
+  budgets: [],
+  legacyBudgets: [],
+  actors: {},
+  gpGoalPercent: null,
+  laborFields: [],
+}
+
+function BuilderScreen() {
+  const [draft, setDraft] = useState<BuilderDraft>(emptyBuilderDraft())
+  const [notice, setNotice] = useState('')
+  const [name, setName] = useState('')
+  const report = useMemo(() => {
+    if (!draft.source || draft.columns.length === 0) return null
+    try {
+      return buildCustom(builderDataset, draftToConfig(draft), name || 'Custom report')
+    } catch {
+      return null
+    }
+  }, [draft, name])
+  return (
+    <div className="space-y-4">
+      <CustomBuilder
+        draft={draft}
+        onDraft={(next, message) => { setDraft(next); setNotice(message || '') }}
+        notice={notice}
+        name={name}
+        onName={setName}
+        shared={false}
+        onShared={() => undefined}
+        canShare
+        invoicesRead
+        projects={[{ id: 'p1', jobNumber: 'JOB-A-001', jobName: 'Acme Test Job' }]}
+        employees={[{ id: 'e1', name: 'Alex Rivera' }]}
+        years={[2025, 2026]}
+        onSave={() => undefined}
+      />
+      <section className="space-y-3 rounded-lg border border-border border-t-2 border-t-primary/50 bg-card p-3">
+        <p className="text-sm font-medium">{customSummary(draft)}</p>
+        {!draft.source ? <EmptyState title="Pick a source" body="Choose costs, labor, invoices, or activity. The preview uses the same numbers as the download." /> : null}
+        {report ? <ReportDocument report={report} /> : null}
+      </section>
     </div>
   )
 }

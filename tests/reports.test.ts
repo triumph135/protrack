@@ -4,7 +4,7 @@ import { PDFDocument } from 'pdf-lib'
 import ExcelJS from 'exceljs'
 import { grossProfit, grossProfitPercent } from '../lib/overview.ts'
 import { buildActivity, buildCustom, buildJobCostSummary, buildPortfolio, buildReport, buildVendorSpend } from '../lib/reports/compute.ts'
-import { parseCustomConfig } from '../lib/reports/custom.ts'
+import { changeSource, customSummary, emptyBuilderDraft, parseCustomConfig, setDraftGroupBy } from '../lib/reports/custom.ts'
 import { companyToday, resolveRange } from '../lib/reports/date-range.ts'
 import { applyDelivery, runOutcome } from '../lib/reports/delivery.ts'
 import { EMAIL_NOT_SET_UP, EMAIL_OFF, resolveEmailTransport } from '../lib/reports/email-mode.ts'
@@ -244,6 +244,56 @@ describe('custom reports and exports', () => {
     assert.equal(report.title, 'Vendor months')
     assert.equal(report.sections[0].rows.length, 1)
     assert.equal(report.sections[0].rows[0].cells[0], 'Home Depot')
+  })
+
+  it('rejects source combinations the builder cannot pick and keeps an older grouped config', () => {
+    assert.throws(() => parseCustomConfig({ source: 'invoices', columns: ['amount'], groupBy: ['employee'] }), /cannot be grouped by employee/)
+    assert.throws(() => parseCustomConfig({ source: 'labor', columns: ['vendor', 'amount'] }), /Unknown column "vendor"/)
+    assert.throws(() => parseCustomConfig({ source: 'activity', columns: ['amount'], groupBy: ['vendor'] }), /cannot be grouped by vendor/)
+    assert.throws(() => parseCustomConfig({ source: 'invoices', columns: ['amount'], filters: { vendorContains: 'acme' } }), /cannot be filtered by Vendor contains/)
+    assert.doesNotThrow(() => parseCustomConfig({ source: 'invoices', columns: ['amount'], filters: { vendorContains: '' } }))
+    const legacy = parseCustomConfig({ source: 'costs', columns: ['date', 'vendor', 'amount'], groupBy: ['vendor', 'month'] })
+    assert.deepEqual(legacy.groupBy, ['vendor', 'month'])
+    assert.equal(parseCustomConfig({ source: 'activity', columns: ['type', 'amount'], groupBy: ['type'] }).groupBy[0], 'type')
+  })
+
+  it('prunes columns, groups, and filters that do not belong to the new source', () => {
+    const start = {
+      ...emptyBuilderDraft(),
+      source: 'costs' as const,
+      columns: ['date', 'vendor', 'amount'],
+      groupBy: ['vendor', 'month'],
+      filters: { range: 'this_year' as const, projects: 'all' as const, project_status: 'all' as const, vendorContains: 'depot' },
+    }
+    const invoices = changeSource(start, 'invoices')
+    assert.equal(invoices.draft.source, 'invoices')
+    assert.equal(invoices.draft.columns.includes('vendor'), false)
+    assert.equal(invoices.draft.groupBy.includes('vendor'), false)
+    assert.equal(invoices.draft.groupBy.includes('month'), true)
+    assert.equal(invoices.draft.filters.vendorContains, undefined)
+    assert.equal(invoices.draft.filters.range, 'this_year')
+    assert.ok(invoices.removed.some((item) => /vendor/i.test(item)))
+
+    const labor = changeSource(start, 'labor')
+    assert.equal(labor.draft.columns.includes('vendor'), false)
+    assert.equal(labor.draft.groupBy.includes('vendor'), false)
+    assert.match(customSummary(labor.draft), /labor cost/)
+
+    const grouped = setDraftGroupBy({ ...emptyBuilderDraft(), source: 'costs', columns: ['date', 'vendor', 'amount'], groupBy: [], filters: { range: 'this_year', projects: 'all', project_status: 'all' } }, ['month'])
+    assert.deepEqual(grouped.draft.columns, ['amount'])
+    assert.ok(grouped.removed.includes('Date'))
+    assert.match(customSummary(grouped.draft), /grouped by month/)
+  })
+
+  it('labor source leaves material rows out', () => {
+    const report = buildCustom(dataset({
+      costs: [
+        cost({ id: 'm', cost: 40, date: '2026-03-02', vendor: 'Home Depot', category_id: 'materials' }),
+        cost({ id: 'l', cost: 80, date: '2026-04-04', category_id: 'labor', employee_name: 'Alex Rivera', st_hours: 8 }),
+      ],
+    }), parseCustomConfig({ source: 'labor', columns: ['employee', 'amount'], filters: { range: 'all_time' } }))
+    assert.equal(report.sections[0].rows.length, 1)
+    assert.equal(report.sections[0].rows[0].cells[0], 'Alex Rivera')
   })
 
   it('writes a CSV preamble and an Excel currency cell', async () => {

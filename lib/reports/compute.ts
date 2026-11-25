@@ -2,7 +2,7 @@ import { buildCategoryTree, rollupCategoryAmounts, type CostCategoryRecord } fro
 import { formatCurrency, formatHours, formatPercent } from '@/lib/format'
 import { categoryBudgetState, grossProfit, grossProfitPercent } from '@/lib/overview'
 import { reportTitle } from './catalog'
-import { parseCustomConfig, type CustomConfig } from './custom'
+import { paramsForCustom, parseCustomConfig, type CustomConfig } from './custom'
 import { dateInRange, formatLongDate, resolveRange, zonedDate, type ResolvedRange } from './date-range'
 import { fromCents, toCents } from './money'
 import type {
@@ -1078,11 +1078,7 @@ export function buildVendorSpend(dataset: ReportDataset, params: ReportParams): 
 export function buildCustom(dataset: ReportDataset, config: CustomConfig, name?: string): BuiltReport {
   const parsed = parseCustomConfig(config, (dataset.laborFields || []).map((field) => field.key))
   const params: ReportParams = {
-    range: parsed.filters.range || 'this_year',
-    from: parsed.filters.from,
-    to: parsed.filters.to,
-    projects: parsed.filters.projects || 'all',
-    project_status: parsed.filters.project_status || 'all',
+    ...paramsForCustom(parsed),
     categories: parsed.filters.categories,
     vendor: parsed.filters.vendorContains,
     change_order: parsed.filters.changeOrder,
