@@ -8,6 +8,7 @@ import type { BuiltReport, ReportDataset } from '@/lib/reports/types'
 import { CustomBuilder } from './CustomBuilder'
 import { ScheduleWizard, type ScheduleFormState } from './ScheduleWizard'
 import { EmptyState } from '@/components/ui/feedback'
+import { ReportCrumb } from './ReportCrumb'
 import { ReportDocument, ReportsLandingView, RunHistory, ScheduleList, SectionHeading, UnsubscribeCard } from './views'
 
 const activity: BuiltReport = {
@@ -143,9 +144,9 @@ export function ReportsPreview({ screen }: { screen: string }) {
       </div>
     )
   }
-  if (screen === 'Activity') return <ResultsChrome range="Last year"><ReportDocument report={activity} /></ResultsChrome>
-  if (screen === 'Job cost') return <ResultsChrome range="All time"><ReportDocument report={jobCost} /></ResultsChrome>
-  if (screen === 'Vendor') return <ResultsChrome range="This year"><ReportDocument report={vendors} /></ResultsChrome>
+  if (screen === 'Activity') return <ResultsChrome title="Activity for a period" range="Last year"><ReportDocument report={activity} /></ResultsChrome>
+  if (screen === 'Job cost') return <ResultsChrome title="Job cost summary" range="All time"><ReportDocument report={jobCost} /></ResultsChrome>
+  if (screen === 'Vendor') return <ResultsChrome title="Vendor spend" range="This year"><ReportDocument report={vendors} /></ResultsChrome>
   if (screen === 'Builder') return <BuilderScreen />
   if (screen === 'Schedule') return <SchedulePreview />
   if (screen === 'History') {
@@ -179,9 +180,10 @@ export function ReportsPreview({ screen }: { screen: string }) {
   return <UnsubscribeCard done={false} error="" onConfirm={() => undefined} />
 }
 
-function ResultsChrome({ range, children }: { range: string; children: React.ReactNode }) {
+function ResultsChrome({ title, range, children }: { title: string; range: string; children: React.ReactNode }) {
   return (
     <div className="space-y-4">
+      <ReportCrumb current={title} />
       <div className="grid gap-3 md:grid-cols-4">
         <div>
           <p className="mb-1 text-sm font-medium">Date range</p>
@@ -244,6 +246,7 @@ function BuilderScreen() {
   }, [draft, name])
   return (
     <div className="space-y-4">
+      <ReportCrumb current={name.trim() || 'Build a custom report'} />
       <CustomBuilder
         draft={draft}
         onDraft={(next, message) => { setDraft(next); setNotice(message || '') }}

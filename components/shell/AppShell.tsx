@@ -220,6 +220,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   const activeProjects = projects.filter((project) => project.status === 'Active' || project.id === activeProject?.id)
   const showJobSelectors = showsJobSelectors(pathname)
+  const allProjects = pathname === '/dashboard' && searchParams.get('scope') === 'all'
 
   return (
     <div className="flex h-screen bg-background text-foreground">
@@ -271,19 +272,23 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   </option>
                 ))}
               </select>
-              <label className="sr-only" htmlFor="change-order-switcher">Change order</label>
-              <select
-                id="change-order-switcher"
-                className="hidden h-11 max-w-[14rem] rounded-lg border border-input bg-card px-2 text-sm sm:block"
-                value={changeOrderId || 'all'}
-                onChange={(event) => setChangeOrderId(event.target.value === 'all' ? null : event.target.value)}
-              >
-                <option value="all">All change orders</option>
-                <option value="base">Base contract</option>
-                {changeOrders.map((order) => (
-                  <option key={order.id} value={order.id}>{order.name}</option>
-                ))}
-              </select>
+              {allProjects ? null : (
+                <>
+                  <label className="sr-only" htmlFor="change-order-switcher">Change order</label>
+                  <select
+                    id="change-order-switcher"
+                    className="hidden h-11 max-w-[14rem] rounded-lg border border-input bg-card px-2 text-sm sm:block"
+                    value={changeOrderId || 'all'}
+                    onChange={(event) => setChangeOrderId(event.target.value === 'all' ? null : event.target.value)}
+                  >
+                    <option value="all">All change orders</option>
+                    <option value="base">Base contract</option>
+                    {changeOrders.map((order) => (
+                      <option key={order.id} value={order.id}>{order.name}</option>
+                    ))}
+                  </select>
+                </>
+              )}
             </>
           ) : null}
           <div className="ml-auto flex items-center gap-2">

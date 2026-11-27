@@ -1,7 +1,8 @@
 'use client'
 
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
 import { useProjects } from '@/contexts/ProjectContext'
@@ -15,12 +16,38 @@ import { categoryBudgetState, grossProfit, grossProfitPercent, monthlyBurn } fro
 import { readCompanySettings } from '@/lib/company-settings'
 import { formatCurrency, formatDate, formatPercent } from '@/lib/format'
 import { isMissingColumnError, isMissingRelation } from '@/lib/security'
+import { fetchAllRows } from '@/lib/page-query'
+import { aggregatePortfolio, budgetsFromLegacy, categoriesForReader } from '@/lib/portfolio-overview'
+import { fromCents, toCents } from '@/lib/reports/money'
+import { resolveCategoryId } from '@/lib/reports/compute'
+import type { ReportBudget, ReportCategory, ReportChangeOrder, ReportCost, ReportLegacyBudget } from '@/lib/reports/types'
 import { Button } from '@/components/ui/button'
-import { EmptyState, PageHeader, Skeleton } from '@/components/ui/feedback'
+import { EmptyState, Notice, PageHeader, Skeleton } from '@/components/ui/feedback'
 import { ExportMenu, type ExportSpec } from '@/components/export/ExportMenu'
-import { CategoryName } from '@/components/costs/CategoryName'
-import { cn } from '@/lib/cn'
-import type { ChangeOrder, CustomerInvoice, ProjectCost } from '@/types/app.types'
+import { OverviewDashboard, type OverviewGroup } from '@/components/overview/OverviewDashboard'
+import type { CustomerInvoice } from '@/types/app.types'
+
+interface CompanyCostRow {
+  id: string
+  project_id: string
+  category_id: string | null
+  category: string | null
+  cost: number | null
+  date: string
+  description: string | null
+  vendor: string | null
+  employee_name: string | null
+  created_at: string | null
+  reversal_of_id?: string | null
+}
+
+interface CompanyOrderRow {
+  id: string
+  project_id: string
+  name: string
+  additional_contract_value: number | null
+  created_at: string | null
+}
 
 const BUDGET_COLUMNS: Record<string, string> = {
   material: 'material_budget',
@@ -44,13 +71,32 @@ export default function DashboardPage() {
   const { categories, tree } = useCategories()
   const { entries, loading: costsLoading, refreshCosts } = useCosts(activeProject?.id, null)
   const { changeOrders, getTotalAdditionalValue } = useChangeOrders(activeProject?.id)
-  const [scope, setScope] = useState<'project' | 'company'>('project')
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const scope = searchParams.get('scope') === 'all' ? 'company' : 'project'
   const [invoices, setInvoices] = useState<InvoiceRow[]>([])
-  const [companyCosts, setCompanyCosts] = useState<Array<Pick<ProjectCost, 'project_id' | 'cost' | 'date' | 'description' | 'created_at'>>>([])
-  const [companyOrders, setCompanyOrders] = useState<ChangeOrder[]>([])
+  const [companyCosts, setCompanyCosts] = useState<ReportCost[]>([])
+  const [companyOrders, setCompanyOrders] = useState<ReportChangeOrder[]>([])
+  const [companyBudgets, setCompanyBudgets] = useState<ReportBudget[]>([])
+  const [companyReady, setCompanyReady] = useState(false)
+  const [companyError, setCompanyError] = useState('')
   const [budgets, setBudgets] = useState<Record<string, number>>({})
   const supabase = createClient()
   const goal = readCompanySettings(tenant?.settings).gp_goal_percent
+
+  function setScope(next: 'project' | 'company') {
+    const params = new URLSearchParams(searchParams.toString())
+    if (next === 'company') params.set('scope', 'all')
+    else params.delete('scope')
+    const query = params.toString()
+    router.push((query ? `/dashboard?${query}` : '/dashboard') as never)
+  }
+
+  function openProject(id: string) {
+    const project = projects.find((item) => item.id === id)
+    if (project) setActiveProject(project)
+    router.push('/dashboard' as never)
+  }
 
   useEffect(() => {
     if (activeProject?.id) refreshCosts()
@@ -60,29 +106,115 @@ export default function DashboardPage() {
     if (!tenant?.id) return
     let cancelled = false
     ;(async () => {
-      const withCollected = await supabase.from('customer_invoices').select('id, project_id, invoice_number, amount, amount_collected, date_billed, created_at').eq('tenant_id', tenant.id)
+      const withCollected = await fetchAllRows<InvoiceRow>((from, to) => supabase
+        .from('customer_invoices')
+        .select('id, project_id, invoice_number, amount, amount_collected, date_billed, created_at')
+        .eq('tenant_id', tenant.id)
+        .order('id', { ascending: true })
+        .range(from, to))
       let invoiceRows: InvoiceRow[] = []
       if (withCollected.error && isMissingColumnError(withCollected.error)) {
-        const withoutCollected = await supabase.from('customer_invoices').select('id, project_id, invoice_number, amount, date_billed, created_at').eq('tenant_id', tenant.id)
-        invoiceRows = (withoutCollected.data || []).map((row) => ({ ...row, amount_collected: 0 }))
+        const withoutCollected = await fetchAllRows<InvoiceRow>((from, to) => supabase
+          .from('customer_invoices')
+          .select('id, project_id, invoice_number, amount, date_billed, created_at')
+          .eq('tenant_id', tenant.id)
+          .order('id', { ascending: true })
+          .range(from, to))
+        invoiceRows = (withoutCollected.rows || []).map((row) => ({ ...row, amount_collected: 0 }))
       } else if (!withCollected.error) {
-        invoiceRows = withCollected.data || []
+        invoiceRows = withCollected.rows
       }
       if (!cancelled) setInvoices(invoiceRows)
-
-      if (scope !== 'company') return
-      const [costs, orders] = await Promise.all([
-        supabase.from('project_costs').select('project_id, cost, date, description, created_at').eq('tenant_id', tenant.id),
-        supabase.from('change_orders').select('*').eq('tenant_id', tenant.id),
-      ])
-      if (cancelled) return
-      setCompanyCosts(costs.error ? [] : costs.data || [])
-      setCompanyOrders(orders.error ? [] : orders.data || [])
     })()
     return () => {
       cancelled = true
     }
-  }, [tenant?.id, supabase, scope])
+  }, [tenant?.id, supabase])
+
+  useEffect(() => {
+    if (!tenant?.id || scope !== 'company') return
+    let cancelled = false
+    setCompanyError('')
+    ;(async () => {
+      const costSelect = 'id, project_id, category_id, category, cost, date, description, vendor, employee_name, created_at, reversal_of_id'
+      let costs = await fetchAllRows<CompanyCostRow>(async (from, to) => {
+        const result = await supabase.from('project_costs').select(costSelect).eq('tenant_id', tenant.id).order('id', { ascending: true }).range(from, to)
+        return { data: result.data as CompanyCostRow[] | null, error: result.error }
+      })
+      if (costs.error && isMissingColumnError(costs.error)) {
+        costs = await fetchAllRows<CompanyCostRow>(async (from, to) => {
+          const result = await supabase.from('project_costs').select('id, project_id, category_id, category, cost, date, description, vendor, employee_name, created_at').eq('tenant_id', tenant.id).order('id', { ascending: true }).range(from, to)
+          return { data: result.data as CompanyCostRow[] | null, error: result.error }
+        })
+      }
+      const orders = await fetchAllRows<CompanyOrderRow>(async (from, to) => {
+        const result = await supabase.from('change_orders').select('id, project_id, name, additional_contract_value, created_at').eq('tenant_id', tenant.id).order('id', { ascending: true }).range(from, to)
+        return { data: result.data as CompanyOrderRow[] | null, error: result.error }
+      })
+      const categoryBudgets = await fetchAllRows<ReportBudget>((from, to) => supabase
+        .from('project_category_budgets')
+        .select('project_id, category_id, amount')
+        .eq('tenant_id', tenant.id)
+        .order('id', { ascending: true })
+        .range(from, to))
+      if (cancelled) return
+      if (costs.error) {
+        setCompanyError(costs.error.message || 'Could not load costs for every project.')
+        setCompanyCosts([])
+      } else {
+        setCompanyCosts((costs.rows || []).map((row) => ({
+          id: row.id,
+          project_id: row.project_id,
+          category_id: row.category_id ?? null,
+          category: row.category ?? null,
+          date: row.date,
+          cost: row.cost ?? null,
+          vendor: row.vendor ?? null,
+          invoice_number: null,
+          description: row.description ?? null,
+          employee_name: row.employee_name ?? null,
+          employee_id: null,
+          st_hours: null,
+          ot_hours: null,
+          dt_hours: null,
+          per_diem: null,
+          mob_qty: null,
+          change_order_id: null,
+          reversal_of_id: row.reversal_of_id ?? null,
+          reversed_at: null,
+          reversal_reason: null,
+          created_at: row.created_at ?? null,
+        })))
+      }
+      setCompanyOrders(orders.error ? [] : (orders.rows || []).map((row) => ({
+        id: row.id,
+        project_id: row.project_id,
+        name: row.name,
+        additional_contract_value: row.additional_contract_value ?? null,
+        created_at: row.created_at ?? null,
+      })))
+      if (!categoryBudgets.error) {
+        setCompanyBudgets(categoryBudgets.rows || [])
+      } else if (isMissingRelation(categoryBudgets.error)) {
+        const legacy = await fetchAllRows<ReportLegacyBudget>((from, to) => supabase
+          .from('project_budgets')
+          .select('project_id, material_budget, labor_budget, equipment_budget, subcontractor_budget, others_budget, cap_leases_budget, consumable_budget')
+          .eq('tenant_id', tenant.id)
+          .order('project_id', { ascending: true })
+          .range(from, to))
+        if (!cancelled) {
+          setCompanyBudgets(budgetsFromLegacy(categories.map(asReportCategory), legacy.rows || []))
+        }
+      } else {
+        setCompanyBudgets([])
+        if (!costs.error) setCompanyError(categoryBudgets.error.message || 'Could not load budgets.')
+      }
+      if (!cancelled) setCompanyReady(true)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [tenant?.id, supabase, scope, categories])
 
   useEffect(() => {
     if (!activeProject?.id) return
@@ -120,6 +252,45 @@ export default function DashboardPage() {
     }, 'read'))
   }, [categories, user])
 
+  const reportCategories = useMemo(() => categories.map(asReportCategory), [categories])
+
+  const company = useMemo(() => {
+    if (scope !== 'company' || !companyReady) return null
+    const readable = visible.map((category) => category.id)
+    const kept = readable.length ? categoriesForReader(reportCategories, readable) : reportCategories
+    const readableIds = new Set(readable)
+    const costs = companyCosts.filter((row) => {
+      const id = resolveCategoryId(row, kept)
+      return !!id && (readableIds.size === 0 || readableIds.has(id))
+    })
+    return aggregatePortfolio({
+      projects: projects.map((project) => ({
+        id: project.id,
+        jobNumber: project.jobNumber,
+        jobName: project.jobName,
+        customer: project.customer || '',
+        status: project.status ?? null,
+        totalContractValue: project.totalContractValue ?? null,
+      })),
+      categories: kept,
+      costs,
+      invoices: invoices.filter((row) => projects.some((project) => project.id === row.project_id)).map((row) => ({
+        id: row.id,
+        project_id: row.project_id,
+        invoice_number: row.invoice_number,
+        amount: row.amount,
+        amount_collected: row.amount_collected ?? 0,
+        date_billed: row.date_billed,
+        change_order_id: null,
+        reversal_of_id: null,
+        reversal_reason: null,
+        created_at: row.created_at ?? null,
+      })),
+      changeOrders: companyOrders,
+      budgets: companyBudgets,
+    })
+  }, [scope, companyReady, visible, reportCategories, companyCosts, projects, invoices, companyOrders, companyBudgets])
+
   const projectInvoices = invoices.filter((invoice) => invoice.project_id === activeProject?.id)
   const rollup = useMemo(() => rollupCategoryAmounts(categories, ownAmountsByCategory(entries, categories)), [entries, categories])
   const budgetRollup = useMemo(() => rollupCategoryAmounts(categories, budgets), [categories, budgets])
@@ -135,6 +306,7 @@ export default function DashboardPage() {
   const profit = grossProfit(invoiced, totalCosts)
   const margin = grossProfitPercent(invoiced, totalCosts)
   const burn = monthlyBurn(entries)
+  const invoiceBurn = monthlyBurn(projectInvoices.map((row) => ({ date: row.date_billed, cost: Number(row.amount || 0) })))
   const alerts = topLevel.flatMap((category) => {
     const children = category.children.filter((child) => visible.some((item) => item.id === child.id))
     return [category, ...children].flatMap((item) => {
@@ -142,41 +314,29 @@ export default function DashboardPage() {
       const budget = item.parent_id ? budgets[item.id] || 0 : budgetRollup[item.id]?.total || 0
       const state = categoryBudgetState(actual, budget)
       if (state !== 'over' && state !== 'near') return []
-      return [{ id: item.id, name: item.name, actual, budget, state }]
+      return [{ id: item.id, name: item.name, actual, budget, state, href: `/costs?category=${item.id}` }]
     })
   })
 
   const recentCosts = [...entries].sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 5)
   const recentInvoices = [...projectInvoices].sort((a, b) => b.date_billed.localeCompare(a.date_billed)).slice(0, 5)
   const recentOrders = [...changeOrders].slice(0, 5)
+  const projectGroups = topLevel.map((category) => ({
+    id: category.id,
+    name: category.name,
+    actual: rollup[category.id]?.total || 0,
+    budget: budgetRollup[category.id]?.total || 0,
+    href: `/costs?category=${category.id}`,
+    children: category.children.filter((child) => visible.some((item) => item.id === child.id)).map((child) => ({
+      id: child.id,
+      name: child.name,
+      actual: rollup[child.id]?.own || 0,
+      budget: budgets[child.id] || 0,
+      href: `/costs?category=${child.id}`,
+    })),
+  }))
 
-  const companyRows = projects.map((project) => {
-    const cost = companyCosts.filter((row) => row.project_id === project.id).reduce((sum, row) => sum + Number(row.cost || 0), 0)
-    const billed = invoices.filter((row) => row.project_id === project.id).reduce((sum, row) => sum + Number(row.amount || 0), 0)
-    const received = invoices.filter((row) => row.project_id === project.id).reduce((sum, row) => sum + Number(row.amount_collected || 0), 0)
-    const changes = companyOrders.filter((order) => order.project_id === project.id).reduce((sum, order) => sum + Number(order.additional_contract_value || 0), 0)
-    const value = (project.totalContractValue || 0) + changes
-    return { project, value, cost, billed, received, profit: grossProfit(billed, cost) }
-  })
-
-  const exportSpec: ExportSpec | null = !activeProject ? null : scope === 'company' ? {
-    filename: 'company-overview',
-    title: 'Company overview',
-    company: tenant?.name || 'Company',
-    filters: ['Scope: all projects', 'Gross profit is invoiced minus cost'],
-    columns: ['Job number', 'Job name', 'Contract', 'Cost', 'Invoiced', 'Collected', 'Gross profit (invoiced minus cost)'],
-    csvRows: companyRows.map((row) => [row.project.jobNumber, row.project.jobName, row.value, row.cost, row.billed, row.received, row.profit]),
-    pdfRows: companyRows.map((row) => [row.project.jobNumber, row.project.jobName, formatCurrency(row.value), formatCurrency(row.cost), formatCurrency(row.billed), formatCurrency(row.received), formatCurrency(row.profit)]),
-    totals: [{ label: 'Projects', value: String(companyRows.length) }],
-    overview: true,
-    visual: {
-      kpis: [
-        { label: 'Projects', value: String(companyRows.length) },
-        { label: 'Contract', value: formatCurrency(companyRows.reduce((sum, row) => sum + row.value, 0)) },
-        { label: 'Cost', value: formatCurrency(companyRows.reduce((sum, row) => sum + row.cost, 0)) },
-      ],
-    },
-  } : {
+  const exportSpec: ExportSpec | null = scope === 'company' ? (company ? companyExport(company, tenant?.name || 'Company') : null) : !activeProject ? null : {
     filename: `${activeProject.jobNumber}-overview`,
     title: 'Project overview',
     company: tenant?.name || 'Company',
@@ -238,6 +398,24 @@ export default function DashboardPage() {
   if (!activeProject && scope === 'project') {
     return <EmptyState title="No project yet" body="Create a project to see contract value, costs, and invoices." />
   }
+  if (scope === 'company' && projects.length === 0) {
+    return <EmptyState title="No project yet" body="Create a project to see contract value, costs, and invoices." />
+  }
+
+  const companyBase = company ? fromCents(projects.reduce((sum, project) => sum + toCents(project.totalContractValue), 0)) : 0
+  const companyContract = company ? fromCents(company.contractCents) : 0
+  const visibleIds = new Set(visible.map((category) => category.id))
+  const companyGroups: OverviewGroup[] = []
+  let hidingParent = false
+  for (const line of company?.categories || []) {
+    if (line.depth === 0) {
+      hidingParent = !visibleIds.has(line.id)
+      if (hidingParent) continue
+      companyGroups.push({ id: line.id, name: line.name, actual: fromCents(line.actualCents), budget: fromCents(line.budgetCents), children: [] })
+    } else if (!hidingParent && companyGroups.length > 0 && visibleIds.has(line.id)) {
+      companyGroups[companyGroups.length - 1].children.push({ id: line.id, name: line.name, actual: fromCents(line.actualCents), budget: fromCents(line.budgetCents) })
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -256,228 +434,154 @@ export default function DashboardPage() {
         }
       />
 
-      {scope === 'company' ? (
-        <section className="overflow-hidden rounded-lg border border-border bg-card">
-          <table className="responsive-cards w-full text-sm">
-            <thead className="border-b border-border text-left text-muted-foreground">
-              <tr>
-                {['Job', 'Contract', 'Cost', 'Invoiced', 'Collected', 'Gross profit'].map((header) => (
-                  <th key={header} className="px-3 py-2 font-medium">{header}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {companyRows.map((row) => (
-                <tr key={row.project.id} className="border-b border-border last:border-0">
-                  <td className="px-3 py-2" data-label="Job">
-                    <button type="button" className="text-left font-medium text-primary" onClick={() => { setActiveProject(row.project); setScope('project') }}>
-                      {row.project.jobNumber}
-                    </button>
-                    <p className="text-muted-foreground">{row.project.jobName}</p>
-                  </td>
-                  <td className="px-3 py-2 text-right tabular" data-label="Contract">{formatCurrency(row.value)}</td>
-                  <td className="px-3 py-2 text-right tabular" data-label="Cost">{formatCurrency(row.cost)}</td>
-                  <td className="px-3 py-2 text-right tabular" data-label="Invoiced">{formatCurrency(row.billed)}</td>
-                  <td className="px-3 py-2 text-right tabular" data-label="Collected">{formatCurrency(row.received)}</td>
-                  <td className={`px-3 py-2 text-right tabular ${row.profit < 0 ? 'text-destructive' : 'text-success'}`} data-label="Gross profit">{formatCurrency(row.profit)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
+      {companyError ? <Notice>{companyError}</Notice> : null}
+
+      {scope === 'company' && !company ? <Skeleton className="h-40" /> : null}
+
+      {scope === 'company' && company ? (
+        <OverviewDashboard
+          accent
+          contract={companyContract}
+          baseContract={companyBase}
+          changeOrderTotal={companyContract - companyBase}
+          totalCosts={fromCents(company.costCents)}
+          totalBudget={fromCents(company.budgetCents)}
+          invoiced={fromCents(company.invoicedCents)}
+          collected={fromCents(company.collectedCents)}
+          profit={fromCents(company.profitCents)}
+          margin={company.margin}
+          goal={goal}
+          alerts={company.categories.filter((line) => (line.state === 'over' || line.state === 'near') && visibleIds.has(line.id)).map((line) => ({
+            id: line.id,
+            name: line.name,
+            actual: fromCents(line.actualCents),
+            budget: fromCents(line.budgetCents),
+            state: line.state as 'over' | 'near',
+          }))}
+          groups={companyGroups}
+          burn={company.costBurn}
+          invoiceBurn={company.invoiceBurn}
+          recentCosts={company.recentCosts.map((row) => ({
+            id: row.id,
+            primary: row.label,
+            secondary: `${row.projectLabel} · ${formatDate(row.date)}`,
+            amount: formatCurrency(fromCents(row.amountCents)),
+          }))}
+          recentInvoices={company.recentInvoices.map((row) => ({
+            id: row.id,
+            primary: row.label,
+            secondary: `${row.projectLabel} · ${formatDate(row.date)}`,
+            amount: formatCurrency(fromCents(row.amountCents)),
+          }))}
+          recentOrders={company.recentOrders.map((row) => ({
+            id: row.id,
+            primary: row.label,
+            secondary: row.projectLabel || 'Change order',
+            amount: formatCurrency(fromCents(row.amountCents)),
+          }))}
+          projects={company.projects.map((row) => ({
+            id: row.id,
+            jobNumber: row.jobNumber,
+            jobName: row.jobName,
+            budget: fromCents(row.budgetCents),
+            cost: fromCents(row.costCents),
+            invoiced: fromCents(row.invoicedCents),
+            profit: fromCents(row.profitCents),
+            margin: row.margin,
+            spent: row.spentPercent,
+          }))}
+          onOpenProject={openProject}
+        />
       ) : activeProject ? (
-        <>
-          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            <Metric label="Contract" value={formatCurrency(contract)} detail={`${formatCurrency(baseContract)} base · ${formatCurrency(changeOrderTotal)} change orders`} />
-            <Metric label="Cost to date" value={formatCurrency(totalCosts)} detail="Category roll-up is on Costs" href="/costs" />
-            <Metric label="Budget" value={formatCurrency(totalBudget)} detail={`${formatCurrency(totalBudget - totalCosts)} remaining`} href="/costs" />
-            <Metric label="Gross profit" value={formatCurrency(profit)} detail={margin == null ? 'Invoiced minus cost' : `Invoiced minus cost · ${formatPercent(margin)}${goal == null ? '' : ` · goal ${formatPercent(goal)}`}`} tone={margin == null ? undefined : goal != null && margin < goal ? 'bad' : profit >= 0 ? 'good' : 'bad'} />
-            <Metric label="Invoiced" value={formatCurrency(invoiced)} detail={`${formatCurrency(contract - invoiced)} of the contract not billed`} href="/invoices" />
-            <Metric label="Collected" value={formatCurrency(collected)} detail={`${formatCurrency(invoiced - collected)} still outstanding`} href="/invoices" />
-          </section>
-
-          {alerts.length > 0 ? (
-            <section className="rounded-lg border border-warning/40 bg-warning/10 px-4 py-3">
-              <h2 className="text-sm font-medium">Budget alerts</h2>
-              <ul className="mt-2 space-y-1 text-sm">
-                {alerts.map((alert) => (
-                  <li key={alert.id}>
-                    <Link className="text-primary" href={`/costs?category=${alert.id}` as never}>
-                      {alert.name}
-                    </Link>
-                    {' '}{alert.state === 'over' ? 'is over budget' : 'is nearing its budget'} ({formatCurrency(alert.actual)} of {formatCurrency(alert.budget)}).
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
-
-          <section className="grid gap-4 lg:grid-cols-5">
-            <div className="rounded-lg border border-border bg-card p-4 lg:col-span-3">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <h2 className="text-sm font-medium">Budget versus actual</h2>
-                <Link href="/costs" className="text-sm text-primary">View in Costs</Link>
-              </div>
-              <div className="space-y-3">
-                {topLevel.map((category) => {
-                  const children = category.children.filter((child) => visible.some((item) => item.id === child.id))
-                  return (
-                    <div key={category.id}>
-                      <OverviewBar
-                        href={`/costs?category=${category.id}`}
-                        name={category.name}
-                        actual={rollup[category.id]?.total || 0}
-                        budget={budgetRollup[category.id]?.total || 0}
-                        depth={0}
-                      />
-                      {children.length > 0 ? (
-                        <div className="ml-6 mt-1 border-l border-muted-foreground/45">
-                          {children.map((child) => (
-                            <OverviewBar
-                              key={child.id}
-                              href={`/costs?category=${child.id}`}
-                              name={child.name}
-                              actual={rollup[child.id]?.own || 0}
-                              budget={budgets[child.id] || 0}
-                              depth={1}
-                            />
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-            <div className="rounded-lg border border-border bg-card p-4 lg:col-span-2">
-              <h2 className="text-sm font-medium">Cost trend</h2>
-              <p className="mt-1 text-xs text-muted-foreground">Cumulative cost by month</p>
-              <BurnChart points={burn} />
-            </div>
-          </section>
-
-          <section className="overflow-hidden rounded-lg border border-border bg-card">
-            <div className="flex items-center justify-between border-b border-border px-3 py-2">
-              <h2 className="text-sm font-medium">By category</h2>
-              <p className="text-xs text-muted-foreground">Parent rows include children. Select a row to open it in Costs.</p>
-            </div>
-            <table className="responsive-cards w-full text-sm">
-              <thead className="border-b border-border text-left text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2 font-medium">Category</th>
-                  <th className="px-3 py-2 text-right font-medium">Budget</th>
-                  <th className="px-3 py-2 text-right font-medium">Actual</th>
-                  <th className="px-3 py-2 text-right font-medium">Remaining</th>
-                </tr>
-              </thead>
-              <tbody>
-                {topLevel.map((category) => {
-                  const actual = rollup[category.id]?.total || 0
-                  const budget = budgetRollup[category.id]?.total || 0
-                  const children = category.children.filter((child) => visible.some((item) => item.id === child.id))
-                  return (
-                    <Fragment key={category.id}>
-                      <tr className="border-b border-border">
-                        <td className="px-3 py-2" data-label="Category"><Link className="font-medium text-primary" href={`/costs?category=${category.id}` as never}>{category.name}</Link></td>
-                        <td className="px-3 py-2 text-right tabular" data-label="Budget">{formatCurrency(budget)}</td>
-                        <td className="px-3 py-2 text-right tabular" data-label="Actual">{formatCurrency(actual)}</td>
-                        <td className="px-3 py-2 text-right tabular" data-label="Remaining">{formatCurrency(budget - actual)}</td>
-                      </tr>
-                      {children.map((child) => (
-                        <tr key={child.id} className="border-b border-border text-[13px] text-muted-foreground">
-                          <td className="px-3 py-2" data-label="Category">
-                            <CategoryName depth={1}>
-                              <Link className="text-muted-foreground hover:text-foreground" href={`/costs?category=${child.id}` as never}>{child.name}</Link>
-                            </CategoryName>
-                          </td>
-                          <td className="px-3 py-2 text-right tabular" data-label="Budget">{formatCurrency(budgets[child.id] || 0)}</td>
-                          <td className="px-3 py-2 text-right tabular" data-label="Actual">{formatCurrency(rollup[child.id]?.own || 0)}</td>
-                          <td className="px-3 py-2 text-right tabular" data-label="Remaining">{formatCurrency((budgets[child.id] || 0) - (rollup[child.id]?.own || 0))}</td>
-                        </tr>
-                      ))}
-                    </Fragment>
-                  )
-                })}
-              </tbody>
-            </table>
-          </section>
-
-          <section className="grid gap-4 lg:grid-cols-3">
-            <Activity title="Latest costs" empty="No costs yet" rows={recentCosts.map((row) => ({ id: row.id, primary: row.description || row.vendor || row.employee_name || 'Cost', secondary: formatDate(row.date), amount: formatCurrency(row.cost), href: row.category_id ? `/costs?category=${row.category_id}` : '/costs' }))} />
-            <Activity title="Latest invoices" empty="No invoices yet" rows={recentInvoices.map((row) => ({ id: row.id, primary: row.invoice_number, secondary: formatDate(row.date_billed), amount: formatCurrency(row.amount), href: '/invoices' }))} />
-            <Activity title="Change orders" empty="No change orders" rows={recentOrders.map((row) => ({ id: row.id, primary: row.name, secondary: row.description || 'Change order', amount: formatCurrency(row.additional_contract_value), href: '/projects' }))} />
-          </section>
-        </>
+        <OverviewDashboard
+          contract={contract}
+          baseContract={baseContract}
+          changeOrderTotal={changeOrderTotal}
+          totalCosts={totalCosts}
+          totalBudget={totalBudget}
+          invoiced={invoiced}
+          collected={collected}
+          profit={profit}
+          margin={margin}
+          goal={goal}
+          alerts={alerts}
+          groups={projectGroups}
+          burn={burn}
+          invoiceBurn={invoiceBurn}
+          costsHref="/costs"
+          invoicesHref="/invoices"
+          recentCosts={recentCosts.map((row) => ({ id: row.id, primary: row.description || row.vendor || row.employee_name || 'Cost', secondary: formatDate(row.date), amount: formatCurrency(row.cost), href: row.category_id ? `/costs?category=${row.category_id}` : '/costs' }))}
+          recentInvoices={recentInvoices.map((row) => ({ id: row.id, primary: row.invoice_number, secondary: formatDate(row.date_billed), amount: formatCurrency(row.amount), href: '/invoices' }))}
+          recentOrders={recentOrders.map((row) => ({ id: row.id, primary: row.name, secondary: row.description || 'Change order', amount: formatCurrency(row.additional_contract_value), href: '/projects' }))}
+        />
       ) : null}
     </div>
   )
 }
 
-function OverviewBar({ href, name, actual, budget, depth }: { href: string; name: string; actual: number; budget: number; depth: number }) {
-  const max = Math.max(budget, actual, 1)
-  return (
-    <Link href={href as never} className={cn('relative block rounded-md py-1 hover:bg-muted', depth > 0 ? 'pl-3' : 'px-1')}>
-      {depth > 0 ? <span aria-hidden className="absolute left-0 top-1/2 h-px w-3 bg-muted-foreground/45" /> : null}
-      <div className={cn('mb-1 flex justify-between gap-3', depth > 0 ? 'pl-3 text-[13px] text-muted-foreground' : 'text-sm')}>
-        <span className="min-w-0 truncate">{name}</span>
-        <span className="tabular text-muted-foreground">{formatCurrency(actual)} / {budget > 0 ? formatCurrency(budget) : 'No budget'}</span>
-      </div>
-      <div className={cn('relative overflow-hidden rounded-full bg-muted', depth > 0 ? 'ml-3 h-1.5' : 'h-2')}>
-        <div className="absolute inset-y-0 left-0 bg-primary/25" style={{ width: `${Math.min(100, (budget / max) * 100)}%` }} />
-        <div className={cn('absolute inset-y-0 left-0', actual > budget && budget > 0 ? 'bg-destructive' : 'bg-primary')} style={{ width: `${Math.min(100, (actual / max) * 100)}%` }} />
-      </div>
-    </Link>
-  )
+function asReportCategory(category: { id: string; name: string; kind: string; parent_id: string | null; builtin_key: string | null; sort_order: number; is_hidden: boolean }): ReportCategory {
+  return {
+    id: category.id,
+    name: category.name,
+    kind: category.kind,
+    parent_id: category.parent_id,
+    builtin_key: category.builtin_key,
+    sort_order: category.sort_order,
+    is_hidden: category.is_hidden,
+  }
 }
 
-function Metric({ label, value, detail, tone, href }: { label: string; value: string; detail?: string; tone?: 'good' | 'bad'; href?: string }) {
-  const body = (
-    <>
-      <p className="text-sm text-muted-foreground">{label}</p>
-      <p className={`mt-1 text-2xl font-semibold tabular ${tone === 'bad' ? 'text-destructive' : tone === 'good' ? 'text-success' : ''}`}>{value}</p>
-      {detail ? <p className="mt-1 text-xs text-muted-foreground tabular">{detail}</p> : null}
-    </>
-  )
-  if (!href) return <div className="rounded-lg border border-border bg-card p-4">{body}</div>
-  return <Link href={href as never} className="rounded-lg border border-border bg-card p-4 hover:border-primary">{body}</Link>
-}
-
-function BurnChart({ points }: { points: Array<{ month: string; cumulative: number }> }) {
-  if (points.length === 0) return <p className="mt-6 text-sm text-muted-foreground">Costs will draw a trend once they have dates.</p>
-  const max = Math.max(...points.map((point) => point.cumulative), 1)
-  const width = 280
-  const height = 120
-  const step = points.length === 1 ? 0 : width / (points.length - 1)
-  const coords = points.map((point, index) => `${index * step},${height - (point.cumulative / max) * (height - 8)}`).join(' ')
-  return (
-    <svg viewBox={`0 0 ${width} ${height + 20}`} className="mt-3 w-full text-primary" role="img" aria-label="Cumulative cost by month">
-      <polyline fill="none" stroke="currentColor" strokeWidth="2" points={coords} />
-      {points.map((point, index) => (
-        <text key={point.month} x={index * step} y={height + 16} className="fill-muted-foreground" fontSize="10">{point.month.slice(5)}</text>
-      ))}
-    </svg>
-  )
-}
-
-function Activity({ title, empty, rows }: { title: string; empty: string; rows: Array<{ id: string; primary: string; secondary: string; amount: string; href: string }> }) {
-  return (
-    <section className="rounded-lg border border-border bg-card p-4">
-      <h2 className="text-sm font-medium">{title}</h2>
-      {rows.length === 0 ? <p className="mt-3 text-sm text-muted-foreground">{empty}</p> : (
-        <ul className="mt-3 space-y-2">
-          {rows.map((row) => (
-            <li key={row.id}>
-              <Link href={row.href as never} className="flex items-start justify-between gap-3 text-sm hover:text-primary">
-                <span>
-                  <span className="block font-medium">{row.primary}</span>
-                  <span className="text-xs text-muted-foreground">{row.secondary}</span>
-                </span>
-                <span className="tabular">{row.amount}</span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  )
+function companyExport(company: ReturnType<typeof aggregatePortfolio>, companyName: string): ExportSpec {
+  const contract = fromCents(company.contractCents)
+  const cost = fromCents(company.costCents)
+  const budget = fromCents(company.budgetCents)
+  const invoiced = fromCents(company.invoicedCents)
+  const profit = fromCents(company.profitCents)
+  return {
+    filename: 'company-overview',
+    title: 'Company overview',
+    company: companyName,
+    filters: ['Scope: all projects', 'Reversals and credit memos are included, so totals are net.', 'Gross profit is invoiced minus cost'],
+    columns: ['Job number', 'Job name', 'Budget', 'Cost', 'Invoiced', 'Gross profit', 'Margin', '% of budget'],
+    csvRows: company.projects.map((row) => [
+      row.jobNumber,
+      row.jobName,
+      fromCents(row.budgetCents),
+      fromCents(row.costCents),
+      fromCents(row.invoicedCents),
+      fromCents(row.profitCents),
+      row.margin,
+      row.spentPercent,
+    ]),
+    pdfRows: company.projects.map((row) => [
+      row.jobNumber,
+      row.jobName,
+      formatCurrency(fromCents(row.budgetCents)),
+      formatCurrency(fromCents(row.costCents)),
+      formatCurrency(fromCents(row.invoicedCents)),
+      formatCurrency(fromCents(row.profitCents)),
+      row.margin == null ? '' : formatPercent(row.margin),
+      row.spentPercent == null ? '' : formatPercent(row.spentPercent),
+    ]),
+    totals: [
+      { label: 'Projects', value: String(company.projects.length) },
+      { label: 'Contract', value: formatCurrency(contract) },
+      { label: 'Gross profit (invoiced minus cost)', value: `${formatCurrency(profit)}${company.margin == null ? '' : ` (${formatPercent(company.margin)})`}` },
+    ],
+    overview: true,
+    visual: {
+      kpis: [
+        { label: 'Projects', value: String(company.projects.length) },
+        { label: 'Contract', value: formatCurrency(contract) },
+        { label: 'Cost', value: formatCurrency(cost) },
+        { label: 'Budget', value: formatCurrency(budget) },
+        { label: 'Invoiced', value: formatCurrency(invoiced) },
+        { label: 'Gross profit', value: formatCurrency(profit), detail: company.margin == null ? 'Invoiced minus cost' : formatPercent(company.margin) },
+      ],
+      series: {
+        title: 'Cost trend',
+        points: company.costBurn.map((point) => ({ label: point.month.slice(5), value: point.cumulative })),
+      },
+    },
+  }
 }

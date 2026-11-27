@@ -1,8 +1,7 @@
 'use client'
 
 import { Clock, Mail } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import Link from 'next/link'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -10,6 +9,7 @@ import { Field, Input } from '@/components/ui/input'
 import { Sheet } from '@/components/ui/sheet'
 import { EmptyState } from '@/components/ui/feedback'
 import { confirmAction } from '@/components/ui/confirm-dialog'
+import { catalogItem } from '@/lib/reports/catalog'
 import { customSummary, draftToConfig, emptyBuilderDraft, paramsForCustom, type BuilderDraft } from '@/lib/reports/custom'
 import { CustomBuilder } from './CustomBuilder'
 import { defaultRangeFor, RANGE_PRESETS } from '@/lib/reports/date-range'
@@ -17,6 +17,7 @@ import { scheduleWriteBody, type ScheduleFrequency } from '@/lib/reports/schedul
 import type { BuiltReport, ReportParams } from '@/lib/reports/types'
 import { DownloadMenu } from './DownloadMenu'
 import { ScheduleWizard, type ScheduleFormState } from './ScheduleWizard'
+import { ReportCrumb } from './ReportCrumb'
 import { ReportDocument, ReportsLandingView, RunHistory, ScheduleList, SectionHeading, rangeOptions, type ScheduleRow } from './views'
 
 type Mode = 'landing' | 'report' | 'builder'
@@ -128,6 +129,8 @@ export default function ReportsApp({
   const [name, setName] = useState('')
   const [shared, setShared] = useState(false)
   const [hydrated, setHydrated] = useState(!definitionId)
+  const baseline = useRef('')
+  const baselineReady = useRef(false)
   const [scheduleForm, setScheduleForm] = useState<ScheduleFormState>(() => blankSchedule('Scheduled report', undefined))
   const [scheduleMeta, setScheduleMeta] = useState<{ reportKey: string; params: ReportParams; definitionId: string | null; config?: unknown }>({
     reportKey: reportKey || 'custom',
@@ -189,7 +192,38 @@ export default function ReportsApp({
     setHydrated(true)
   }, [definitionId, ready, saved])
 
+  useEffect(() => {
+    if (mode !== 'builder' || !hydrated || baselineReady.current) return
+    baseline.current = JSON.stringify({ draft, name, shared })
+    baselineReady.current = true
+  }, [mode, hydrated, draft, name, shared])
+
+  useEffect(() => {
+    if (mode !== 'builder') return
+    const onLeave = (event: BeforeUnloadEvent) => {
+      if (!baselineReady.current || JSON.stringify({ draft, name, shared }) === baseline.current) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onLeave)
+    return () => window.removeEventListener('beforeunload', onLeave)
+  }, [mode, draft, name, shared])
+
+  function leaveReports(event: MouseEvent<HTMLAnchorElement>) {
+    if (mode !== 'builder' || !baselineReady.current || JSON.stringify({ draft, name, shared }) === baseline.current) return
+    event.preventDefault()
+    void confirmAction({
+      title: 'Leave this report?',
+      description: 'Your changes are not saved.',
+      confirmLabel: 'Leave',
+      destructive: true,
+    }).then((ok) => {
+      if (ok) router.push('/reports' as never)
+    })
+  }
+
   const key = reportKey || 'custom'
+  const crumb = mode === 'builder' ? (name.trim() || 'Build a custom report') : (report?.title || catalogItem(key)?.title || 'Report')
   const options = useMemo(() => rangeOptions(context?.years || []), [context?.years])
   const timezone = context?.scope?.timezone || 'America/New_York'
 
@@ -346,9 +380,7 @@ export default function ReportsApp({
 
       {mode === 'builder' ? (
         <>
-          <div className="flex justify-end">
-            <Link href="/reports" className="text-sm text-muted-foreground">All reports</Link>
-          </div>
+          <ReportCrumb current={crumb} onNavigate={leaveReports} />
           <CustomBuilder
             draft={draft}
             onDraft={(next, message) => { setDraft(next); setNotice(message || '') }}
@@ -383,9 +415,7 @@ export default function ReportsApp({
 
       {mode !== 'landing' && mode !== 'builder' ? (
         <>
-          <div className="flex justify-end">
-            <Link href="/reports" className="text-sm text-muted-foreground">All reports</Link>
-          </div>
+          <ReportCrumb current={crumb} />
           <div className="grid gap-3 md:grid-cols-4">
             <Field label="Date range" htmlFor="report-range">
               <select id="report-range" className={selectClass} value={params.range} onChange={(event) => setParams({ ...params, range: event.target.value })}>
@@ -471,14 +501,19 @@ export default function ReportsApp({
     try {
       const config = draftToConfig(draft)
       const payload = { name, reportKey: 'custom', is_shared: shared, params: paramsForCustom(config), config }
+      const snapshot = JSON.stringify({ draft, name, shared })
       if (definitionId) {
         await readJson(await fetch(`/api/reports/definitions/${definitionId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }))
-        toast.success('Report saved')
       } else {
         const created = await readJson<{ definition: { id: string } }>(await fetch('/api/reports/definitions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }))
-        toast.success('Report saved')
-        router.push(`/reports/custom/${created.definition.id}` as never)
+        router.replace(`/reports/custom/${created.definition.id}` as never)
       }
+      baseline.current = snapshot
+      baselineReady.current = true
+      toast.success('Report saved', {
+        action: { label: 'View in Saved reports', onClick: () => router.push('/reports' as never) },
+        cancel: { label: 'Stay', onClick: () => undefined },
+      })
     } catch (saveError) {
       toast.error(saveError instanceof Error ? saveError.message : 'Could not save.')
     }
