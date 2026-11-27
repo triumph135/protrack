@@ -33,6 +33,7 @@ import { Button } from '@/components/ui/button'
 import { Sheet } from '@/components/ui/sheet'
 import { Notice } from '@/components/ui/feedback'
 import { cn } from '@/lib/cn'
+import { showsJobSelectors } from '@/lib/shell-scope'
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const { user, signOut } = useAuth()
@@ -118,6 +119,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   ]
   const linksAfter = [
     ...(userCan(user, 'invoices', 'read') ? [{ href: '/invoices', label: 'Invoices', icon: 'invoices' as const }] : []),
+    ...(user?.tenant_id ? [{ href: '/reports', label: 'Reports', icon: 'reports' as const }] : []),
     ...(userCan(user, 'employees', 'read') ? [{ href: '/employees', label: 'Employees', icon: 'employees' as const }] : []),
     ...(userCan(user, 'users', 'write') ? [{ href: '/team', label: 'Team', icon: 'team' as const }] : []),
     ...(user?.role === 'master' ? [{ href: '/settings', label: 'Settings', icon: 'settings' as const }] : []),
@@ -141,7 +143,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const navList = (rail: boolean) => (
     <nav className="space-y-0.5" aria-label="Main">
       {linksBefore.map((item) => (
-        <Link key={item.href} href={item.href as never} onClick={go} title={item.label} className={cn(itemClass(pathname === item.href), rail && 'justify-center px-0')}>
+        <Link key={item.href} href={item.href as never} onClick={go} title={item.label} className={cn(itemClass(pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(`${item.href}/`))), rail && 'justify-center px-0')}>
           <NavIcon name={item.icon} />
           {rail ? null : <span className="truncate">{item.label}</span>}
         </Link>
@@ -208,7 +210,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       ) : null}
       {linksAfter.map((item) => (
-        <Link key={item.href} href={item.href as never} onClick={go} title={item.label} className={cn(itemClass(pathname === item.href), rail && 'justify-center px-0')}>
+        <Link key={item.href} href={item.href as never} onClick={go} title={item.label} className={cn(itemClass(pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(`${item.href}/`))), rail && 'justify-center px-0')}>
           <NavIcon name={item.icon} />
           {rail ? null : <span className="truncate">{item.label}</span>}
         </Link>
@@ -217,6 +219,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   )
 
   const activeProjects = projects.filter((project) => project.status === 'Active' || project.id === activeProject?.id)
+  const showJobSelectors = showsJobSelectors(pathname)
+  const allProjects = pathname === '/dashboard' && searchParams.get('scope') === 'all'
 
   return (
     <div className="flex h-screen bg-background text-foreground">
@@ -249,36 +253,44 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           >
             <Menu className="h-5 w-5" />
           </button>
-          <label className="sr-only" htmlFor="project-switcher">Project</label>
-          <select
-            id="project-switcher"
-            className="h-11 max-w-[16rem] rounded-lg border border-input bg-card px-2 text-sm"
-            value={activeProject?.id || ''}
-            onChange={(event) => {
-              const next = projects.find((project) => project.id === event.target.value)
-              if (next) setActiveProject(next)
-            }}
-          >
-            {activeProjects.length === 0 ? <option value="">No project</option> : null}
-            {activeProjects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.jobNumber} — {project.jobName}
-              </option>
-            ))}
-          </select>
-          <label className="sr-only" htmlFor="change-order-switcher">Change order</label>
-          <select
-            id="change-order-switcher"
-            className="hidden h-11 max-w-[14rem] rounded-lg border border-input bg-card px-2 text-sm sm:block"
-            value={changeOrderId || 'all'}
-            onChange={(event) => setChangeOrderId(event.target.value === 'all' ? null : event.target.value)}
-          >
-            <option value="all">All change orders</option>
-            <option value="base">Base contract</option>
-            {changeOrders.map((order) => (
-              <option key={order.id} value={order.id}>{order.name}</option>
-            ))}
-          </select>
+          {showJobSelectors ? (
+            <>
+              <label className="sr-only" htmlFor="project-switcher">Project</label>
+              <select
+                id="project-switcher"
+                className="h-11 max-w-[16rem] rounded-lg border border-input bg-card px-2 text-sm"
+                value={activeProject?.id || ''}
+                onChange={(event) => {
+                  const next = projects.find((project) => project.id === event.target.value)
+                  if (next) setActiveProject(next)
+                }}
+              >
+                {activeProjects.length === 0 ? <option value="">No project</option> : null}
+                {activeProjects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.jobNumber} — {project.jobName}
+                  </option>
+                ))}
+              </select>
+              {allProjects ? null : (
+                <>
+                  <label className="sr-only" htmlFor="change-order-switcher">Change order</label>
+                  <select
+                    id="change-order-switcher"
+                    className="hidden h-11 max-w-[14rem] rounded-lg border border-input bg-card px-2 text-sm sm:block"
+                    value={changeOrderId || 'all'}
+                    onChange={(event) => setChangeOrderId(event.target.value === 'all' ? null : event.target.value)}
+                  >
+                    <option value="all">All change orders</option>
+                    <option value="base">Base contract</option>
+                    {changeOrders.map((order) => (
+                      <option key={order.id} value={order.id}>{order.name}</option>
+                    ))}
+                  </select>
+                </>
+              )}
+            </>
+          ) : null}
           <div className="ml-auto flex items-center gap-2">
             <div className="hidden text-right sm:block">
               <p className="text-sm font-medium leading-tight">{user?.name}</p>
@@ -318,6 +330,7 @@ function NavIcon({ name }: { name?: string }) {
   if (name === 'costs') return <Layers className={className} />
   if (name === 'projects') return <Building2 className={className} />
   if (name === 'invoices') return <Receipt className={className} />
+  if (name === 'reports') return <BarChart3 className={className} />
   if (name === 'employees') return <Users className={className} />
   if (name === 'team') return <Users className={className} />
   if (name === 'settings') return <Settings className={className} />

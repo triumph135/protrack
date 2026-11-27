@@ -807,6 +807,214 @@ export interface Database {
           updated_at?: string | null
         }
       }
+      report_definitions: {
+        Row: {
+          id: string
+          tenant_id: string
+          owner_id: string
+          name: string
+          report_key: string
+          config: Json
+          is_shared: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          tenant_id: string
+          owner_id: string
+          name: string
+          report_key: string
+          config?: Json
+          is_shared?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          tenant_id?: string
+          owner_id?: string
+          name?: string
+          report_key?: string
+          config?: Json
+          is_shared?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      report_schedules: {
+        Row: {
+          id: string
+          tenant_id: string
+          owner_id: string
+          name: string
+          report_key: string
+          report_definition_id: string | null
+          config: Json
+          frequency: string
+          weekday: number | null
+          month_day: number | null
+          send_hour: number
+          formats: string[]
+          status: string
+          paused_reason: string | null
+          next_run_at: string | null
+          last_run_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          tenant_id: string
+          owner_id: string
+          name: string
+          report_key: string
+          report_definition_id?: string | null
+          config?: Json
+          frequency: string
+          weekday?: number | null
+          month_day?: number | null
+          send_hour: number
+          formats: string[]
+          status?: string
+          paused_reason?: string | null
+          next_run_at?: string | null
+          last_run_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          tenant_id?: string
+          owner_id?: string
+          name?: string
+          report_key?: string
+          report_definition_id?: string | null
+          config?: Json
+          frequency?: string
+          weekday?: number | null
+          month_day?: number | null
+          send_hour?: number
+          formats?: string[]
+          status?: string
+          paused_reason?: string | null
+          next_run_at?: string | null
+          last_run_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      report_schedule_recipients: {
+        Row: {
+          id: string
+          tenant_id: string
+          schedule_id: string
+          user_id: string
+          unsubscribe_token: string
+          unsubscribed_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          tenant_id: string
+          schedule_id: string
+          user_id: string
+          unsubscribe_token?: string
+          unsubscribed_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          tenant_id?: string
+          schedule_id?: string
+          user_id?: string
+          unsubscribe_token?: string
+          unsubscribed_at?: string | null
+          created_at?: string
+        }
+      }
+      report_runs: {
+        Row: {
+          id: string
+          tenant_id: string
+          schedule_id: string
+          scheduled_for: string
+          trigger: string
+          status: string
+          attempts: number
+          lease_until: string | null
+          started_at: string | null
+          finished_at: string | null
+          error: string | null
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          tenant_id: string
+          schedule_id: string
+          scheduled_for: string
+          trigger: string
+          status?: string
+          attempts?: number
+          lease_until?: string | null
+          started_at?: string | null
+          finished_at?: string | null
+          error?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          tenant_id?: string
+          schedule_id?: string
+          scheduled_for?: string
+          trigger?: string
+          status?: string
+          attempts?: number
+          lease_until?: string | null
+          started_at?: string | null
+          finished_at?: string | null
+          error?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+      }
+      report_deliveries: {
+        Row: {
+          id: string
+          tenant_id: string
+          run_id: string
+          user_id: string
+          email: string
+          status: string
+          resend_id: string | null
+          error: string | null
+          sent_at: string | null
+        }
+        Insert: {
+          id?: string
+          tenant_id: string
+          run_id: string
+          user_id: string
+          email: string
+          status?: string
+          resend_id?: string | null
+          error?: string | null
+          sent_at?: string | null
+        }
+        Update: {
+          id?: string
+          tenant_id?: string
+          run_id?: string
+          user_id?: string
+          email?: string
+          status?: string
+          resend_id?: string | null
+          error?: string | null
+          sent_at?: string | null
+        }
+      }
     }
     Views: {
       [_ in never]: never
@@ -871,6 +1079,39 @@ export interface Database {
           p_reason: string
         }
         Returns: undefined
+      }
+      report_access_scope: {
+        Args: { p_user_id: string }
+        Returns: Json
+      }
+      report_next_run_at: {
+        Args: {
+          p_frequency: string
+          p_weekday?: number | null
+          p_month_day?: number | null
+          p_send_hour: number
+          p_tz: string
+          p_after: string
+        }
+        Returns: string
+      }
+      claim_due_report_runs: {
+        Args: { p_limit?: number }
+        Returns: {
+          id: string
+          tenant_id: string
+          schedule_id: string
+          scheduled_for: string
+          trigger: string
+          status: string
+          attempts: number
+          lease_until: string | null
+          started_at: string | null
+          finished_at: string | null
+          error: string | null
+          created_by: string | null
+          created_at: string
+        }[]
       }
       employee_rates_as_of: {
         Args: {

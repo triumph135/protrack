@@ -771,3 +771,161 @@ async function renderOverviewPdf(report: PdfReport): Promise<Uint8Array> {
     })
   }
 }
+
+export interface StructuredPdfSection {
+  title: string
+  columns: string[]
+  rows: string[][]
+  rowDepth?: number[]
+  totals?: string[]
+  fitOnePage?: boolean
+}
+
+export interface StructuredPdfReport {
+  title: string
+  company: string
+  rangeLabel: string
+  generatedOn: string
+  filters: string[]
+  kpis: PdfKpi[]
+  sections: StructuredPdfSection[]
+  notes: string[]
+}
+
+/** Reports PDF. Summary sections use the overview shrink-to-fit size. Detail sections continue on later pages. */
+export async function renderStructuredReportPdf(report: StructuredPdfReport): Promise<Uint8Array> {
+  const wide = report.sections.some((section) => section.columns.length > 8)
+  const pageWidth = wide ? PAGE_HEIGHT : PAGE_WIDTH
+  const pageHeight = wide ? PAGE_WIDTH : PAGE_HEIGHT
+  const doc = await PDFDocument.create()
+  const font = await doc.embedFont(StandardFonts.Helvetica)
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold)
+  const margin = OVERVIEW_MARGIN
+  const contentWidth = pageWidth - margin * 2
+  const pages: PDFPage[] = []
+  let page = doc.addPage([pageWidth, pageHeight])
+  pages.push(page)
+  let y = pageHeight - margin
+
+  const drawPageHeader = (continued: boolean) => {
+    page.drawText('ProTrack', { x: margin, y, size: 8, font: bold, color: blue })
+    const stamp = pdfText(continued ? `${report.generatedOn}  ·  continued` : report.generatedOn)
+    page.drawText(stamp, { x: pageWidth - margin - font.widthOfTextAtSize(stamp, 7), y, size: 7, font, color: muted })
+    y -= 12
+    page.drawText(fit(report.title, contentWidth, 12, bold), { x: margin, y, size: 12, font: bold, color: ink })
+    y -= 12
+    page.drawText(fit(report.company, contentWidth, 8, font), { x: margin, y, size: 8, font, color: ink })
+    y -= 10
+    page.drawText(fit(report.rangeLabel, contentWidth, 8, font), { x: margin, y, size: 8, font, color: muted })
+    y -= 10
+    if (!continued && report.filters.length > 0) {
+      page.drawText(fit(report.filters.join('   |   '), contentWidth, 7, font), { x: margin, y, size: 7, font, color: muted })
+      y -= 9
+    }
+    page.drawLine({ start: { x: margin, y: y - 1 }, end: { x: pageWidth - margin, y: y - 1 }, thickness: 0.6, color: line })
+    y -= 12
+  }
+
+  const newPage = () => {
+    page = doc.addPage([pageWidth, pageHeight])
+    pages.push(page)
+    y = pageHeight - margin
+    drawPageHeader(true)
+  }
+
+  const ensure = (needed: number) => {
+    if (y - needed >= OVERVIEW_FOOTER) return
+    newPage()
+  }
+
+  drawPageHeader(false)
+
+  if (report.kpis.length > 0) {
+    const gap = 4
+    const perRow = Math.min(4, report.kpis.length)
+    for (let start = 0; start < report.kpis.length; start += perRow) {
+      const slice = report.kpis.slice(start, start + perRow)
+      const cardW = (contentWidth - gap * (slice.length - 1)) / slice.length
+      const cardH = 28
+      ensure(cardH + 4)
+      slice.forEach((kpi, column) => {
+        const x = margin + column * (cardW + gap)
+        page.drawRectangle({ x, y: y - cardH, width: cardW, height: cardH, color: card, borderColor: line, borderWidth: 0.4 })
+        page.drawText(fit(kpi.label, cardW - 8, 7, font), { x: x + 4, y: y - 10, size: 7, font, color: muted })
+        page.drawText(fit(kpi.detail ? `${kpi.value}  ${kpi.detail}` : kpi.value, cardW - 8, 8, bold), { x: x + 4, y: y - 22, size: 8, font: bold, color: ink })
+      })
+      y -= cardH + 6
+    }
+  }
+
+  for (const section of report.sections) {
+    const marked = section.rows.map((row, index) => childRow(row, section.rowDepth?.[index]))
+    const style = section.fitOnePage ? overviewRowStyle(marked.length) : { size: 8, pitch: 12 }
+    ensure(28)
+    page.drawText(fit(section.title, contentWidth, 9, bold), { x: margin, y, size: 9, font: bold, color: ink })
+    y -= 12
+    const weights = section.columns.map((_, index) => (index === 0 ? 1.6 : 1))
+    const weightSum = weights.reduce((sum, value) => sum + value, 0) || 1
+    const columnWidth = (index: number) => (contentWidth * weights[index]) / weightSum
+    const drawHeader = () => {
+      const pitch = 11
+      ensure(pitch)
+      page.drawRectangle({ x: margin, y: y - pitch + 2, width: contentWidth, height: pitch, color: rgb(0.94, 0.95, 0.96) })
+      let x = margin
+      section.columns.forEach((label, index) => {
+        const width = columnWidth(index)
+        page.drawText(fit(label, width - 4, 7, bold), { x: x + 2, y: y - 7, size: 7, font: bold, color: ink })
+        x += width
+      })
+      y -= pitch
+    }
+    drawHeader()
+    for (const row of marked) {
+      if (y - style.pitch < OVERVIEW_FOOTER) {
+        newPage()
+        page.drawText(fit(`${section.title} (continued)`, contentWidth, 8, bold), { x: margin, y, size: 8, font: bold, color: ink })
+        y -= 12
+        drawHeader()
+      }
+      const nested = row.depth > 0
+      let x = margin
+      row.cells.forEach((cell, index) => {
+        const width = columnWidth(index)
+        const indent = index === 0 && nested ? 8 : 0
+        page.drawText(fit(cell || '', width - 4 - indent, style.size, nested ? font : font), {
+          x: x + 2 + indent,
+          y: y - style.size,
+          size: style.size,
+          font: nested ? font : font,
+          color: nested ? muted : ink,
+        })
+        x += width
+      })
+      y -= style.pitch
+    }
+    if (section.totals && section.totals.length > 0) {
+      ensure(12)
+      let x = margin
+      section.totals.forEach((cell, index) => {
+        const width = columnWidth(index)
+        page.drawText(fit(cell || '', width - 4, 7, bold), { x: x + 2, y: y - 8, size: 7, font: bold, color: ink })
+        x += width
+      })
+      y -= 14
+    }
+    y -= 6
+  }
+
+  if (report.notes.length > 0) {
+    ensure(12 + report.notes.length * 9)
+    for (const note of report.notes) {
+      page.drawText(fit(note, contentWidth, 7, font), { x: margin, y, size: 7, font, color: muted })
+      y -= 9
+    }
+  }
+
+  pages.forEach((item, index) => {
+    item.drawText(`Page ${index + 1} of ${pages.length}`, { x: margin, y: 16, size: 7, font, color: muted })
+  })
+  return doc.save()
+}

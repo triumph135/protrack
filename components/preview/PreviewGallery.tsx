@@ -5,14 +5,20 @@ import Logo from '@/components/ui/Logo'
 import { ThemeToggle } from '@/components/theme/ThemeToggle'
 import { PageHeader } from '@/components/ui/feedback'
 import { Button } from '@/components/ui/button'
-import { formatCurrency } from '@/lib/format'
 import { CategoryName } from '@/components/costs/CategoryName'
 import { ReverseSheet } from '@/components/ReverseSheet'
 import { MoveCostSheet } from '@/components/MoveCostSheet'
 import { QueuedFilesField } from '@/components/QueuedFilesField'
 import { ProjectRatesEditor } from '@/components/ProjectRatesEditor'
+import { ReportsPreview } from '@/components/reports/preview-data'
+import { OverviewDashboard, type OverviewGroup } from '@/components/overview/OverviewDashboard'
+import { aggregatePortfolio } from '@/lib/portfolio-overview'
+import { fromCents } from '@/lib/reports/money'
+import { formatCurrency, formatDate } from '@/lib/format'
+import { showsJobSelectors } from '@/lib/shell-scope'
+import type { ReportCategory } from '@/lib/reports/types'
 
-const screens = ['Login', 'Forgot password', 'Overview', 'Projects', 'Costs', 'Category', 'Invoices', 'Employees', 'Team', 'Settings', 'Reverse', 'Credit', 'Move', 'Attachments', 'Rates'] as const
+const screens = ['Login', 'Forgot password', 'Overview', 'All projects', 'Projects', 'Costs', 'Category', 'Invoices', 'Reports', 'Activity', 'Job cost', 'Vendor', 'Builder', 'Schedule', 'History', 'Unsubscribe', 'Employees', 'Team', 'Settings', 'Reverse', 'Credit', 'Move', 'Attachments', 'Rates'] as const
 
 export default function PreviewGallery({
   initialScreen = 'Overview',
@@ -40,7 +46,7 @@ export default function PreviewGallery({
         </Button>
       </div>}
       <div className={bare ? 'bg-background' : mobile ? 'mx-auto w-[390px] overflow-hidden rounded-lg border border-border bg-background shadow-none' : 'overflow-hidden rounded-lg border border-border bg-background'}>
-        {screen === 'Login' ? <LoginScreen /> : screen === 'Forgot password' ? <ForgotScreen /> : <AppFrame mobile={mobile} screen={screen} />}
+        {screen === 'Login' ? <LoginScreen /> : screen === 'Forgot password' ? <ForgotScreen /> : screen === 'Unsubscribe' ? <div className="bg-background p-4"><ReportsPreview screen="Unsubscribe" /></div> : <AppFrame mobile={mobile} screen={screen} />}
       </div>
     </div>
   )
@@ -54,7 +60,7 @@ function NavTree({ screen }: { screen: string }) {
   )
   return (
     <nav className="mt-4 space-y-0.5 text-sm">
-      {row('Overview', screen === 'Overview')}
+      {row('Overview', screen === 'Overview' || screen === 'All projects')}
       {row('Projects', screen === 'Projects')}
       <div className="flex items-center">
         <span className="inline-flex h-11 w-8 items-center justify-center" aria-hidden>{costsOpen ? '▾' : '▸'}</span>
@@ -81,6 +87,7 @@ function NavTree({ screen }: { screen: string }) {
         </>
       ) : null}
       {row('Invoices', screen === 'Invoices')}
+      {row('Reports', screen === 'Reports' || screen === 'Activity' || screen === 'Job cost' || screen === 'Vendor' || screen === 'Builder')}
       {row('Employees', screen === 'Employees')}
       {row('Team', screen === 'Team')}
       {row('Settings', screen === 'Settings')}
@@ -88,8 +95,17 @@ function NavTree({ screen }: { screen: string }) {
   )
 }
 
+function previewPath(screen: string): string {
+  if (['Reports', 'Activity', 'Job cost', 'Vendor', 'Builder', 'Schedule', 'History'].includes(screen)) return '/reports'
+  if (screen === 'Employees') return '/employees'
+  if (screen === 'Team') return '/team'
+  if (screen === 'Settings') return '/settings'
+  return '/dashboard'
+}
+
 function AppFrame({ screen, mobile }: { screen: string; mobile: boolean }) {
   const showDrawer = mobile && (screen === 'Costs' || screen === 'Category')
+  const showJobs = showsJobSelectors(previewPath(screen))
   return (
     <div className={mobile ? 'relative flex min-h-[760px] flex-col' : 'flex min-h-[760px]'}>
       {mobile ? null : (
@@ -106,13 +122,18 @@ function AppFrame({ screen, mobile }: { screen: string; mobile: boolean }) {
       ) : null}
       <div className="min-w-0 flex-1">
         <header className="flex h-14 items-center gap-2 border-b border-border px-3 text-sm">
-          <span className="rounded-lg border border-border px-2 py-2">JOB-A-001 — Acme Test Job</span>
-          <span className="hidden rounded-lg border border-border px-2 py-2 sm:inline">All change orders</span>
+          {showJobs ? (
+            <>
+              <span className="rounded-lg border border-border px-2 py-2">JOB-A-001 — Acme Test Job</span>
+              {screen === 'All projects' ? null : <span className="hidden rounded-lg border border-border px-2 py-2 sm:inline">All change orders</span>}
+            </>
+          ) : null}
           <span className="ml-auto text-right text-xs text-muted-foreground">Ada Master<br />Master · Acme Test</span>
           <ThemeToggle />
         </header>
         <div className="p-4">
           {screen === 'Overview' ? <Overview /> : null}
+          {screen === 'All projects' ? <AllProjects /> : null}
           {screen === 'Projects' ? <Projects /> : null}
           {screen === 'Reverse' ? <ReversePreview /> : null}
           {screen === 'Credit' ? <CreditPreview /> : null}
@@ -122,6 +143,7 @@ function AppFrame({ screen, mobile }: { screen: string; mobile: boolean }) {
           {screen === 'Costs' ? <Costs /> : null}
           {screen === 'Category' ? <CategoryPage /> : null}
           {screen === 'Invoices' ? <Invoices /> : null}
+          {['Reports', 'Activity', 'Job cost', 'Vendor', 'Builder', 'Schedule', 'History'].includes(screen) ? <ReportsPreview screen={screen} /> : null}
           {screen === 'Employees' ? <Employees /> : null}
           {screen === 'Team' ? <Team /> : null}
           {screen === 'Settings' ? <Settings /> : null}
@@ -129,6 +151,115 @@ function AppFrame({ screen, mobile }: { screen: string; mobile: boolean }) {
       </div>
     </div>
   )
+}
+
+function AllProjects() {
+  const source = previewPortfolio()
+  const overview = aggregatePortfolio(source)
+  const dollars = fromCents
+  const baseContract = source.projects.reduce((sum, project) => sum + Number(project.totalContractValue || 0), 0)
+  const contract = dollars(overview.contractCents)
+  const groups: OverviewGroup[] = []
+  for (const line of overview.categories) {
+    if (line.depth === 0) groups.push({ id: line.id, name: line.name, actual: dollars(line.actualCents), budget: dollars(line.budgetCents), children: [] })
+    else if (groups.length) groups[groups.length - 1].children.push({ id: line.id, name: line.name, actual: dollars(line.actualCents), budget: dollars(line.budgetCents) })
+  }
+  return (
+    <div className="space-y-4">
+      <PageHeader
+        title="All projects"
+        description="Every project you can see"
+        action={<><Button size="sm" variant="ghost" type="button">This project</Button><Button size="sm" type="button">All projects</Button><Button variant="outline" type="button">Export</Button></>}
+      />
+      <OverviewDashboard
+        accent
+        contract={contract}
+        baseContract={baseContract}
+        changeOrderTotal={contract - baseContract}
+        totalCosts={dollars(overview.costCents)}
+        totalBudget={dollars(overview.budgetCents)}
+        invoiced={dollars(overview.invoicedCents)}
+        collected={dollars(overview.collectedCents)}
+        profit={dollars(overview.profitCents)}
+        margin={overview.margin}
+        goal={20}
+        alerts={overview.categories.filter((line) => line.state === 'over' || line.state === 'near').map((line) => ({
+          id: line.id,
+          name: line.name,
+          actual: dollars(line.actualCents),
+          budget: dollars(line.budgetCents),
+          state: line.state as 'over' | 'near',
+        }))}
+        groups={groups}
+        burn={overview.costBurn}
+        invoiceBurn={overview.invoiceBurn}
+        recentCosts={overview.recentCosts.map((row) => ({ id: row.id, primary: row.label, secondary: `${row.projectLabel} · ${formatDate(row.date)}`, amount: formatCurrency(dollars(row.amountCents)) }))}
+        recentInvoices={overview.recentInvoices.map((row) => ({ id: row.id, primary: row.label, secondary: `${row.projectLabel} · ${formatDate(row.date)}`, amount: formatCurrency(dollars(row.amountCents)) }))}
+        recentOrders={overview.recentOrders.map((row) => ({ id: row.id, primary: row.label, secondary: row.projectLabel, amount: formatCurrency(dollars(row.amountCents)) }))}
+        projects={overview.projects.map((row) => ({
+          id: row.id,
+          jobNumber: row.jobNumber,
+          jobName: row.jobName,
+          budget: dollars(row.budgetCents),
+          cost: dollars(row.costCents),
+          invoiced: dollars(row.invoicedCents),
+          profit: dollars(row.profitCents),
+          margin: row.margin,
+          spent: row.spentPercent,
+        }))}
+      />
+    </div>
+  )
+}
+
+function previewPortfolio() {
+  const category = (id: string, name: string, extra: Partial<ReportCategory> = {}): ReportCategory => ({
+    id, name, kind: 'standard', parent_id: null, builtin_key: null, sort_order: 1, is_hidden: false, ...extra,
+  })
+  const blank = {
+    vendor: null, invoice_number: null, employee_id: null, st_hours: null, ot_hours: null, dt_hours: null, per_diem: null, mob_qty: null,
+    change_order_id: null, reversal_of_id: null, reversed_at: null, reversal_reason: null,
+  }
+  return {
+    projects: [
+      { id: 'p1', jobNumber: 'JOB-A-001', jobName: 'Acme Test Job', customer: 'Acme Customer', status: 'Active', totalContractValue: 100000 },
+      { id: 'p2', jobNumber: 'JOB-A-002', jobName: 'Second job', customer: 'Acme Customer', status: 'Active', totalContractValue: 40000 },
+    ],
+    categories: [
+      category('material', 'Materials', { builtin_key: 'material', sort_order: 1 }),
+      category('labor', 'Labor', { kind: 'labor', builtin_key: 'labor', sort_order: 2 }),
+      category('equipment', 'Equipment', { builtin_key: 'equipment', sort_order: 3 }),
+      category('subcontractor', 'Subcontractor', { builtin_key: 'subcontractor', sort_order: 4 }),
+      category('others', 'Others', { builtin_key: 'others', sort_order: 5 }),
+      category('cap', 'Cap Leases', { builtin_key: 'cap_leases', sort_order: 6 }),
+      category('consumable', 'Consumable', { builtin_key: 'consumable', sort_order: 7 }),
+    ],
+    costs: [
+      { ...blank, id: 'c1', project_id: 'p1', category_id: 'material', category: 'material', date: '2026-01-15', cost: 4000, description: 'Steel', employee_name: null, created_at: '2026-01-15T15:00:00Z' },
+      { ...blank, id: 'c1r', project_id: 'p1', category_id: 'material', category: 'material', date: '2026-01-20', cost: -500, description: 'Returned steel', employee_name: null, reversal_of_id: 'c1', created_at: '2026-01-20T15:00:00Z' },
+      { ...blank, id: 'c2', project_id: 'p1', category_id: 'labor', category: 'labor', date: '2026-03-04', cost: 8000, description: null, employee_name: 'Alex Rivera', created_at: '2026-03-04T15:00:00Z' },
+      { ...blank, id: 'c3', project_id: 'p1', category_id: 'equipment', category: 'equipment', date: '2026-04-02', cost: 1000, description: 'Lift rental', employee_name: null, created_at: '2026-04-02T15:00:00Z' },
+      { ...blank, id: 'c4', project_id: 'p2', category_id: 'subcontractor', category: 'subcontractor', date: '2026-02-11', cost: 2200, description: 'Electrical', employee_name: null, created_at: '2026-02-11T15:00:00Z' },
+      { ...blank, id: 'c5', project_id: 'p2', category_id: 'others', category: 'others', date: '2026-05-06', cost: 300, description: 'Permits', employee_name: null, created_at: '2026-05-06T15:00:00Z' },
+      { ...blank, id: 'c6', project_id: 'p2', category_id: 'cap', category: 'cap_leases', date: '2026-06-01', cost: 400, description: 'Trailer', employee_name: null, created_at: '2026-06-01T15:00:00Z' },
+      { ...blank, id: 'c7', project_id: 'p2', category_id: 'consumable', category: 'consumable', date: '2026-06-12', cost: 150, description: 'Bits', employee_name: null, created_at: '2026-06-12T15:00:00Z' },
+    ],
+    invoices: [
+      { id: 'i1', project_id: 'p1', invoice_number: 'INV-100', amount: 20000, amount_collected: 9000, date_billed: '2026-03-01', change_order_id: null, reversal_of_id: null, reversal_reason: null, created_at: '2026-03-01T15:00:00Z' },
+      { id: 'i1c', project_id: 'p1', invoice_number: 'CM-100', amount: -2000, amount_collected: 0, date_billed: '2026-04-01', change_order_id: null, reversal_of_id: 'i1', reversal_reason: 'Credit', created_at: '2026-04-01T15:00:00Z' },
+      { id: 'i2', project_id: 'p2', invoice_number: 'INV-200', amount: 10000, amount_collected: 10000, date_billed: '2026-05-15', change_order_id: null, reversal_of_id: null, reversal_reason: null, created_at: '2026-05-15T15:00:00Z' },
+    ],
+    changeOrders: [{ id: 'co1', project_id: 'p1', name: 'Added bay', additional_contract_value: 12000, created_at: '2026-02-01T15:00:00Z' }],
+    budgets: [
+      { project_id: 'p1', category_id: 'material', amount: 10000 },
+      { project_id: 'p1', category_id: 'labor', amount: 20000 },
+      { project_id: 'p1', category_id: 'equipment', amount: 5000 },
+      { project_id: 'p2', category_id: 'subcontractor', amount: 8000 },
+      { project_id: 'p2', category_id: 'others', amount: 1000 },
+      { project_id: 'p2', category_id: 'cap', amount: 2000 },
+      { project_id: 'p2', category_id: 'consumable', amount: 500 },
+    ],
+  }
 }
 
 function Overview() {
